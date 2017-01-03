@@ -611,8 +611,16 @@ public:
 
   /// \brief Returns the "normalized" GCC register name.
   ///
-  /// For example, on x86 it will return "ax" when "eax" is passed in.
-  StringRef getNormalizedGCCRegisterName(StringRef Name) const;
+  /// ReturnCannonical true will return the register name without any additions
+  /// such as "{}" or "%" in it's canonical form, for example:
+  /// ReturnCanonical = true and Name = "rax", will return "ax".
+  StringRef getNormalizedGCCRegisterName(StringRef Name,
+                                         bool ReturnCanonical = false) const;
+ 
+  virtual StringRef getConstraintRegister(const StringRef &Constraint,
+                                          const StringRef &Expression) const {
+    return "";
+  }
 
   struct ConstraintInfo {
     enum {
@@ -1011,7 +1019,7 @@ public:
   /// \brief Set supported OpenCL extensions as written on command line
   virtual void setOpenCLExtensionOpts() {
     for (const auto &Ext : getTargetOpts().OpenCLExtensionsAsWritten) {
-      getTargetOpts().SupportedOpenCLOptions.set(Ext);
+      getTargetOpts().SupportedOpenCLOptions.support(Ext);
     }
   }
 

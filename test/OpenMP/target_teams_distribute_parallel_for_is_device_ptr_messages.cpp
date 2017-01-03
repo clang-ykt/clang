@@ -1,6 +1,4 @@
-// RUN: %clang_cc1 -std=c++11 -verify -fopenmp -ferror-limit 200 %s
-void foo();
-
+// RUN: %clang_cc1 -std=c++11 -verify -fopenmp %s
 struct ST {
   int *a;
 };
@@ -20,39 +18,56 @@ struct SA {
   arr &raa = aa;
   void func(int arg) {
 #pragma omp target teams distribute parallel for is_device_ptr // expected-error {{expected '(' after 'is_device_ptr'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr( // expected-error {{expected ')'}} expected-note {{to match this '('}} expected-error {{expected expression}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr() // expected-error {{expected expression}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(alloc) // expected-error {{use of undeclared identifier 'alloc'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(arg // expected-error {{expected ')'}} expected-note {{to match this '('}} expected-error {{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(i) // expected-error {{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(j) // expected-error {{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(k) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(z) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(aa) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(raa) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(e) // expected-error{{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(g) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(rg) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(k,i,j) // expected-error2 {{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(d) // expected-error{{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(da) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
   return;
  }
 };
@@ -146,57 +161,83 @@ T tmain(T argc) {
   auto &raa = aa;
   S6 *ps;
 #pragma omp target teams distribute parallel for is_device_ptr // expected-error {{expected '(' after 'is_device_ptr'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr( // expected-error {{expected ')'}} expected-note {{to match this '('}} expected-error {{expected expression}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr() // expected-error {{expected expression}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(alloc) // expected-error {{use of undeclared identifier 'alloc'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(argc // expected-error {{expected ')'}} expected-note {{to match this '('}} expected-error{{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(i) // expected-error {{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(j) // expected-error {{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(k) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(z) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(aa) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(raa) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(e) // expected-error{{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(g) // expected-error{{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(h) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(rh) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(k,i,j) // expected-error2 {{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(d) // expected-error{{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(da) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for map(ps) is_device_ptr(ps) // expected-error{{variable already marked as mapped in current construct}} expected-note{{used here}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(ps) map(ps) // expected-error{{variable already marked as mapped in current construct}} expected-note{{used here}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for map(ps->a) is_device_ptr(ps) // expected-error{{variable already marked as mapped in current construct}} expected-note{{used here}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(ps) map(ps->a) // expected-error{{pointer cannot be mapped along with a section derived from itself}} expected-note{{used here}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(ps) firstprivate(ps) // expected-error{{firstprivate variable cannot be in a is_device_ptr clause in '#pragma omp target teams distribute parallel for' directive}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for firstprivate(ps) is_device_ptr(ps) // expected-error{{firstprivate variable cannot be in a is_device_ptr clause in '#pragma omp target teams distribute parallel for' directive}} expected-note{{defined as firstprivate}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(ps) private(ps) // expected-error{{private variable cannot be in a is_device_ptr clause in '#pragma omp target teams distribute parallel for' directive}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for private(ps) is_device_ptr(ps) // expected-error{{private variable cannot be in a is_device_ptr clause in '#pragma omp target teams distribute parallel for' directive}} expected-note{{defined as private}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
   return 0;
 }
 
@@ -215,56 +256,82 @@ int main(int argc, char **argv) {
   auto &raa = aa;
   S6 *ps;
 #pragma omp target teams distribute parallel for is_device_ptr // expected-error {{expected '(' after 'is_device_ptr'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr( // expected-error {{expected ')'}} expected-note {{to match this '('}} expected-error {{expected expression}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr() // expected-error {{expected expression}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(alloc) // expected-error {{use of undeclared identifier 'alloc'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(argc // expected-error {{expected ')'}} expected-note {{to match this '('}} expected-error {{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(i) // expected-error {{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(j) // expected-error {{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(k) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(z) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(aa) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(raa) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(e) // expected-error{{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(g) // expected-error{{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(h) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(rh) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(k,i,j) // expected-error2 {{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(d) // expected-error{{expected pointer, array, reference to pointer, or reference to array in 'is_device_ptr clause'}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(da) // OK
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for map(ps) is_device_ptr(ps) // expected-error{{variable already marked as mapped in current construct}} expected-note{{used here}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(ps) map(ps) // expected-error{{variable already marked as mapped in current construct}} expected-note{{used here}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for map(ps->a) is_device_ptr(ps) // expected-error{{variable already marked as mapped in current construct}} expected-note{{used here}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(ps) map(ps->a) // expected-error{{pointer cannot be mapped along with a section derived from itself}} expected-note{{used here}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(ps) firstprivate(ps) // expected-error{{firstprivate variable cannot be in a is_device_ptr clause in '#pragma omp target teams distribute parallel for' directive}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for firstprivate(ps) is_device_ptr(ps) // expected-error{{firstprivate variable cannot be in a is_device_ptr clause in '#pragma omp target teams distribute parallel for' directive}} expected-note{{defined as firstprivate}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for is_device_ptr(ps) private(ps) // expected-error{{private variable cannot be in a is_device_ptr clause in '#pragma omp target teams distribute parallel for' directive}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
 #pragma omp target teams distribute parallel for private(ps) is_device_ptr(ps) // expected-error{{private variable cannot be in a is_device_ptr clause in '#pragma omp target teams distribute parallel for' directive}} expected-note{{defined as private}}
-	  for (int i=0; i<200; i++) foo();
+  for (int i=0; i<100; i++)
+    ;
   return tmain<int, 3>(argc); // expected-note {{in instantiation of function template specialization 'tmain<int, 3>' requested here}}
 }

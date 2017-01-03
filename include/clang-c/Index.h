@@ -2358,19 +2358,19 @@ enum CXCursorKind {
    */
   CXCursor_OMPTargetTeamsDirective = 275,
 
+  /** \brief OpenMP target teams distribute directive.
+   */
+  CXCursor_OMPTargetTeamsDistributeDirective = 276,
+
   /** \brief OpenMP target teams distribute parallel for directive.
    */
-  CXCursor_OMPTargetTeamsDistributeParallelForDirective = 276,
+  CXCursor_OMPTargetTeamsDistributeParallelForDirective = 277,
 
   /** \brief OpenMP target teams distribute parallel for simd directive.
    */
-  CXCursor_OMPTargetTeamsDistributeParallelForSimdDirective = 277,
+  CXCursor_OMPTargetTeamsDistributeParallelForSimdDirective = 278,
 
-  /** \brief OpenMP target teams distribute directive.
-   */
-  CXCursor_OMPTargetTeamsDistributeDirective = 278,
-
-  /** \brief OpenMP target teams distribute directive.
+  /** \brief OpenMP target teams distribute simd directive.
    */
   CXCursor_OMPTargetTeamsDistributeSimdDirective = 279,
 

@@ -51,6 +51,10 @@ struct SA {
     {}
     #pragma omp target teams map(to:b,e[:])
     {}
+    #pragma omp target teams map(b[-1:]) // expected-error {{array section must be a subset of the original array}}
+    {}
+    #pragma omp target teams map(b[:-1]) // expected-error {{section length is evaluated to a negative value -1}}
+    {}
 
     #pragma omp target teams map(always, tofrom: c,f)
     {}
@@ -338,6 +342,15 @@ public:
   S5(int v):a(v) { }
 };
 
+template <class T>
+struct S6;
+
+template<>
+struct S6<int>  // expected-note {{mappable type cannot be polymorphic}}
+{
+   virtual void foo();
+};
+
 S3 h;
 #pragma omp threadprivate(h) // expected-note 2 {{defined as threadprivate or thread local}}
 
@@ -396,6 +409,7 @@ T tmain(T argc) {
   foo();
 #pragma omp target teams map(to, x)
   foo();
+
 #pragma omp target data map(to x) // expected-error {{expected ',' or ')' in 'map' clause}}
 #pragma omp target data map(tofrom: argc > 0 ? x : y) // expected-error 2 {{expected expression containing only member accesses and/or array sections based on named variables}}
 #pragma omp target data map(argc)
@@ -411,18 +425,21 @@ T tmain(T argc) {
 #pragma omp target data map(k) map(k) // expected-error 2 {{variable already marked as mapped in current construct}} expected-note 2 {{used here}}
 #pragma omp target teams map(k), map(k[:5]) // expected-error 2 {{pointer cannot be mapped along with a section derived from itself}} expected-note 2 {{used here}}
   foo();
+
 #pragma omp target data map(da)
 #pragma omp target teams map(da[:4])
   foo();
+
 #pragma omp target data map(k, j, l) // expected-note 2 {{used here}}
 #pragma omp target data map(k[:4]) // expected-error 2 {{pointer cannot be mapped along with a section derived from itself}}
 #pragma omp target data map(j)
 #pragma omp target teams map(l) map(l[:5]) // expected-error 2 {{variable already marked as mapped in current construct}} expected-note 2 {{used here}}
   foo();
-#pragma omp target data map(k[:4], j, l[:4]) // expected-note 4 {{used here}}
+
+#pragma omp target data map(k[:4], j, l[:5]) // expected-note 2 {{used here}}
 #pragma omp target data map(k) // expected-error 2 {{pointer cannot be mapped along with a section derived from itself}}
 #pragma omp target data map(j)
-#pragma omp target teams map(l) // expected-error 2 {{original storage of expression in data environment is shared but data environment do not fully contain mapped expression storage}}
+#pragma omp target teams map(l)
   foo();
 
 #pragma omp target data map(always, tofrom: x)
@@ -442,6 +459,7 @@ int main(int argc, char **argv) {
   int i;
   int &j = i;
   int *k = &j;
+  S6<int> m;
   int x;
   int y;
   int to, tofrom, always;
@@ -456,6 +474,7 @@ int main(int argc, char **argv) {
 #pragma omp target data map(x: y) // expected-error {{incorrect map type, expected one of 'to', 'from', 'tofrom', 'alloc', 'release', or 'delete'}}
 #pragma omp target teams map(x)
   foo();
+
 #pragma omp target teams map(to: x)
   foo();
 #pragma omp target teams map(to: to)
@@ -464,6 +483,7 @@ int main(int argc, char **argv) {
   foo();
 #pragma omp target teams map(to, x)
   foo();
+
 #pragma omp target data map(to x) // expected-error {{expected ',' or ')' in 'map' clause}}
 #pragma omp target data map(tofrom: argc > 0 ? argv[1] : argv[2]) // expected-error {{xpected expression containing only member accesses and/or array sections based on named variables}}
 #pragma omp target data map(argc)
@@ -480,18 +500,21 @@ int main(int argc, char **argv) {
 #pragma omp target data map(k), map(k) // expected-error {{variable already marked as mapped in current construct}} expected-note {{used here}}
 #pragma omp target teams map(k), map(k[:5]) // expected-error {{pointer cannot be mapped along with a section derived from itself}} expected-note {{used here}}
   foo();
+
 #pragma omp target data map(da)
 #pragma omp target teams map(da[:4])
   foo();
+
 #pragma omp target data map(k, j, l) // expected-note {{used here}}
 #pragma omp target data map(k[:4]) // expected-error {{pointer cannot be mapped along with a section derived from itself}}
 #pragma omp target data map(j)
 #pragma omp target teams map(l) map(l[:5]) // expected-error {{variable already marked as mapped in current construct}} expected-note {{used here}}
   foo();
-#pragma omp target data map(k[:4], j, l[:4]) // expected-note 2 {{used here}}
+
+#pragma omp target data map(k[:4], j, l[:5]) // expected-note {{used here}}
 #pragma omp target data map(k) // expected-error {{pointer cannot be mapped along with a section derived from itself}}
 #pragma omp target data map(j)
-#pragma omp target teams map(l) // expected-error {{original storage of expression in data environment is shared but data environment do not fully contain mapped expression storage}}
+#pragma omp target teams map(l)
   foo();
 
 #pragma omp target data map(always, tofrom: x)
@@ -500,10 +523,16 @@ int main(int argc, char **argv) {
 #pragma omp target data map(always, tofrom: always, tofrom, x)
 #pragma omp target teams map(tofrom j) // expected-error {{expected ',' or ')' in 'map' clause}}
   foo();
+
 #pragma omp target teams private(j) map(j) // expected-error {{private variable cannot be in a map clause in '#pragma omp target teams' directive}}  expected-note {{defined as private}}
   {}
+
 #pragma omp target teams firstprivate(j) map(j)  // expected-error {{firstprivate variable cannot be in a map clause in '#pragma omp target teams' directive}} expected-note {{defined as firstprivate}}
   {}
+
+#pragma omp target teams map(m) // expected-error {{type 'S6<int>' is not mappable to target}}
+  {}
+
   return tmain<int, 3>(argc)+tmain<from, 4>(argc); // expected-note {{in instantiation of function template specialization 'tmain<int, 3>' requested here}} expected-note {{in instantiation of function template specialization 'tmain<int, 4>' requested here}}
 }
 #endif

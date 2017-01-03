@@ -91,15 +91,21 @@ void OMPCapturedExprDecl::anchor() {}
 
 OMPCapturedExprDecl *OMPCapturedExprDecl::Create(ASTContext &C, DeclContext *DC,
                                                  IdentifierInfo *Id, QualType T,
+                                                 SourceLocation StartLoc,
                                                  unsigned CaptureLevel) {
-  return new (C, DC) OMPCapturedExprDecl(C, DC, Id, T, CaptureLevel);
+  return new (C, DC) OMPCapturedExprDecl(C, DC, Id, T, StartLoc, CaptureLevel);
 }
 
-OMPCapturedExprDecl *
-OMPCapturedExprDecl::CreateDeserialized(ASTContext &C, unsigned ID,
-                                        unsigned CaptureLevel) {
+OMPCapturedExprDecl *OMPCapturedExprDecl::CreateDeserialized(ASTContext &C,
+                                                             unsigned ID,
+                                                             unsigned CaptureLevel) {
   return new (C, ID)
-      OMPCapturedExprDecl(C, nullptr, nullptr, QualType(), CaptureLevel);
+      OMPCapturedExprDecl(C, nullptr, nullptr, QualType(), SourceLocation(), CaptureLevel);
+}
+
+SourceRange OMPCapturedExprDecl::getSourceRange() const {
+  assert(hasInit());
+  return SourceRange(getInit()->getLocStart(), getInit()->getLocEnd());
 }
 
 unsigned OMPCapturedExprDecl::getCaptureLevel() const { return CaptureLevel; }
@@ -108,3 +114,4 @@ void OMPCapturedExprDecl::setCaptureLevel(unsigned CaptureLevel) {
   assert(CaptureLevel >= 1 && "Invalid capture level for omp expression");
   this->CaptureLevel = CaptureLevel;
 }
+

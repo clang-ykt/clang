@@ -1932,16 +1932,16 @@ public:
   }
   void setSupportedOpenCLOpts() override {
     auto &Opts = getSupportedOpenCLOpts();
-    Opts.cl_clang_storage_class_specifiers = 1;
-    Opts.cl_khr_gl_sharing = 1;
-    Opts.cl_khr_icd = 1;
+    Opts.support("cl_clang_storage_class_specifiers");
+    Opts.support("cl_khr_gl_sharing");
+    Opts.support("cl_khr_icd");
 
-    Opts.cl_khr_fp64 = 1;
-    Opts.cl_khr_byte_addressable_store = 1;
-    Opts.cl_khr_global_int32_base_atomics = 1;
-    Opts.cl_khr_global_int32_extended_atomics = 1;
-    Opts.cl_khr_local_int32_base_atomics = 1;
-    Opts.cl_khr_local_int32_extended_atomics = 1;
+    Opts.support("cl_khr_fp64");
+    Opts.support("cl_khr_byte_addressable_store");
+    Opts.support("cl_khr_global_int32_base_atomics");
+    Opts.support("cl_khr_global_int32_extended_atomics");
+    Opts.support("cl_khr_local_int32_base_atomics");
+    Opts.support("cl_khr_local_int32_extended_atomics");
   }
 };
 
@@ -2216,27 +2216,27 @@ public:
 
   void setSupportedOpenCLOpts() override {
     auto &Opts = getSupportedOpenCLOpts();
-    Opts.cl_clang_storage_class_specifiers = 1;
-    Opts.cl_khr_icd = 1;
+    Opts.support("cl_clang_storage_class_specifiers");
+    Opts.support("cl_khr_icd");
 
     if (hasFP64)
-      Opts.cl_khr_fp64 = 1;
+      Opts.support("cl_khr_fp64");
     if (GPU >= GK_EVERGREEN) {
-      Opts.cl_khr_byte_addressable_store = 1;
-      Opts.cl_khr_global_int32_base_atomics = 1;
-      Opts.cl_khr_global_int32_extended_atomics = 1;
-      Opts.cl_khr_local_int32_base_atomics = 1;
-      Opts.cl_khr_local_int32_extended_atomics = 1;
+      Opts.support("cl_khr_byte_addressable_store");
+      Opts.support("cl_khr_global_int32_base_atomics");
+      Opts.support("cl_khr_global_int32_extended_atomics");
+      Opts.support("cl_khr_local_int32_base_atomics");
+      Opts.support("cl_khr_local_int32_extended_atomics");
     }
     if (GPU >= GK_GFX6) {
-      Opts.cl_khr_fp16 = 1;
-      Opts.cl_khr_int64_base_atomics = 1;
-      Opts.cl_khr_int64_extended_atomics = 1;
-      Opts.cl_khr_mipmap_image = 1;
-      Opts.cl_khr_subgroups = 1;
-      Opts.cl_khr_3d_image_writes = 1;
-      Opts.cl_amd_media_ops = 1;
-      Opts.cl_amd_media_ops2 = 1;
+      Opts.support("cl_khr_fp16");
+      Opts.support("cl_khr_int64_base_atomics");
+      Opts.support("cl_khr_int64_extended_atomics");
+      Opts.support("cl_khr_mipmap_image");
+      Opts.support("cl_khr_subgroups");
+      Opts.support("cl_khr_3d_image_writes");
+      Opts.support("cl_amd_media_ops");
+      Opts.support("cl_amd_media_ops2");
     }
   }
 
@@ -2797,6 +2797,40 @@ public:
   const char *getClobbers() const override {
     return "~{dirflag},~{fpsr},~{flags}";
   }
+
+  StringRef getConstraintRegister(const StringRef &Constraint,
+                                  const StringRef &Expression) const override {
+    StringRef::iterator I, E;
+    for (I = Constraint.begin(), E = Constraint.end(); I != E; ++I) {
+      if (isalpha(*I))
+        break;
+    }
+    if (I == E)
+      return "";
+    switch (*I) {
+    // For the register constraints, return the matching register name
+    case 'a':
+      return "ax";
+    case 'b':
+      return "bx";
+    case 'c':
+      return "cx";
+    case 'd':
+      return "dx";
+    case 'S':
+      return "si";
+    case 'D':
+      return "di";
+    // In case the constraint is 'r' we need to return Expression
+    case 'r':
+      return Expression;
+    default:
+      // Default value if there is no constraint for the register
+      return "";
+    }
+    return "";
+  }
+
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override;
   static void setSSELevel(llvm::StringMap<bool> &Features, X86SSEEnum Level,
@@ -2940,7 +2974,7 @@ public:
   }
 
   void setSupportedOpenCLOpts() override {
-    getSupportedOpenCLOpts().setAll();
+    getSupportedOpenCLOpts().supportAll();
   }
 };
 
@@ -5399,6 +5433,8 @@ public:
         Builder.defineMacro("__ARM_VFPV3__");
       if (FPU & VFP4FPU)
         Builder.defineMacro("__ARM_VFPV4__");
+      if (FPU & FPARMV8)
+        Builder.defineMacro("__ARM_FPV5__");
     }
 
     // This only gets set when Neon instructions are actually available, unlike
@@ -8196,7 +8232,7 @@ public:
   void setSupportedOpenCLOpts() override {
     // Assume all OpenCL extensions and optional core features are supported
     // for SPIR since it is a generic target.
-    getSupportedOpenCLOpts().setAll();
+    getSupportedOpenCLOpts().supportAll();
   }
 };
 

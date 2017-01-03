@@ -190,9 +190,9 @@ class OMPCapturedExprDecl final : public VarDecl {
   void anchor() override;
 
   OMPCapturedExprDecl(ASTContext &C, DeclContext *DC, IdentifierInfo *Id,
-                      QualType Type, unsigned CaptureLevel)
-      : VarDecl(OMPCapturedExpr, C, DC, SourceLocation(), SourceLocation(), Id,
-                Type, nullptr, SC_None),
+                      QualType Type, SourceLocation StartLoc, unsigned CaptureLevel)
+      : VarDecl(OMPCapturedExpr, C, DC, StartLoc, SourceLocation(), Id, Type,
+                nullptr, SC_None),
         CaptureLevel(CaptureLevel) {
     setImplicit();
   }
@@ -200,10 +200,12 @@ class OMPCapturedExprDecl final : public VarDecl {
 public:
   static OMPCapturedExprDecl *Create(ASTContext &C, DeclContext *DC,
                                      IdentifierInfo *Id, QualType T,
+                                     SourceLocation StartLoc,
                                      unsigned CaptureLevel);
 
   static OMPCapturedExprDecl *CreateDeserialized(ASTContext &C, unsigned ID,
                                                  unsigned CaptureLevel = 1);
+  SourceRange getSourceRange() const override LLVM_READONLY;
 
   unsigned getCaptureLevel() const;
   void setCaptureLevel(unsigned CaptureLevel);

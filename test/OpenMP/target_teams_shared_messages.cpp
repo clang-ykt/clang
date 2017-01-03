@@ -59,51 +59,51 @@ int main(int argc, char **argv) {
   S5 g(5);
   int i;
   int &j = i;
-  #pragma omp target teams shared // expected-error {{expected '(' after 'shared'}}
+#pragma omp target teams shared // expected-error {{expected '(' after 'shared'}}
   foo();
-  #pragma omp target teams shared ( // expected-error {{expected expression}} expected-error {{expected ')'}} expected-note {{to match this '('}}
+#pragma omp target teams shared ( // expected-error {{expected expression}} expected-error {{expected ')'}} expected-note {{to match this '('}}
   foo();
-  #pragma omp target teams shared () // expected-error {{expected expression}}
+#pragma omp target teams shared () // expected-error {{expected expression}}
   foo();
-  #pragma omp target teams shared (argc // expected-error {{expected ')'}} expected-note {{to match this '('}}
+#pragma omp target teams shared (argc // expected-error {{expected ')'}} expected-note {{to match this '('}}
   foo();
-  #pragma omp target teams shared (argc, // expected-error {{expected expression}} expected-error {{expected ')'}} expected-note {{to match this '('}}
+#pragma omp target teams shared (argc, // expected-error {{expected expression}} expected-error {{expected ')'}} expected-note {{to match this '('}}
   foo();
-  #pragma omp target teams shared (argc > 0 ? argv[1] : argv[2]) // expected-error {{expected variable name}}
+#pragma omp target teams shared (argc > 0 ? argv[1] : argv[2]) // expected-error {{expected variable name}}
   foo();
-  #pragma omp target teams shared (argc)
+#pragma omp target teams shared (argc)
+ foo();
+#pragma omp target teams shared (S1) // expected-error {{'S1' does not refer to a value}}
   foo();
-  #pragma omp target teams shared (S1) // expected-error {{'S1' does not refer to a value}}
+#pragma omp target teams shared (a, b, c, d, f)
   foo();
-  #pragma omp target teams shared (a, b, c, d, f)
+#pragma omp target teams shared (argv[1]) // expected-error {{expected variable name}}
   foo();
-  #pragma omp target teams shared (argv[1]) // expected-error {{expected variable name}}
+#pragma omp target teams shared(ba)
   foo();
-  #pragma omp target teams shared(ba)
+#pragma omp target teams shared(ca)
   foo();
-  #pragma omp target teams shared(ca)
+#pragma omp target teams shared(da)
   foo();
-  #pragma omp target teams shared(da)
+#pragma omp target teams shared(e, g)
   foo();
-  #pragma omp target teams shared(e, g)
+#pragma omp target teams shared(h, B::x) // expected-error 2 {{threadprivate or thread local variable cannot be shared}}
   foo();
-  #pragma omp target teams shared(h, B::x) // expected-error 2 {{threadprivate or thread local variable cannot be shared}}
+#pragma omp target teams private(i), shared(i) // expected-error {{private variable cannot be shared}} expected-note {{defined as private}}
   foo();
-  #pragma omp target teams private(i), shared(i) // expected-error {{private variable cannot be shared}} expected-note {{defined as private}}
+#pragma omp target teams firstprivate(i), shared(i) // expected-error {{firstprivate variable cannot be shared}} expected-note {{defined as firstprivate}}
   foo();
-  #pragma omp target teams firstprivate(i), shared(i) // expected-error {{firstprivate variable cannot be shared}} expected-note {{defined as firstprivate}}
+#pragma omp target teams private(i)
   foo();
-  #pragma omp target teams private(i)
+#pragma omp target teams shared(i)
   foo();
-  #pragma omp target teams shared(i)
+#pragma omp target teams shared(j)
   foo();
-  #pragma omp target teams shared(j)
+#pragma omp target teams firstprivate(i)
   foo();
-  #pragma omp target teams firstprivate(i)
+#pragma omp target teams shared(i)
   foo();
-  #pragma omp target teams shared(i)
-  foo();
-  #pragma omp target teams shared(j)
+#pragma omp target teams shared(j)
   foo();
 
   return 0;

@@ -2552,6 +2552,12 @@ void ASTStmtWriter::VisitOMPTargetTeamsDirective(OMPTargetTeamsDirective *D) {
   Code = serialization::STMT_OMP_TARGET_TEAMS_DIRECTIVE;
 }
 
+void ASTStmtWriter::VisitOMPTargetTeamsDistributeDirective(
+    OMPTargetTeamsDistributeDirective *D) {
+  VisitOMPLoopDirective(D);
+  Code = serialization::STMT_OMP_TARGET_TEAMS_DISTRIBUTE_DIRECTIVE;
+}
+
 void ASTStmtWriter::VisitOMPTargetTeamsDistributeParallelForDirective(
     OMPTargetTeamsDistributeParallelForDirective *D) {
   VisitOMPLoopDirective(D);
@@ -2563,12 +2569,6 @@ void ASTStmtWriter::VisitOMPTargetTeamsDistributeParallelForSimdDirective(
   VisitOMPLoopDirective(D);
   Code = serialization::
       STMT_OMP_TARGET_TEAMS_DISTRIBUTE_PARALLEL_FOR_SIMD_DIRECTIVE;
-}
-
-void ASTStmtWriter::VisitOMPTargetTeamsDistributeDirective(
-    OMPTargetTeamsDistributeDirective *D) {
-  VisitOMPLoopDirective(D);
-  Code = serialization::STMT_OMP_TARGET_TEAMS_DISTRIBUTE_DIRECTIVE;
 }
 
 void ASTStmtWriter::VisitOMPTargetTeamsDistributeSimdDirective(
