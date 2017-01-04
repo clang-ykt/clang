@@ -33,8 +33,8 @@ T tmain() {
   T vec[] = {1, 2};
   S<T> s_arr[] = {1, 2};
   S<T> &var = test;
-#pragma omp target
-#pragma omp teams
+  #pragma omp target
+  #pragma omp teams
 #pragma omp distribute private(t_var, vec, s_arr, s_arr, var, var)
   for (int i = 0; i < 2; ++i) {
     vec[i] = t_var;
@@ -48,81 +48,81 @@ int main() {
   volatile double g;
   volatile double &g1 = g;
 
-#ifdef LAMBDA
+  #ifdef LAMBDA
   // LAMBDA-LABEL: @main
   // LAMBDA: call{{.*}} void [[OUTER_LAMBDA:@.+]](
   [&]() {
-  static float sfvar;
-  // LAMBDA: define{{.*}} internal{{.*}} void [[OUTER_LAMBDA]](
-  // LAMBDA: call i{{[0-9]+}} @__tgt_target_teams(
-  // LAMBDA: call void [[OFFLOADING_FUN:@.+]](
+    static float sfvar;
+    // LAMBDA: define{{.*}} internal{{.*}} void [[OUTER_LAMBDA]](
+    // LAMBDA: call i{{[0-9]+}} @__tgt_target_teams(
+    // LAMBDA: call void [[OFFLOADING_FUN:@.+]](
 
-  // LAMBDA: define{{.+}} void [[OFFLOADING_FUN]]()
-  // LAMBDA: call {{.*}}void {{.+}} @__kmpc_fork_teams({{.+}}, i32 0, {{.+}}* [[OMP_OUTLINED:@.+]] to {{.+}})
-#pragma omp target
-#pragma omp teams
+    // LAMBDA: define{{.+}} void [[OFFLOADING_FUN]]()
+    // LAMBDA: call {{.*}}void {{.+}} @__kmpc_fork_teams({{.+}}, i32 0, {{.+}}* [[OMP_OUTLINED:@.+]] to {{.+}})
+    #pragma omp target
+    #pragma omp teams
 #pragma omp distribute private(g, g1, svar, sfvar)
-  for (int i = 0; i < 2; ++i) {
-    // LAMBDA: define{{.*}} internal{{.*}} void [[OMP_OUTLINED]](i32* noalias %{{.+}}, i32* noalias %{{.+}})
-    // LAMBDA: [[G_PRIVATE_ADDR:%.+]] = alloca double,
-    // LAMBDA: [[G1_PRIVATE_ADDR:%.+]] = alloca double,
-    // LAMBDA: [[TMP_PRIVATE_ADDR:%.+]] = alloca double*,
-    // LAMBDA: [[SVAR_PRIVATE_ADDR:%.+]] = alloca i{{[0-9]+}},
-    // LAMBDA: [[SFVAR_PRIVATE_ADDR:%.+]] = alloca float,
-    // LAMBDA: store double* [[G1_PRIVATE_ADDR]], double** [[TMP_PRIVATE_ADDR]],
-    g = 1;
-    g1 = 1;
-    svar = 3;
-    sfvar = 4.0;
-    // LAMBDA: call {{.*}}void @__kmpc_for_static_init_4(
-    // LAMBDA: store double 1.0{{.+}}, double* [[G_PRIVATE_ADDR]],
-    // LAMBDA: store i{{[0-9]+}} 3, i{{[0-9]+}}* [[SVAR_PRIVATE_ADDR]],
-    // LAMBDA: store float 4.0{{.+}}, float* [[SFVAR_PRIVATE_ADDR]],
-    // LAMBDA: [[G_PRIVATE_ADDR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG:%.+]], i{{[0-9]+}} 0, i{{[0-9]+}} 0
-    // LAMBDA: store double* [[G_PRIVATE_ADDR]], double** [[G_PRIVATE_ADDR_REF]],
-    // LAMBDA: [[TMP_PRIVATE_ADDR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG:%.+]], i{{[0-9]+}} 0, i{{[0-9]+}} 1
-    // LAMBDA: [[G1_PRIVATE_ADDR_FROM_TMP:%.+]] = load double*, double** [[TMP_PRIVATE_ADDR]],
-    // LAMBDA: store double* [[G1_PRIVATE_ADDR_FROM_TMP]], double** [[TMP_PRIVATE_ADDR_REF]],
-    // LAMBDA: [[SVAR_PRIVATE_ADDR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG:%.+]], i{{[0-9]+}} 0, i{{[0-9]+}} 2
-    // LAMBDA: store i{{[0-9]+}}* [[SVAR_PRIVATE_ADDR]], i{{[0-9]+}}** [[SVAR_PRIVATE_ADDR_REF]]
-    // LAMBDA: [[SFVAR_PRIVATE_ADDR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG:%.+]], i{{[0-9]+}} 0, i{{[0-9]+}} 3
-    // LAMBDA: store float* [[SFVAR_PRIVATE_ADDR]], float** [[SFVAR_PRIVATE_ADDR_REF]]
-    // LAMBDA: call{{.*}} void [[INNER_LAMBDA:@.+]](%{{.+}}* [[ARG]])
-    // LAMBDA: call {{.*}}void @__kmpc_for_static_fini(
-    [&]() {
-      // LAMBDA: define {{.+}} void [[INNER_LAMBDA]](%{{.+}}* [[ARG_PTR:%.+]])
-      // LAMBDA: store %{{.+}}* [[ARG_PTR]], %{{.+}}** [[ARG_PTR_REF:%.+]],
-      g = 2;
-      g1 = 2;
-      svar = 4;
-      sfvar = 8.0;
-      // LAMBDA: [[ARG_PTR:%.+]] = load %{{.+}}*, %{{.+}}** [[ARG_PTR_REF]]
-      // LAMBDA: [[G_PTR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG_PTR]], i{{[0-9]+}} 0, i{{[0-9]+}} 0
-      // LAMBDA: [[G_REF:%.+]] = load double*, double** [[G_PTR_REF]]
-      // LAMBDA: store double 2.0{{.+}}, double* [[G_REF]]
+    for (int i = 0; i < 2; ++i) {
+      // LAMBDA: define{{.*}} internal{{.*}} void [[OMP_OUTLINED]](i32* noalias %{{.+}}, i32* noalias %{{.+}})
+      // LAMBDA: [[G_PRIVATE_ADDR:%.+]] = alloca double,
+      // LAMBDA: [[G1_PRIVATE_ADDR:%.+]] = alloca double,
+      // LAMBDA: [[TMP_PRIVATE_ADDR:%.+]] = alloca double*,
+      // LAMBDA: [[SVAR_PRIVATE_ADDR:%.+]] = alloca i{{[0-9]+}},
+      // LAMBDA: [[SFVAR_PRIVATE_ADDR:%.+]] = alloca float,
+      // LAMBDA: store double* [[G1_PRIVATE_ADDR]], double** [[TMP_PRIVATE_ADDR]],
+      g = 1;
+      g1 = 1;
+      svar = 3;
+      sfvar = 4.0;
+      // LAMBDA: call {{.*}}void @__kmpc_for_static_init_4(
+      // LAMBDA: store double 1.0{{.+}}, double* [[G_PRIVATE_ADDR]],
+      // LAMBDA: store i{{[0-9]+}} 3, i{{[0-9]+}}* [[SVAR_PRIVATE_ADDR]],
+      // LAMBDA: store float 4.0{{.+}}, float* [[SFVAR_PRIVATE_ADDR]],
+      // LAMBDA: [[G_PRIVATE_ADDR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG:%.+]], i{{[0-9]+}} 0, i{{[0-9]+}} 0
+      // LAMBDA: store double* [[G_PRIVATE_ADDR]], double** [[G_PRIVATE_ADDR_REF]],
+      // LAMBDA: [[TMP_PRIVATE_ADDR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG:%.+]], i{{[0-9]+}} 0, i{{[0-9]+}} 1
+      // LAMBDA: [[G1_PRIVATE_ADDR_FROM_TMP:%.+]] = load double*, double** [[TMP_PRIVATE_ADDR]],
+      // LAMBDA: store double* [[G1_PRIVATE_ADDR_FROM_TMP]], double** [[TMP_PRIVATE_ADDR_REF]],
+      // LAMBDA: [[SVAR_PRIVATE_ADDR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG:%.+]], i{{[0-9]+}} 0, i{{[0-9]+}} 2
+      // LAMBDA: store i{{[0-9]+}}* [[SVAR_PRIVATE_ADDR]], i{{[0-9]+}}** [[SVAR_PRIVATE_ADDR_REF]]
+      // LAMBDA: [[SFVAR_PRIVATE_ADDR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG:%.+]], i{{[0-9]+}} 0, i{{[0-9]+}} 3
+      // LAMBDA: store float* [[SFVAR_PRIVATE_ADDR]], float** [[SFVAR_PRIVATE_ADDR_REF]]
+      // LAMBDA: call{{.*}} void [[INNER_LAMBDA:@.+]](%{{.+}}* [[ARG]])
+      // LAMBDA: call {{.*}}void @__kmpc_for_static_fini(
+      [&]() {
+	// LAMBDA: define {{.+}} void [[INNER_LAMBDA]](%{{.+}}* [[ARG_PTR:%.+]])
+	// LAMBDA: store %{{.+}}* [[ARG_PTR]], %{{.+}}** [[ARG_PTR_REF:%.+]],
+	g = 2;
+	g1 = 2;
+	svar = 4;
+	sfvar = 8.0;
+	// LAMBDA: [[ARG_PTR:%.+]] = load %{{.+}}*, %{{.+}}** [[ARG_PTR_REF]]
+	// LAMBDA: [[G_PTR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG_PTR]], i{{[0-9]+}} 0, i{{[0-9]+}} 0
+	// LAMBDA: [[G_REF:%.+]] = load double*, double** [[G_PTR_REF]]
+	// LAMBDA: store double 2.0{{.+}}, double* [[G_REF]]
 
-      // LAMBDA: [[TMP_PTR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG_PTR]], i{{[0-9]+}} 0, i{{[0-9]+}} 1
-      // LAMBDA: [[G1_REF:%.+]] = load double*, double** [[TMP_PTR_REF]]
-      // LAMBDA: store double 2.0{{.+}}, double* [[G1_REF]],
-      // LAMBDA: [[SVAR_PTR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG_PTR]], i{{[0-9]+}} 0, i{{[0-9]+}} 2
-      // LAMBDA: [[SVAR_REF:%.+]] = load i{{[0-9]+}}*, i{{[0-9]+}}** [[SVAR_PTR_REF]]
-      // LAMBDA: store i{{[0-9]+}} 4, i{{[0-9]+}}* [[SVAR_REF]]
-      // LAMBDA: [[SFVAR_PTR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG_PTR]], i{{[0-9]+}} 0, i{{[0-9]+}} 3
-      // LAMBDA: [[SFVAR_REF:%.+]] = load float*, float** [[SFVAR_PTR_REF]]
-      // LAMBDA: store float 8.0{{.+}}, float* [[SFVAR_REF]]
-    }();
-  }
+	// LAMBDA: [[TMP_PTR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG_PTR]], i{{[0-9]+}} 0, i{{[0-9]+}} 1
+	// LAMBDA: [[G1_REF:%.+]] = load double*, double** [[TMP_PTR_REF]]
+	// LAMBDA: store double 2.0{{.+}}, double* [[G1_REF]],
+	// LAMBDA: [[SVAR_PTR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG_PTR]], i{{[0-9]+}} 0, i{{[0-9]+}} 2
+	// LAMBDA: [[SVAR_REF:%.+]] = load i{{[0-9]+}}*, i{{[0-9]+}}** [[SVAR_PTR_REF]]
+	// LAMBDA: store i{{[0-9]+}} 4, i{{[0-9]+}}* [[SVAR_REF]]
+	// LAMBDA: [[SFVAR_PTR_REF:%.+]] = getelementptr inbounds %{{.+}}, %{{.+}}* [[ARG_PTR]], i{{[0-9]+}} 0, i{{[0-9]+}} 3
+	// LAMBDA: [[SFVAR_REF:%.+]] = load float*, float** [[SFVAR_PTR_REF]]
+	// LAMBDA: store float 8.0{{.+}}, float* [[SFVAR_REF]]
+      }();
+    }
   }();
   return 0;
-#else
+  #else
   S<float> test;
   int t_var = 0;
   int vec[] = {1, 2};
   S<float> s_arr[] = {1, 2};
   S<float> &var = test;
 
-#pragma omp target
-#pragma omp teams
+  #pragma omp target
+  #pragma omp teams
 #pragma omp distribute private(t_var, vec, s_arr, s_arr, var, var, svar)
   for (int i = 0; i < 2; ++i) {
     vec[i] = t_var;
@@ -130,14 +130,14 @@ int main() {
   }
   int i;
 
-#pragma omp target
-#pragma omp teams
+  #pragma omp target
+  #pragma omp teams
 #pragma omp distribute private(i)
   for (i = 0; i < 2; ++i) {
     ;
   }
   return tmain<int>();
-#endif
+  #endif
 }
 
 // CHECK: define{{.*}} i{{[0-9]+}} @main()
@@ -204,4 +204,3 @@ int main() {
 // CHECK: call void @__kmpc_for_static_fini(
 // CHECK: ret void
 #endif
-

@@ -3160,6 +3160,7 @@ void CodeGenFunction::EmitOMPDistributeLoop(
 
   auto &RT = CGM.getOpenMPRuntime();
 
+  bool HasLastprivateClause = false;
   // Check pre-condition.
   {
     OMPLoopScope PreInitScope(*this, S);
@@ -3197,11 +3198,11 @@ void CodeGenFunction::EmitOMPDistributeLoop(
         // initialization of firstprivate variables and post-update of
         // lastprivate variables.
         CGM.getOpenMPRuntime().emitBarrierCall(
-            *this, S.getLocStart(), OMPD_unknown, /*EmitChecks=*/false,
-            /*ForceSimpleCall=*/true);
+          *this, S.getLocStart(), OMPD_unknown, /*EmitChecks=*/false,
+          /*ForceSimpleCall=*/true);
       }
       EmitOMPPrivateClause(S, LoopScope);
-      bool HasLastprivateClause = EmitOMPLastprivateClauseInit(S, LoopScope);
+      HasLastprivateClause = EmitOMPLastprivateClauseInit(S, LoopScope);
       EmitOMPPrivateLoopCounters(S, LoopScope);
       (void)LoopScope.Privatize();
 
