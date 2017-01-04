@@ -1026,7 +1026,6 @@ void CGOpenMPRuntimeNVPTX::emitGenericEntryFooter(CodeGenFunction &CGF,
   if (!EST.ExitBB)
     EST.ExitBB = CGF.createBasicBlock(".exit");
 
-  CGBuilderTy &Bld = CGF.Builder;
   llvm::BasicBlock *TerminateBB = CGF.createBasicBlock(".termination.notifier");
   CGF.EmitBranch(TerminateBB);
 

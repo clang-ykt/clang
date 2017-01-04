@@ -2463,7 +2463,7 @@ void ASTDeclReader::VisitOMPDeclareReductionDecl(OMPDeclareReductionDecl *D) {
 
 void ASTDeclReader::VisitOMPCapturedExprDecl(OMPCapturedExprDecl *D) {
   VisitVarDecl(D);
-  D->setCaptureLevel(Record[Idx++]);
+  D->setCaptureLevel(Record.readInt());
 }
 
 //===----------------------------------------------------------------------===//

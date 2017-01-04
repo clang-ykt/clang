@@ -1927,7 +1927,7 @@ static OMPCapturedExprDecl *buildCaptureDecl(Sema &S, IdentifierInfo *Id,
     WithInit = true;
   }
   auto *CED = OMPCapturedExprDecl::Create(C, S.CurContext, Id, Ty,
-                                          CaptureExpr->getLocStart(), CaptureLevel));
+                                          CaptureExpr->getLocStart(), CaptureLevel);
   if (!WithInit)
     CED->addAttr(OMPCaptureNoInitAttr::CreateImplicit(C, SourceRange()));
   S.CurContext->addHiddenDecl(CED);
@@ -2103,12 +2103,11 @@ static bool CheckNestingOfRegions(Sema &SemaRef, DSAStackTy *Stack,
       }
       return false;
     }
-    // Allow some constructs (except the ones that start with teams) to be
-    // orphaned (they could be used in functions, called from OpenMP regions
-    // with the required preconditions).
+    // Allow some constructs (except teams) to be orphaned (they could be
+    // used in functions, called from OpenMP regions with the required
+    // preconditions).
     if (ParentRegion == OMPD_unknown &&
-        !(isOpenMPTeamsDirective(CurrentRegion) &&
-          !isOpenMPTargetExecutionDirective(CurrentRegion)))
+        !isOpenMPNestingTeamsDirective(CurrentRegion))
       return false;
     if (CurrentRegion == OMPD_cancellation_point ||
         CurrentRegion == OMPD_cancel) {
@@ -2175,15 +2174,6 @@ static bool CheckNestingOfRegions(Sema &SemaRef, DSAStackTy *Stack,
                           ParentRegion == OMPD_master ||
                           ParentRegion == OMPD_critical ||
                           ParentRegion == OMPD_ordered;
-    } else if (isOpenMPTeamsDirective(CurrentRegion) &&
-               !isOpenMPTargetExecutionDirective(CurrentRegion)) {
-      // OpenMP [2.16, Nesting of Regions]
-      // If specified, a teams construct must be contained within a target
-      // construct.
-      NestingProhibited = ParentRegion != OMPD_target;
-      OrphanSeen = ParentRegion == OMPD_unknown;
-      Recommend = ShouldBeInTargetRegion;
-      Stack->setParentTeamsRegionLoc(Stack->getConstructLoc());
     } else if (isOpenMPWorksharingDirective(CurrentRegion) &&
                !isOpenMPParallelDirective(CurrentRegion) &&
                !isOpenMPTeamsDirective(CurrentRegion)) {
@@ -2210,7 +2200,7 @@ static bool CheckNestingOfRegions(Sema &SemaRef, DSAStackTy *Stack,
                           !(isOpenMPSimdDirective(ParentRegion) ||
                             Stack->isParentOrderedRegion());
       Recommend = ShouldBeInOrderedRegion;
-    } else if (isOpenMPTeamsDirective(CurrentRegion)) {
+    } else if (isOpenMPNestingTeamsDirective(CurrentRegion)) {
       // OpenMP [2.16, Nesting of Regions]
       // If specified, a teams construct must be contained within a target
       // construct.
@@ -2219,7 +2209,10 @@ static bool CheckNestingOfRegions(Sema &SemaRef, DSAStackTy *Stack,
       Recommend = ShouldBeInTargetRegion;
       Stack->setParentTeamsRegionLoc(Stack->getConstructLoc());
     }
-    if (!NestingProhibited && ParentRegion == OMPD_teams) {
+    if (!NestingProhibited &&
+        !isOpenMPTargetExecutionDirective(CurrentRegion) &&
+        !isOpenMPTargetDataManagementDirective(CurrentRegion) &&
+        (ParentRegion == OMPD_teams || ParentRegion == OMPD_target_teams)) {
       // OpenMP [2.16, Nesting of Regions]
       // distribute, parallel, parallel sections, parallel workshare, and the
       // parallel loop and parallel loop SIMD constructs are the only OpenMP
@@ -2229,13 +2222,12 @@ static bool CheckNestingOfRegions(Sema &SemaRef, DSAStackTy *Stack,
       Recommend = ShouldBeInParallelRegion;
     }
     if (!NestingProhibited &&
-        isOpenMPNestingDistributeDirective(CurrentRegion) &&
-        !isOpenMPTeamsDirective(CurrentRegion)) {
+        isOpenMPNestingDistributeDirective(CurrentRegion)) {
       // OpenMP 4.5 [2.17 Nesting of Regions]
       // The region associated with the distribute construct must be strictly
       // nested inside a teams region
       NestingProhibited =
-          (ParentRegion != OMPD_teams) && (ParentRegion != OMPD_target_teams);
+          (ParentRegion != OMPD_teams && ParentRegion != OMPD_target_teams);
       Recommend = ShouldBeInTeamsRegion;
     }
     if (!NestingProhibited &&
@@ -2628,6 +2620,7 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
   case OMPD_target_teams_distribute_simd:
     Res = ActOnOpenMPTargetTeamsDistributeSimdDirective(
         ClausesWithImplicit, AStmt, StartLoc, EndLoc, VarsWithInheritedDSA);
+    AllowedNameModifiers.push_back(OMPD_target);
     break;
   case OMPD_declare_target:
   case OMPD_end_declare_target:
