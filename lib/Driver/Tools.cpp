@@ -12255,6 +12255,15 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-arch");
     CmdArgs.push_back(Args.MakeArgString(gpu_arch));
 
+    // add paths specified in LIBRARY_PATH environment variable as -L options.
+    addDirectoryList(Args, CmdArgs, "-L", "LIBRARY_PATH");
+
+    // add paths for the default clang library path.
+    SmallString<256> DefaultLibPath =
+        llvm::sys::path::parent_path(TC.getDriver().Dir);
+    llvm::sys::path::append(DefaultLibPath, "lib" CLANG_LIBDIR_SUFFIX);
+    CmdArgs.push_back(Args.MakeArgString(Twine("-L") + DefaultLibPath));
+
     // add linking against library implementing OpenMP calls on NVPTX target
     CmdArgs.push_back("-lomptarget-nvptx");
 
@@ -12303,9 +12312,6 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     }
 
     AddOpenMPLinkerScript(getToolChain(), C, Output, Inputs, Args, CmdArgs, JA);
-
-    // add paths specified in LIBRARY_PATH environment variable as -L options
-    addDirectoryList(Args, CmdArgs, "-L", "LIBRARY_PATH");
 
     const char *Exec =
         Args.MakeArgString(getToolChain().GetProgramPath("nvlink"));
