@@ -312,9 +312,6 @@ private:
   public:
     /// \brief Base class of the entries info.
     class OffloadEntryInfo {
-      // \brief Flags associated the device global.
-      uint64_t Flags;
-
     public:
       /// \brief Kind of a given entry. Currently, only target regions are
       /// supported.
@@ -342,7 +339,10 @@ private:
       void setFlags(uint64_t NewFlags) { Flags = NewFlags; }
       static bool classof(const OffloadEntryInfo *Info) { return true; }
 
-    protected:
+    private:
+      // \brief Flags associated the device global.
+      uint64_t Flags;
+
       // \brief Order this entry was emitted.
       unsigned Order;
 
