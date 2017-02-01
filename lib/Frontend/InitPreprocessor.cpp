@@ -974,6 +974,15 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     break;
   }
 
+  // If using OpenMP, we set these experimental macros to allow the user to
+  // do different things for host and device in the same compilation unit.
+  if (LangOpts.OpenMP) {
+    if (LangOpts.OpenMPIsDevice)
+      Builder.defineMacro("__OPENMP_IS_DEVICE__");
+    else
+      Builder.defineMacro("__OPENMP_IS_HOST__");
+  }
+
   // CUDA device path compilaton
   if (LangOpts.CUDAIsDevice) {
     // The CUDA_ARCH value is set for the GPU target specified in the NVPTX
