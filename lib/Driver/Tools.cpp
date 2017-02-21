@@ -12200,8 +12200,18 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
   for (const auto& II : Inputs)
     CmdArgs.push_back(Args.MakeArgString(II.getFilename()));
 
-  for (const auto& A : Args.getAllArgValues(options::OPT_Xcuda_ptxas))
-    CmdArgs.push_back(Args.MakeArgString(A));
+  // List of unique PTXAS specific arguments
+  ArgStringList CmdPtxasArgs;
+  for (const auto& A : Args.getAllArgValues(options::OPT_Xcuda_ptxas)){
+    bool found = false;
+    for (const auto StringArg : CmdPtxasArgs)
+      if (StringArg == A)
+        found = true;
+    if (!found)
+      CmdPtxasArgs.push_back(Args.MakeArgString(A));
+  }
+
+  CmdArgs.append(CmdPtxasArgs.begin(), CmdPtxasArgs.end());
 
   // In OpenMP we need to generate relocatable code.
   if (JA.isOffloading(Action::OFK_OpenMP))
