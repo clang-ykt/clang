@@ -4895,6 +4895,7 @@ CudaToolChain::CudaToolChain(const Driver &D, const llvm::Triple &Triple,
       CudaInstallation(D, Triple, Args) {
   if (CudaInstallation.isValid())
     getProgramPaths().push_back(CudaInstallation.getBinPath());
+  getProgramPaths().push_back(getDriver().Dir);
 }
 
 void CudaToolChain::addClangTargetOptions(
