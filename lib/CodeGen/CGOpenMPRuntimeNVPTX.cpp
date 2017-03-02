@@ -5117,3 +5117,4 @@ void CGOpenMPRuntimeNVPTX::emitReduction(
   CGF.EmitBranch(DefaultBB);
   CGF.EmitBlock(DefaultBB, /*IsFinished=*/true);
 }
+
