@@ -896,6 +896,11 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.EmitCheckPathComponentsToStrip = getLastArgIntValue(
       Args, OPT_fsanitize_undefined_strip_path_components_EQ, 0, Diags);
 
+  // Check if -fopenmp is specified. We use version 4.5 by default.
+  bool OpenMPEnabled = Args.hasArg(options::OPT_fopenmp) ? 45 : 0;
+  Opts.OpenMPNonAliasedMaps =
+      OpenMPEnabled && Args.hasArg(options::OPT_fopenmp_nonaliased_maps);
+
   return Success;
 }
 
@@ -2417,29 +2422,6 @@ static void ParseTargetArgs(TargetOptions &Opts, ArgList &Args,
   Opts.OpenCLExtensionsAsWritten = Args.getAllArgValues(OPT_cl_ext_EQ);
 }
 
-bool ParseOpenMPLangArgs(LangOptions &Opts, ArgList &Args){
-  bool Success = true;
-
-  // Check if -fopenmp is specified. We use version 4.5 by default.
-  Opts.OpenMP = Args.hasArg(options::OPT_fopenmp) ? 45 : 0;
-  Opts.OpenMPUseTLS =
-      Opts.OpenMP && !Args.hasArg(options::OPT_fnoopenmp_use_tls);
-  Opts.OpenMPIsDevice =
-      Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_is_device);
-  Opts.OpenMPNonAliasedMaps =
-      Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_nonaliased_maps);
-  Opts.OpenMPCombineDirs =
-      Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_combine_dirs);
-  Opts.OpenMPIgnoreUnmappableTypes =
-      Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_ignore_unmappable_types);
-  Opts.OpenMPNoSPMD =
-      Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_nvptx_nospmd);
-  Opts.OpenMPImplicitDeclareTarget =
-      Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_implicit_declare_target);
-
-  return Success;
-}
-
 bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
                                         const char *const *ArgBegin,
                                         const char *const *ArgEnd,
@@ -2503,10 +2485,6 @@ bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
     if (Res.getFrontendOpts().ProgramAction == frontend::RewriteObjC)
       LangOpts.ObjCExceptions = 1;
   }
-
-  // Parse some of the language options that are required for AST and IR
-  // compilation.
-  ParseOpenMPLangArgs(LangOpts, Args);
 
   if (LangOpts.CUDA) {
     // During CUDA device-side compilation, the aux triple is the
