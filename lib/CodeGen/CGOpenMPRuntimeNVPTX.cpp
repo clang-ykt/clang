@@ -1529,7 +1529,6 @@ getNestedTeamsSPMDDirective(const OMPExecutableDirective &D) {
     if (isOpenMPTeamsDirective(DirectiveKind) &&
         isOpenMPParallelDirective(DirectiveKind))
       return NestedDir;
-    return nullptr;
     if (isOpenMPTeamsDirective(DirectiveKind) ) {
         const CapturedStmt &innerCS = *cast<CapturedStmt>(NestedDir->getAssociatedStmt());
         if (auto *InnerNestedDir = dyn_cast_or_null<OMPExecutableDirective>(
