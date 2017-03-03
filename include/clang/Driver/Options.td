@@ -1139,6 +1139,8 @@ def fopenmp_use_tls : Flag<["-"], "fopenmp-use-tls">, Group<f_Group>, Flags<[NoA
 def fnoopenmp_use_tls : Flag<["-"], "fnoopenmp-use-tls">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fopenmp_nonaliased_maps : Flag<["-"], "fopenmp-nonaliased-maps">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fnoopenmp_nonaliased_maps : Flag<["-"], "fnoopenmp-nonaliased-maps">, Group<f_Group>, Flags<[NoArgumentUnused]>;
+def fopenmp_combine_dirs : Flag<["-"], "fopenmp-combine-dirs">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
+def fnoopenmp_combine_dirs : Flag<["-"], "fnoopenmp-combine-dirs">, Group<f_Group>, Flags<[NoArgumentUnused]>;
 def fopenmp_ignore_unmappable_types : Flag<["-"], "fopenmp-ignore-unmappable-types">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fnoopenmp_ignore_unmappable_types : Flag<["-"], "fnoopenmp-ignore-unmappable-types">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fopenmp_implicit_declare_target : Flag<["-"], "fopenmp-implicit-declare-target">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;

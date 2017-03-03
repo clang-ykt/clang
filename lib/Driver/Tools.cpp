@@ -5400,6 +5400,12 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                        /*Default=*/false))
         CmdArgs.push_back("-fopenmp-nonaliased-maps");
 
+      // If the user provides the fopenmp-combine-dirs flag, pass it on.
+      if (Args.hasFlag(options::OPT_fopenmp_combine_dirs,
+                       options::OPT_fnoopenmp_combine_dirs,
+                       /*Default=*/false))
+        CmdArgs.push_back("-fopenmp-combine-dirs");
+
       Args.AddAllArgs(CmdArgs, options::OPT_fopenmp_version_EQ);
       break;
     default:

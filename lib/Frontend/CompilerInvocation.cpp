@@ -2142,6 +2142,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
       Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_is_device);
   Opts.OpenMPNonAliasedMaps =
       Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_nonaliased_maps);
+  Opts.OpenMPCombineDirs = 
+      Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_combine_dirs);
   Opts.OpenMPIgnoreUnmappableTypes =
       Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_ignore_unmappable_types);
   Opts.OpenMPNoSPMD =

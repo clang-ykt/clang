@@ -6254,9 +6254,11 @@ StmtResult Sema::ActOnOpenMPDistributeParallelForDirective(
   bool CoalescedDistSchedule;
   std::tie(CoalescedSchedule, CoalescedDistSchedule) =
       generateCoalescedSchedule(*this, Clauses);
+/*
   // FIXME: 'distribute parallel for' does not support coalescing on the
   // distribute clause.
   CoalescedDistSchedule = false;
+*/
   OMPLoopDirective::HelperExprs B;
   // In presence of clause 'collapse' with number of loops, it will
   // define the nested loops number.

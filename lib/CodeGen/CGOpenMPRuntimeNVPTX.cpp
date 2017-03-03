@@ -1475,15 +1475,44 @@ static const Stmt *ignoreCompoundStmts(const Stmt *Body) {
   return Body;
 }
 
+static bool onlyOneStmt(const Stmt *Body) {
+    int size = 1;
+    while (auto *CS = dyn_cast_or_null<CompoundStmt>(Body)) {
+        Body = CS->body_front();
+        size = CS->size();
+    }
+    if (size == 1) {
+        return true;
+    } else {
+        return false;
+   }
+}
+
 // check for inner (nested) SPMD teams construct, if any
-static bool hasNestedTeamsSPMDDirective(const OMPExecutableDirective &D) {
+static bool hasNestedTeamsSPMDDirective(const OMPExecutableDirective &D, bool tryCombineAggressively) {
   const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
 
   if (auto *NestedDir = dyn_cast_or_null<OMPExecutableDirective>(
           ignoreCompoundStmts(CS.getCapturedStmt()))) {
     OpenMPDirectiveKind DirectiveKind = NestedDir->getDirectiveKind();
-    return isOpenMPTeamsDirective(DirectiveKind) &&
-           isOpenMPParallelDirective(DirectiveKind);
+    if( isOpenMPTeamsDirective(DirectiveKind) &&
+           isOpenMPParallelDirective(DirectiveKind)) {
+	return true;
+    } else if (tryCombineAggressively) {
+      if (isOpenMPTeamsDirective(DirectiveKind)) {
+        const CapturedStmt &innerCS = *cast<CapturedStmt>(NestedDir->getAssociatedStmt());
+        if (auto *InnerNestedDir = dyn_cast_or_null<OMPExecutableDirective>(
+          ignoreCompoundStmts(innerCS.getCapturedStmt()))) {
+          OpenMPDirectiveKind InnerDirectiveKind = InnerNestedDir->getDirectiveKind();
+         if (onlyOneStmt(CS.getCapturedStmt()) && onlyOneStmt(innerCS.getCapturedStmt()) && isOpenMPDistributeDirective(InnerDirectiveKind) && isOpenMPParallelDirective(InnerDirectiveKind)) {
+                printf("combined 2\n");
+             return true;
+         }
+       }
+      }
+    } else {
+	return false;
+    }
   }
 
   return false;
@@ -1500,8 +1529,18 @@ getNestedTeamsSPMDDirective(const OMPExecutableDirective &D) {
     if (isOpenMPTeamsDirective(DirectiveKind) &&
         isOpenMPParallelDirective(DirectiveKind))
       return NestedDir;
+    return nullptr;
+    if (isOpenMPTeamsDirective(DirectiveKind) ) {
+        const CapturedStmt &innerCS = *cast<CapturedStmt>(NestedDir->getAssociatedStmt());
+        if (auto *InnerNestedDir = dyn_cast_or_null<OMPExecutableDirective>(
+          ignoreCompoundStmts(innerCS.getCapturedStmt()))) {
+          OpenMPDirectiveKind InnerDirectiveKind = InnerNestedDir->getDirectiveKind();
+         if (isOpenMPParallelDirective(InnerDirectiveKind)) {
+             return InnerNestedDir;
+         }
+       }
+    }
   }
-
   return nullptr;
 }
 
@@ -1516,7 +1555,7 @@ GetExecutionMode(CodeGenModule &CGM, const OMPExecutableDirective &D) {
   case OMPD_target: {
     // If the target region as a nested 'teams distribute parallel for',
     // the specifications guarantee that there can be no serial region.
-    return hasNestedTeamsSPMDDirective(D)
+    return hasNestedTeamsSPMDDirective(D, CGM.getLangOpts().OpenMPCombineDirs)
                ? CGOpenMPRuntimeNVPTX::ExecutionMode::SPMD
                : CGOpenMPRuntimeNVPTX::ExecutionMode::GENERIC;
   }
@@ -1608,7 +1647,7 @@ getSPMDDirective(const OMPExecutableDirective &D) {
   switch (D.getDirectiveKind()) {
   case OMPD_target:
   case OMPD_target_simd: {
-    const OMPExecutableDirective *NestedDir = getNestedTeamsSPMDDirective(D);
+    const OMPExecutableDirective *NestedDir = getNestedTeamsSPMDDirective(D/*,CGM.getLangOpts().OpenMPCombineDirs*/);
     assert(NestedDir && "Failed to find nested teams SPMD directive.");
     return NestedDir;
   }
