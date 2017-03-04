@@ -5230,7 +5230,7 @@ void CGOpenMPRuntime::emitTargetOutlinedFunctionHelper(
   OutlinedFn = CGF.GenerateOpenMPCapturedStmtFunction(
       CS, UseCapturedArgumentsOnly,
       /*CaptureLevel=*/1, /*ImplicitParamStop=*/0,
-      CGM.getCodeGenOpts().OpenMPNonAliasedMaps);
+      CGM.getLangOpts().OpenMPNonAliasedMaps);
 
   // If this target outline function is not an offload entry, we don't need to
   // register it.
