@@ -6257,8 +6257,9 @@ StmtResult Sema::ActOnOpenMPDistributeParallelForDirective(
   // FIXME: 'distribute parallel for' does not support coalescing on the
   // distribute clause.
 
-  if (!getLangOpts().OpenMPCombineDirs)
+  if (!getLangOpts().OpenMPCombineDirs) {
   CoalescedDistSchedule = false;
+  }
   OMPLoopDirective::HelperExprs B;
   // In presence of clause 'collapse' with number of loops, it will
   // define the nested loops number.

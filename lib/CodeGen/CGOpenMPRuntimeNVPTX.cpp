@@ -1505,7 +1505,6 @@ static bool hasNestedTeamsSPMDDirective(const OMPExecutableDirective &D, bool tr
           ignoreCompoundStmts(innerCS.getCapturedStmt()))) {
           OpenMPDirectiveKind InnerDirectiveKind = InnerNestedDir->getDirectiveKind();
          if (onlyOneStmt(CS.getCapturedStmt()) && onlyOneStmt(innerCS.getCapturedStmt()) && isOpenMPDistributeDirective(InnerDirectiveKind) && isOpenMPParallelDirective(InnerDirectiveKind)) {
-                printf("combined 2\n");
              return true;
          }
        }
@@ -1554,7 +1553,7 @@ GetExecutionMode(CodeGenModule &CGM, const OMPExecutableDirective &D) {
   case OMPD_target: {
     // If the target region as a nested 'teams distribute parallel for',
     // the specifications guarantee that there can be no serial region.
-    return hasNestedTeamsSPMDDirective(D, CGM.getLangOpts().OpenMPCombineDirs)
+    return hasNestedTeamsSPMDDirective(D, CGM.getCodeGenOpts().OpenmpCombineDirs)
                ? CGOpenMPRuntimeNVPTX::ExecutionMode::SPMD
                : CGOpenMPRuntimeNVPTX::ExecutionMode::GENERIC;
   }

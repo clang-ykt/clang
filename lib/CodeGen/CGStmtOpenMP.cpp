@@ -272,6 +272,7 @@ static Address castValueFromUintptr(CodeGenFunction &CGF, QualType DstType,
 llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
     const CapturedStmt &S, bool UseCapturedArgumentsOnly, unsigned CaptureLevel,
     unsigned ImplicitParamStop, bool NonAliasedMaps) {
+
   assert(
       CapturedStmtInfo &&
       "CapturedStmtInfo should be set when generating the captured function");
