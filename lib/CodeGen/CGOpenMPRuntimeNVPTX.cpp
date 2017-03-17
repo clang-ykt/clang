@@ -3614,8 +3614,6 @@ void CGOpenMPRuntimeNVPTX::emitTeamsCall(CodeGenFunction &CGF,
     // any contained worksharing loop works smoothly.
     auto &&CGDistributeInlined = [&D](CodeGenFunction &CGF, PrePostActionTy &) {
       CodeGenFunction::OMPPrivateScope PrivateScope(CGF);
-      (void)CGF.EmitOMPFirstprivateClause(D, PrivateScope);
-      CGF.EmitOMPPrivateClause(D, PrivateScope);
       CGF.EmitOMPReductionClauseInit(D, PrivateScope);
       (void)PrivateScope.Privatize();
       auto &&CGDistributeLoop = [&D](CodeGenFunction &CGF, PrePostActionTy &) {
