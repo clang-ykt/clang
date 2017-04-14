@@ -1572,7 +1572,7 @@ GetExecutionMode(CodeGenModule &CGM, const OMPExecutableDirective &D) {
     llvm_unreachable(
         "Unknown programming model for OpenMP directive on NVPTX target.");
   }
-  return CGOpenMPRuntimeNVPTX::ExecutionMode::Unknown;
+  return CGOpenMPRuntimeNVPTX::ExecutionMode::UNKNOWN;
 }
 
 class ExecutionModeRAII {
@@ -1589,7 +1589,7 @@ public:
     IsOrphaned = ThisOrphaned;
   }
   ~ExecutionModeRAII() {
-    CurrMode = CGOpenMPRuntimeNVPTX::ExecutionMode::Unknown;
+    CurrMode = CGOpenMPRuntimeNVPTX::ExecutionMode::UNKNOWN;
     IsOrphaned = !IsOrphaned;
   }
 };
@@ -3560,7 +3560,7 @@ bool CGOpenMPRuntimeNVPTX::requiresBarrier(const OMPLoopDirective &S) const {
 
 CGOpenMPRuntimeNVPTX::CGOpenMPRuntimeNVPTX(CodeGenModule &CGM)
     : CGOpenMPRuntime(CGM), IsOrphaned(true), ParallelNestingLevel(0),
-      CurrMode(ExecutionMode::Unknown) {
+      CurrMode(ExecutionMode::UNKNOWN) {
   if (!CGM.getLangOpts().OpenMPIsDevice)
     llvm_unreachable("OpenMP NVPTX can only handle device code.");
 }

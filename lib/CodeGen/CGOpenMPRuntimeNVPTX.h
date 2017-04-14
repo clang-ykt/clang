@@ -139,7 +139,7 @@ public:
     SPMD,
     /// \brief Generic codegen to support fork-join model.
     GENERIC,
-    Unknown,
+    UNKNOWN,
   };
 
 private:
