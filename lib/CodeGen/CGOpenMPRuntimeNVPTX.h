@@ -215,39 +215,108 @@ private:
   // Pointers to outlined function work for workers.
   llvm::SmallVector<llvm::Function *, 16> Work;
 
-  class EntryFunctionState {
+  class TargetKernelProperties {
   public:
-    llvm::BasicBlock *ExitBB;
-    // This variable records if the current SPMD target region requires a valid
-    // OMP runtime.  In SPMD mode it is possible to disable the OMP runtime
-    // and thus reduce runtime overhead.
-    bool RequiresOMPRuntime;
-    // This variable records if the current SPMD target region requires data
-    // sharing support.  Data sharing support is required if this SPMD
-    // construct may have a nested parallel or simd directive.
-    bool RequiresDataSharing;
-
-    EntryFunctionState()
-        : ExitBB(nullptr), RequiresOMPRuntime(true),
-          RequiresDataSharing(true){};
-
-    EntryFunctionState(const OMPExecutableDirective &D)
-        : ExitBB(nullptr), RequiresOMPRuntime(true), RequiresDataSharing(true) {
-      setRequiresOMPRuntime(D);
-      setRequiresDataSharing(D);
+    TargetKernelProperties(const CodeGenModule &CGM,
+                           const OMPExecutableDirective &D)
+        : CGM(CGM), D(D), Mode(CGOpenMPRuntimeNVPTX::ExecutionMode::UNKNOWN),
+          RequiresOMPRuntime(true), RequiresDataSharing(true),
+          MayContainOrphanedParallel(true),
+          HasAtMostOneNestedParallelInLexicalScope(false),
+          MasterSharedDataSize(0) {
+      assert(isOpenMPTargetExecutionDirective(D.getDirectiveKind()) &&
+             "Expecting a target execution directive.");
+      setExecutionMode();
+      setRequiresOMPRuntime();
+      setRequiresDataSharing();
+      setMayContainOrphanedParallel();
+      setHasAtMostOneNestedParallelInLexicalScope();
+      setMasterSharedDataSize();
     };
 
-    void setRequiresOMPRuntime(const OMPExecutableDirective &D);
-    void setRequiresDataSharing(const OMPExecutableDirective &D);
+    CGOpenMPRuntimeNVPTX::ExecutionMode getExecutionMode() const {
+      return Mode;
+    }
+
+    bool requiresOMPRuntime() const;
+
+    bool requiresDataSharing() const { return RequiresDataSharing; }
+
+    bool mayContainOrphanedParallel() const {
+      return MayContainOrphanedParallel;
+    }
+
+    bool hasAtMostOneL1ParallelRegion() const {
+      // 'HasAtMostOneNestedParallelInLexicalScope' counts the number of
+      // parallel regions in the lexical scope of the target.  If there
+      // can be one or more orphaned parallel regions, return false.  Note
+      // that this says nothing about L2 parallelism, i.e., a parallel
+      // within another parallel region.
+      return HasAtMostOneNestedParallelInLexicalScope &&
+             !MayContainOrphanedParallel;
+    }
+
+    unsigned masterSharedDataSize() const { return MasterSharedDataSize; }
+
+  private:
+    const CodeGenModule &CGM;
+    const OMPExecutableDirective &D;
+
+    // Code generation mode for the target directive.
+    CGOpenMPRuntimeNVPTX::ExecutionMode Mode;
+    // Record if the target region requires an OpenMP runtime.  For simple
+    // kernels it is possible to disable the runtime and thus reduce
+    // execution overhead.
+    bool RequiresOMPRuntime;
+    // Record if the target region requires data sharing support.  Data
+    // sharing support is not required for an SPMD construct if it does not
+    // contain a nested parallel or simd directive.
+    bool RequiresDataSharing;
+    // Record if the target region may encounter an orphaned parallel
+    // directive, i.e., a parallel directive in a 'declare target' function.
+    bool MayContainOrphanedParallel;
+    // Record if the target region has at most a single nested parallel
+    // region in its lexical scope.
+    bool HasAtMostOneNestedParallelInLexicalScope;
+    // Approximate the size in bytes of variables to be shared from master
+    // to workers.
+    unsigned MasterSharedDataSize;
+
+    void setExecutionMode();
+
+    void setRequiresOMPRuntime();
+
+    // Check if the current target region requires data sharing support.
+    // Data sharing support is required if this SPMD construct may have a nested
+    // parallel or simd directive.
+    void setRequiresDataSharing();
+
+    void setMayContainOrphanedParallel();
+
+    void setHasAtMostOneNestedParallelInLexicalScope();
+
+    void setMasterSharedDataSize();
+  };
+
+  class EntryFunctionState {
+  public:
+    const TargetKernelProperties &TP;
+    llvm::BasicBlock *ExitBB;
+
+    EntryFunctionState(const TargetKernelProperties &TP)
+        : TP(TP), ExitBB(nullptr){};
   };
 
   class WorkerFunctionState {
   public:
+    const TargetKernelProperties &TP;
     llvm::Function *WorkerFn;
     const CGFunctionInfo *CGFI;
-    bool ContainsOrphanedParallel;
 
-    WorkerFunctionState(CodeGenModule &CGM, const OMPExecutableDirective &D);
+    WorkerFunctionState(CodeGenModule &CGM, const TargetKernelProperties &TP)
+        : TP(TP), WorkerFn(nullptr), CGFI(nullptr) {
+      createWorkerFunction(CGM);
+    };
 
   private:
     void createWorkerFunction(CodeGenModule &CGM);
@@ -315,13 +384,15 @@ private:
   /// \brief Emit outlined function specialized for the Fork-Join
   /// programming model for applicable target directives on the NVPTX device.
   /// \param D Directive to emit.
+  /// \param TP Kernel properties for this target region.
   /// \param ParentName Name of the function that encloses the target region.
   /// \param OutlinedFn Outlined function value to be defined by this call.
   /// \param OutlinedFnID Outlined function ID value to be defined by this call.
   /// \param IsOffloadEntry True if the outlined function is an offload entry.
   /// An outlined function may not be an entry if, e.g. the if clause always
   /// evaluates to false.
-  void emitGenericKernel(const OMPExecutableDirective &D, StringRef ParentName,
+  void emitGenericKernel(const OMPExecutableDirective &D,
+                         const TargetKernelProperties &TP, StringRef ParentName,
                          llvm::Function *&OutlinedFn,
                          llvm::Constant *&OutlinedFnID, bool IsOffloadEntry,
                          const RegionCodeGenTy &CodeGen);
@@ -330,13 +401,15 @@ private:
   /// Multiple Data programming model for applicable target directives on the
   /// NVPTX device.
   /// \param D Directive to emit.
+  /// \param TP Kernel properties for this target region.
   /// \param ParentName Name of the function that encloses the target region.
   /// \param OutlinedFn Outlined function value to be defined by this call.
   /// \param OutlinedFnID Outlined function ID value to be defined by this call.
   /// \param IsOffloadEntry True if the outlined function is an offload entry.
   /// An outlined function may not be an entry if, e.g. the if clause always
   /// evaluates to false.
-  void emitSPMDKernel(const OMPExecutableDirective &D, StringRef ParentName,
+  void emitSPMDKernel(const OMPExecutableDirective &D,
+                      const TargetKernelProperties &TP, StringRef ParentName,
                       llvm::Function *&OutlinedFn,
                       llvm::Constant *&OutlinedFnID, bool IsOffloadEntry,
                       const RegionCodeGenTy &CodeGen);
