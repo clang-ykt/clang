@@ -843,7 +843,8 @@ void CGOpenMPRuntimeNVPTX::WorkerFunctionState::createWorkerFunction(
       /* placeholder */ "_worker", &CGM.getModule());
   CGM.SetInternalFunctionAttributes(/*D=*/nullptr, WorkerFn, *CGFI);
   WorkerFn->setLinkage(llvm::GlobalValue::InternalLinkage);
-  WorkerFn->addFnAttr(llvm::Attribute::NoInline);
+  WorkerFn->removeFnAttr(llvm::Attribute::NoInline);
+  WorkerFn->addFnAttr(llvm::Attribute::AlwaysInline);
 }
 
 void CGOpenMPRuntimeNVPTX::emitWorkerFunction(WorkerFunctionState &WST) {
@@ -2820,6 +2821,8 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
       CGM.getTypes().GetFunctionType(CGFI), llvm::GlobalValue::InternalLinkage,
       OutlinedParallelFn.getName() + "_wrapper", &CGM.getModule());
   CGM.SetInternalFunctionAttributes(/*D=*/nullptr, Fn, CGFI);
+  Fn->removeFnAttr(llvm::Attribute::NoInline);
+  Fn->addFnAttr(llvm::Attribute::AlwaysInline);
   Fn->setLinkage(llvm::GlobalValue::InternalLinkage);
 
   CodeGenFunction CGF(CGM, /*suppressNewContext=*/true);
@@ -3143,7 +3146,8 @@ void CGOpenMPRuntimeNVPTX::emitGenericParallelCall(
   assert(WFn && "Wrapper function does not exist??");
 
   // Force inline this outlined function at its call site.
-  // Fn->addFnAttr(llvm::Attribute::AlwaysInline);
+  Fn->removeFnAttr(llvm::Attribute::NoInline);
+  Fn->addFnAttr(llvm::Attribute::AlwaysInline);
   Fn->setLinkage(llvm::GlobalValue::InternalLinkage);
 
   // Emit code that does the data sharing changes in the beginning of the
@@ -3333,7 +3337,8 @@ void CGOpenMPRuntimeNVPTX::emitSimdCall(CodeGenFunction &CGF,
   assert(WFn && "Wrapper function does not exist??");
 
   // Force inline this outlined function at its call site.
-  // Fn->addFnAttr(llvm::Attribute::AlwaysInline);
+  Fn->removeFnAttr(llvm::Attribute::NoInline);
+  Fn->addFnAttr(llvm::Attribute::AlwaysInline);
   Fn->setLinkage(llvm::GlobalValue::InternalLinkage);
 
   // Emit code that does the data sharing changes in the beginning of the
