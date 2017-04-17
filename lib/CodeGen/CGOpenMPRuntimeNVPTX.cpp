@@ -72,14 +72,15 @@ enum OpenMPRTLFunctionNVPTX {
   /// \brief Call to void* __kmpc_data_sharing_environment_begin(
   /// __kmpc_data_sharing_slot **SavedSharedSlot, void **SavedSharedStack, void
   /// **SavedSharedFrame, int32_t *SavedActiveThreads, size_t SharingDataSize,
-  /// size_t SharingDefaultDataSize, int32_t IsEntryPoint);
+  /// size_t SharingDefaultDataSize, int32_t IsEntryPoint,
+  /// int16_t IsOMPRuntimeInitialized);
   OMPRTL_NVPTX__kmpc_data_sharing_environment_begin,
   /// \brief Call to void __kmpc_data_sharing_environment_end(
   /// __kmpc_data_sharing_slot **SavedSharedSlot, void **SavedSharedStack, void
   /// **SavedSharedFrame, int32_t *SavedActiveThreads);
   OMPRTL_NVPTX__kmpc_data_sharing_environment_end,
   /// \brief Call to void* __kmpc_get_data_sharing_environment_frame(int32_t
-  /// SourceThreadID);
+  /// SourceThreadID, int16_t IsOMPRuntimeInitialized);
   OMPRTL_NVPTX__kmpc_get_data_sharing_environment_frame,
   /// \brief Call to __kmpc_nvptx_parallel_reduce_nowait(kmp_int32
   /// global_tid, kmp_int32 num_vars, size_t reduce_size, void* reduce_data,
@@ -1739,14 +1740,16 @@ CGOpenMPRuntimeNVPTX::createNVPTXRuntimeFunction(unsigned Function) {
     /// Build void* __kmpc_data_sharing_environment_begin(
     /// __kmpc_data_sharing_slot **SavedSharedSlot, void **SavedSharedStack,
     /// void **SavedSharedFrame, int32_t *SavedActiveThreads, size_t
-    /// SharingDataSize, size_t SharingDefaultDataSize);
+    /// SharingDataSize, size_t SharingDefaultDataSize,
+    /// int16_t IsOMPRuntimeInitialized);
     auto *SlotTy = CGM.getTypes().ConvertTypeForMem(getDataSharingSlotQty());
     llvm::Type *TypeParams[] = {SlotTy->getPointerTo()->getPointerTo(),
                                 CGM.VoidPtrPtrTy,
                                 CGM.VoidPtrPtrTy,
                                 CGM.Int32Ty->getPointerTo(),
                                 CGM.SizeTy,
-                                CGM.SizeTy};
+                                CGM.SizeTy,
+                                CGM.Int16Ty};
     llvm::FunctionType *FnTy =
         llvm::FunctionType::get(CGM.VoidPtrTy, TypeParams, /*isVarArg*/ false);
     RTLFn = CGM.CreateRuntimeFunction(FnTy,
@@ -1769,8 +1772,8 @@ CGOpenMPRuntimeNVPTX::createNVPTXRuntimeFunction(unsigned Function) {
   }
   case OMPRTL_NVPTX__kmpc_get_data_sharing_environment_frame: {
     /// Build void* __kmpc_get_data_sharing_environment_frame(int32_t
-    /// SourceThreadID);
-    llvm::Type *TypeParams[] = {CGM.Int32Ty};
+    /// SourceThreadID, int16_t IsOMPRuntimeInitialized);
+    llvm::Type *TypeParams[] = {CGM.Int32Ty, CGM.Int16Ty};
     llvm::FunctionType *FnTy =
         llvm::FunctionType::get(CGM.VoidPtrTy, TypeParams, /*isVarArg*/ false);
     RTLFn = CGM.CreateRuntimeFunction(
@@ -2061,6 +2064,23 @@ void CGOpenMPRuntimeNVPTX::emitSPMDKernel(const OMPExecutableDirective &D,
   return;
 }
 
+namespace {
+class OMPRuntimeAvailabilityRAII {
+private:
+  bool &IsOMPRuntimeInitialized;
+  bool Prev;
+
+public:
+  OMPRuntimeAvailabilityRAII(bool &IsOMPRuntimeInitialized,
+                             bool TargetRequiresOMPRuntime)
+      : IsOMPRuntimeInitialized(IsOMPRuntimeInitialized),
+        Prev(IsOMPRuntimeInitialized) {
+    IsOMPRuntimeInitialized = TargetRequiresOMPRuntime;
+  }
+  ~OMPRuntimeAvailabilityRAII() { IsOMPRuntimeInitialized = Prev; }
+};
+} // namespace
+
 void CGOpenMPRuntimeNVPTX::emitTargetOutlinedFunction(
     const OMPExecutableDirective &D, StringRef ParentName,
     llvm::Function *&OutlinedFn, llvm::Constant *&OutlinedFnID,
@@ -2072,6 +2092,8 @@ void CGOpenMPRuntimeNVPTX::emitTargetOutlinedFunction(
 
   TargetKernelProperties TP(CGM, D);
 
+  OMPRuntimeAvailabilityRAII RA(IsOMPRuntimeInitialized,
+                                TP.requiresOMPRuntime());
   CGOpenMPRuntimeNVPTX::ExecutionMode Mode = TP.getExecutionMode();
   switch (Mode) {
   case CGOpenMPRuntimeNVPTX::ExecutionMode::GENERIC:
@@ -2508,6 +2530,10 @@ bool CGOpenMPRuntimeNVPTX::isSPMDExecutionMode() const {
   return CurrMode == CGOpenMPRuntimeNVPTX::ExecutionMode::SPMD;
 }
 
+bool CGOpenMPRuntimeNVPTX::isOMPRuntimeInitialized() const {
+  return IsOMPRuntimeInitialized;
+}
+
 void CGOpenMPRuntimeNVPTX::registerCtorDtorEntry(
     unsigned DeviceID, unsigned FileID, StringRef RegionName, unsigned Line,
     llvm::Function *Fn, bool IsDtor) {
@@ -2913,8 +2939,13 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
         CGM.SizeTy, Ctx.getTypeSizeInChars(DSI.MasterRecordType).getQuantity());
     auto *DefaultDataSize = llvm::ConstantInt::get(CGM.SizeTy, DS_Slot_Size);
 
-    llvm::Value *Args[] = {SavedSlot,          SavedStack, SavedFrame,
-                           SavedActiveThreads, DataSize,   DefaultDataSize};
+    llvm::Value *Args[] = {SavedSlot,
+                           SavedStack,
+                           SavedFrame,
+                           SavedActiveThreads,
+                           DataSize,
+                           DefaultDataSize,
+                           Bld.getInt16(isOMPRuntimeInitialized() ? 1 : 0)};
     auto *DataShareAddr =
         Bld.CreateCall(createNVPTXRuntimeFunction(
                            OMPRTL_NVPTX__kmpc_data_sharing_environment_begin),
@@ -2970,8 +3001,13 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
     auto *DefaultDataSize =
         llvm::ConstantInt::get(CGM.SizeTy, DS_Worker_Warp_Slot_Size);
 
-    llvm::Value *Args[] = {SavedSlot,          SavedStack, SavedFrame,
-                           SavedActiveThreads, DataSize,   DefaultDataSize};
+    llvm::Value *Args[] = {SavedSlot,
+                           SavedStack,
+                           SavedFrame,
+                           SavedActiveThreads,
+                           DataSize,
+                           DefaultDataSize,
+                           /*isOMPRuntimeInitialized=*/Bld.getInt16(1)};
     auto *DataShareAddr =
         Bld.CreateCall(createNVPTXRuntimeFunction(
                            OMPRTL_NVPTX__kmpc_data_sharing_environment_begin),
@@ -3202,7 +3238,8 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     auto *DataAddr = Bld.CreateCall(
         createNVPTXRuntimeFunction(
             OMPRTL_NVPTX__kmpc_get_data_sharing_environment_frame),
-        GetMasterThreadID(CGF));
+        {GetMasterThreadID(CGF),
+         Bld.getInt16(isOMPRuntimeInitialized() ? 1 : 0)});
     auto *RTy = CGF.getTypes().ConvertTypeForMem(DSI.MasterRecordType);
     auto *CastedDataAddr =
         Bld.CreateBitOrPointerCast(DataAddr, RTy->getPointerTo());
@@ -3240,7 +3277,8 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     auto *DataAddr = Bld.CreateCall(
         createNVPTXRuntimeFunction(
             OMPRTL_NVPTX__kmpc_get_data_sharing_environment_frame),
-        GetNVPTXThreadID(CGF));
+        {GetNVPTXThreadID(CGF),
+         /*isOMPRuntimeInitialized=*/Bld.getInt16(1)});
     auto *RTy = CGF.getTypes().ConvertTypeForMem(DSI.WorkerWarpRecordType);
     auto *CastedDataAddr =
         Bld.CreateBitOrPointerCast(DataAddr, RTy->getPointerTo());
@@ -3877,7 +3915,7 @@ bool CGOpenMPRuntimeNVPTX::requiresBarrier(const OMPLoopDirective &S) const {
 
 CGOpenMPRuntimeNVPTX::CGOpenMPRuntimeNVPTX(CodeGenModule &CGM)
     : CGOpenMPRuntime(CGM), IsOrphaned(true), ParallelNestingLevel(0),
-      CurrMode(ExecutionMode::UNKNOWN) {
+      IsOMPRuntimeInitialized(true), CurrMode(ExecutionMode::UNKNOWN) {
   if (!CGM.getLangOpts().OpenMPIsDevice)
     llvm_unreachable("OpenMP NVPTX can only handle device code.");
 }
@@ -4213,16 +4251,18 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
 
     // Close the environment. The saved stack is in the 4 first entries of the
     // arguments array.
-    llvm::Value *ClosingArgs[]{
-        InitArgs[0], InitArgs[1], InitArgs[2], InitArgs[3],
-        // If an entry point we need to signal the clean up.
-        llvm::ConstantInt::get(CGM.Int32Ty, DSI.IsEntryPoint ? 1 : 0)};
-    for (llvm::BasicBlock &BB : *Fn)
-      if (auto *Ret = dyn_cast<llvm::ReturnInst>(BB.getTerminator()))
-        (void)llvm::CallInst::Create(
-            createNVPTXRuntimeFunction(
-                OMPRTL_NVPTX__kmpc_data_sharing_environment_end),
-            ClosingArgs, "", Ret);
+    if (DSI.RequiresOMPRuntime) {
+      llvm::Value *ClosingArgs[]{
+          InitArgs[0], InitArgs[1], InitArgs[2], InitArgs[3],
+          // If an entry point we need to signal the clean up.
+          llvm::ConstantInt::get(CGM.Int32Ty, DSI.IsEntryPoint ? 1 : 0)};
+      for (llvm::BasicBlock &BB : *Fn)
+        if (auto *Ret = dyn_cast<llvm::ReturnInst>(BB.getTerminator()))
+          (void)llvm::CallInst::Create(
+              createNVPTXRuntimeFunction(
+                  OMPRTL_NVPTX__kmpc_data_sharing_environment_end),
+              ClosingArgs, "", Ret);
+    }
   }
 
   // Make the default registration procedure.

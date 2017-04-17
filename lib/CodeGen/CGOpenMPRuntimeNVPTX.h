@@ -329,6 +329,9 @@ private:
   bool IsOrphaned;
   // Track parallel nesting level.
   unsigned ParallelNestingLevel;
+  // Track whether the OMP runtime is available or elided for the
+  // target region.
+  bool IsOMPRuntimeInitialized;
 
   // The current codegen mode.  This is used to customize code generation of
   // certain constructs.
@@ -525,6 +528,10 @@ private:
   // \brief Test if we are codegen'ing a target construct in generic or spmd
   // mode.
   bool isSPMDExecutionMode() const;
+
+  // \brief Test if we are codegen'ing a target construct where the OMP runtime
+  // has been elided.
+  bool isOMPRuntimeInitialized() const;
 
   /// Register target region related with the launching of Ctor/Dtors entry. On
   /// top of the default registration, an extra global is registered to make
