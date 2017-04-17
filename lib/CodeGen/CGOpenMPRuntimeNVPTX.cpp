@@ -83,6 +83,12 @@ enum OpenMPRTLFunctionNVPTX {
   /// \brief Call to void* __kmpc_get_data_sharing_environment_frame(int32_t
   /// SourceThreadID, int16_t IsOMPRuntimeInitialized);
   OMPRTL_NVPTX__kmpc_get_data_sharing_environment_frame,
+  // Call to void __kmpc_barrier_simple_spmd(ident_t *loc, kmp_int32
+  // global_tid);
+  OMPRTL_NVPTX__kmpc_barrier_simple_spmd,
+  // Call to void __kmpc_barrier_simple_generic(ident_t *loc, kmp_int32
+  // global_tid);
+  OMPRTL_NVPTX__kmpc_barrier_simple_generic,
   /// \brief Call to __kmpc_nvptx_parallel_reduce_nowait(kmp_int32
   /// global_tid, kmp_int32 num_vars, size_t reduce_size, void* reduce_data,
   /// void (*kmp_ShuffleReductFctPtr)(void *rhsData, int16_t lane_id, int16_t
@@ -1802,6 +1808,26 @@ CGOpenMPRuntimeNVPTX::createNVPTXRuntimeFunction(unsigned Function) {
         llvm::FunctionType::get(CGM.VoidPtrTy, TypeParams, /*isVarArg*/ false);
     RTLFn = CGM.CreateRuntimeFunction(
         FnTy, "__kmpc_get_data_sharing_environment_frame");
+    break;
+  }
+  case OMPRTL_NVPTX__kmpc_barrier_simple_spmd: {
+    // Build void __kmpc_barrier_simple_spmd(ident_t *loc, kmp_int32
+    // global_tid);
+    llvm::Type *TypeParams[] = {getIdentTyPointerTy(), CGM.Int32Ty};
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+    RTLFn =
+        CGM.CreateRuntimeFunction(FnTy, /*Name*/ "__kmpc_barrier_simple_spmd");
+    break;
+  }
+  case OMPRTL_NVPTX__kmpc_barrier_simple_generic: {
+    // Build void __kmpc_barrier_simple_generic(ident_t *loc, kmp_int32
+    // global_tid);
+    llvm::Type *TypeParams[] = {getIdentTyPointerTy(), CGM.Int32Ty};
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+    RTLFn = CGM.CreateRuntimeFunction(FnTy,
+                                      /*Name*/ "__kmpc_barrier_simple_generic");
     break;
   }
   case OMPRTL_NVPTX__kmpc_parallel_reduce_nowait: {
@@ -3996,6 +4022,51 @@ bool CGOpenMPRuntimeNVPTX::requiresBarrier(const OMPLoopDirective &S) const {
     ScheduleKind = C->getScheduleKind();
   return Ordered || ScheduleKind == OMPC_SCHEDULE_dynamic ||
          ScheduleKind == OMPC_SCHEDULE_guided;
+}
+
+/// \brief Values for bit flags used in the ident_t to describe the fields.
+/// All enumeric elements are named and described in accordance with the code
+/// from http://llvm.org/svn/llvm-project/openmp/trunk/runtime/src/kmp.h
+enum OpenMPLocationFlags {
+  /// \brief Explicit 'barrier' directive.
+  OMP_IDENT_BARRIER_EXPL = 0x20,
+  /// \brief Implicit barrier in 'for' directive.
+  OMP_IDENT_BARRIER_IMPL_FOR = 0x40,
+};
+
+// Handle simple barrier case when runtime is not available.
+void CGOpenMPRuntimeNVPTX::emitBarrierCall(CodeGenFunction &CGF,
+                                           SourceLocation Loc,
+                                           OpenMPDirectiveKind Kind,
+                                           bool EmitChecks,
+                                           bool ForceSimpleCall) {
+  if (!CGF.HaveInsertPoint())
+    return;
+
+  bool IsSimpleBarrier = Kind == OMPD_for || Kind == OMPD_barrier;
+  if (auto *OMPRegionInfo =
+          dyn_cast_or_null<CGOpenMPRegionInfo>(CGF.CapturedStmtInfo))
+    if (!ForceSimpleCall && OMPRegionInfo->hasCancel())
+      IsSimpleBarrier = false;
+
+  if (!isOMPRuntimeInitialized() && IsSimpleBarrier) {
+    // Build call __kmpc_barrier_simple(loc, thread_id);
+    unsigned Flags;
+    if (Kind == OMPD_for)
+      Flags = OMP_IDENT_BARRIER_IMPL_FOR;
+    else
+      Flags = OMP_IDENT_BARRIER_EXPL;
+    llvm::Value *Args[] = {emitUpdateLocation(CGF, Loc, Flags),
+                           getThreadID(CGF, Loc)};
+    auto Name = selectRuntimeCall<OpenMPRTLFunctionNVPTX>(
+        isSPMDExecutionMode(), /*isOMPRuntimeInitialized=*/false,
+        {OMPRTL_NVPTX__kmpc_barrier_simple_spmd,
+         OMPRTL_NVPTX__kmpc_barrier_simple_generic});
+    CGF.EmitRuntimeCall(createNVPTXRuntimeFunction(Name), Args);
+  } else {
+    return CGOpenMPRuntime::emitBarrierCall(CGF, Loc, Kind, EmitChecks,
+                                            ForceSimpleCall);
+  }
 }
 
 CGOpenMPRuntimeNVPTX::CGOpenMPRuntimeNVPTX(CodeGenModule &CGM)

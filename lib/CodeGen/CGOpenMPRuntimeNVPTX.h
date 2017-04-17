@@ -623,6 +623,18 @@ public:
   /// concurrent execution of certain directive and clause combinations.
   bool requiresBarrier(const OMPLoopDirective &S) const override;
 
+  /// \brief Emit an implicit/explicit barrier for OpenMP threads.
+  /// \param Kind Directive for which this implicit barrier call must be
+  /// generated. Must be OMPD_barrier for explicit barrier generation.
+  /// \param EmitChecks true if need to emit checks for cancellation barriers.
+  /// \param ForceSimpleCall true simple barrier call must be emitted, false if
+  /// runtime class decides which one to emit (simple or with cancellation
+  /// checks).
+  ///
+  void emitBarrierCall(CodeGenFunction &CGF, SourceLocation Loc,
+                       OpenMPDirectiveKind Kind, bool EmitChecks = true,
+                       bool ForceSimpleCall = false) override;
+
   /// \brief This function ought to emit, in the general case, a call to
   // the openmp runtime kmpc_push_num_teams. In NVPTX backend it is not needed
   // as these numbers are obtained through the PTX grid and block configuration.
