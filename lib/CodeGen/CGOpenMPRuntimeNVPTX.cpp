@@ -42,9 +42,10 @@ enum OpenMPRTLFunctionNVPTX {
   /// global_tid);
   OMPRTL_NVPTX__kmpc_end_serialized_parallel,
   /// \brief Call to void __kmpc_kernel_prepare_parallel(void
-  /// *outlined_function);
+  /// *outlined_function, int16_t IsOMPRuntimeInitialized);
   OMPRTL_NVPTX__kmpc_kernel_prepare_parallel,
-  /// \brief Call to bool __kmpc_kernel_parallel(void **outlined_function);
+  /// \brief Call to bool __kmpc_kernel_parallel(void **outlined_function,
+  /// int16_t IsOMPRuntimeInitialized);
   OMPRTL_NVPTX__kmpc_kernel_parallel,
   /// \brief Call to void __kmpc_kernel_end_parallel();
   OMPRTL_NVPTX__kmpc_kernel_end_parallel,
@@ -1374,15 +1375,17 @@ void CGOpenMPRuntimeNVPTX::emitWorkerLoop(CodeGenFunction &CGF,
                            /*Name*/ "exec_status");
   CGF.InitTempAlloca(ExecStatus, Bld.getInt8(/*C=*/0));
 
-  llvm::Value *Args[] = {WorkFn.getPointer()};
+  llvm::Value *IsOMPRuntimeInitialized =
+      Bld.getInt16(WST.TP.requiresOMPRuntime() ? 1 : 0);
   llvm::Value *Ret = CGF.EmitRuntimeCall(
-      createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_kernel_parallel), Args);
+      createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_kernel_parallel),
+      {WorkFn.getPointer(), IsOMPRuntimeInitialized});
   Bld.CreateStore(Bld.CreateZExt(Ret, CGF.Int8Ty), ExecStatus);
 
+  llvm::Value *WorkID = Bld.CreateLoad(WorkFn, /*isVolatile=*/true);
   // On termination condition (workfn == 0), exit loop.
   llvm::Value *ShouldTerminate = Bld.CreateICmpEQ(
-      Bld.CreateLoad(WorkFn), llvm::Constant::getNullValue(CGF.Int8PtrTy),
-      "should_terminate");
+      WorkID, llvm::Constant::getNullValue(CGF.Int8PtrTy), "should_terminate");
   Bld.CreateCondBr(ShouldTerminate, ExitBB, SelectWorkersBB);
 
   // Activate requested workers.
@@ -1394,50 +1397,70 @@ void CGOpenMPRuntimeNVPTX::emitWorkerLoop(CodeGenFunction &CGF,
   // Signal start of parallel region.
   CGF.EmitBlock(ExecuteBB);
 
-  // Process work items: outlined parallel functions.
-  for (auto *W : Work) {
-    // Try to match this outlined function.
-    auto ID = Bld.CreatePtrToInt(W, CGM.Int64Ty);
-    ID = Bld.CreateIntToPtr(ID, CGM.Int8PtrTy);
-    llvm::Value *WorkFnMatch =
-        Bld.CreateICmpEQ(Bld.CreateLoad(WorkFn), ID, "work_match");
+  if (WST.TP.hasAtMostOneL1ParallelRegion()) {
+    // Short circuit when there is at most one L1 parallel region.
+    assert(!WST.TP.mayContainOrphanedParallel() &&
+           "Target region may not contain an orphaned parallel directive.");
+    assert(Work.size() <= 1 && "Expecting at most one parallel region.");
 
-    llvm::BasicBlock *ExecuteFNBB = CGF.createBasicBlock(".execute.fn");
-    llvm::BasicBlock *CheckNextBB = CGF.createBasicBlock(".check.next");
-    Bld.CreateCondBr(WorkFnMatch, ExecuteFNBB, CheckNextBB);
-
-    // Execute this outlined function.
-    CGF.EmitBlock(ExecuteFNBB);
-
-    // Insert call to work function. We pass the master has source thread ID.
-    auto Fn = cast<llvm::Function>(W);
-    CGF.EmitCallOrInvoke(
-        Fn, {Bld.getInt16(/*ParallelLevel=*/0), GetMasterThreadID(CGF)});
+    if (Work.size() == 1) {
+      // Insert call to work function. We pass the master has source thread ID.
+      auto Fn = cast<llvm::Function>(Work[0]);
+      CGF.EmitCallOrInvoke(
+          Fn, {Bld.getInt16(/*ParallelLevel=*/0), GetMasterThreadID(CGF)});
+    }
 
     // Go to end of parallel region.
     CGF.EmitBranch(TerminateBB);
+  } else {
+    // Process outlined parallel functions in the lexical scope of the target.
+    for (auto *W : Work) {
+      // Try to match this outlined function.
+      auto ThisID = Bld.CreatePtrToInt(W, CGM.Int64Ty);
+      ThisID = Bld.CreateIntToPtr(ThisID, CGM.Int8PtrTy);
+      llvm::Value *WorkFnMatch = Bld.CreateICmpEQ(WorkID, ThisID, "work_match");
 
-    CGF.EmitBlock(CheckNextBB);
-  }
+      llvm::BasicBlock *ExecuteFNBB = CGF.createBasicBlock(".execute.fn");
+      llvm::BasicBlock *CheckNextBB = CGF.createBasicBlock(".check.next");
+      Bld.CreateCondBr(WorkFnMatch, ExecuteFNBB, CheckNextBB);
 
-  // Default case: call to outlined function through pointer if the target
-  // region makes a declare target call that may contain an orphaned parallel
-  // directive.
-  if (WST.TP.mayContainOrphanedParallel()) {
-    auto ParallelFnTy =
-        llvm::FunctionType::get(CGM.VoidTy, {CGM.Int16Ty, CGM.Int32Ty},
-                                /*isVarArg*/ false)
-            ->getPointerTo();
-    auto WorkFnCast = Bld.CreateBitCast(Bld.CreateLoad(WorkFn), ParallelFnTy);
-    CGF.EmitCallOrInvoke(WorkFnCast, {Bld.getInt16(/*ParallelLevel=*/0),
-                                      GetMasterThreadID(CGF)});
+      // Execute this outlined function.
+      CGF.EmitBlock(ExecuteFNBB);
+
+      // Insert call to work function. We pass the master has source thread ID.
+      auto Fn = cast<llvm::Function>(W);
+      CGF.EmitCallOrInvoke(
+          Fn, {Bld.getInt16(/*ParallelLevel=*/0), GetMasterThreadID(CGF)});
+
+      // Go to end of parallel region.
+      CGF.EmitBranch(TerminateBB);
+
+      CGF.EmitBlock(CheckNextBB);
+    }
+
+    // Default case: call to outlined function through pointer if the target
+    // region makes a declare target call that may contain an orphaned parallel
+    // directive.
+    if (WST.TP.mayContainOrphanedParallel()) {
+      auto ParallelFnTy =
+          llvm::FunctionType::get(CGM.VoidTy, {CGM.Int16Ty, CGM.Int32Ty},
+                                  /*isVarArg*/ false)
+              ->getPointerTo();
+      auto WorkFnCast = Bld.CreateBitCast(WorkID, ParallelFnTy);
+      CGF.EmitCallOrInvoke(WorkFnCast, {Bld.getInt16(/*ParallelLevel=*/0),
+                                        GetMasterThreadID(CGF)});
+      // Go to end of parallel region.
+      CGF.EmitBranch(TerminateBB);
+    }
   }
 
   // Signal end of parallel region.
   CGF.EmitBlock(TerminateBB);
-  CGF.EmitRuntimeCall(
-      createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_kernel_end_parallel),
-      ArrayRef<llvm::Value *>());
+  if (WST.TP.requiresOMPRuntime()) {
+    CGF.EmitRuntimeCall(
+        createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_kernel_end_parallel),
+        ArrayRef<llvm::Value *>());
+  }
   CGF.EmitBranch(BarrierBB);
 
   // All active and inactive workers wait at a barrier after parallel region.
@@ -1642,16 +1665,17 @@ CGOpenMPRuntimeNVPTX::createNVPTXRuntimeFunction(unsigned Function) {
   }
   case OMPRTL_NVPTX__kmpc_kernel_prepare_parallel: {
     /// Build void __kmpc_kernel_prepare_parallel(
-    /// void *outlined_function);
-    llvm::Type *TypeParams[] = {CGM.Int8PtrTy};
+    /// void *outlined_function, int16_t IsOMPRuntimeInitialized);
+    llvm::Type *TypeParams[] = {CGM.Int8PtrTy, CGM.Int16Ty};
     llvm::FunctionType *FnTy =
         llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
     RTLFn = CGM.CreateRuntimeFunction(FnTy, "__kmpc_kernel_prepare_parallel");
     break;
   }
   case OMPRTL_NVPTX__kmpc_kernel_parallel: {
-    /// Build bool __kmpc_kernel_parallel(void **outlined_function);
-    llvm::Type *TypeParams[] = {CGM.Int8PtrPtrTy};
+    /// Build bool __kmpc_kernel_parallel(void **outlined_function,
+    /// int16_t IsOMPRuntimeInitialized);
+    llvm::Type *TypeParams[] = {CGM.Int8PtrPtrTy, CGM.Int16Ty};
     llvm::FunctionType *FnTy =
         llvm::FunctionType::get(llvm::Type::getInt1Ty(CGM.getLLVMContext()),
                                 TypeParams, /*isVarArg*/ false);
@@ -3517,7 +3541,9 @@ void CGOpenMPRuntimeNVPTX::emitGenericParallelCall(
     auto ID = Bld.CreateBitOrPointerCast(WFn, CGM.Int8PtrTy);
 
     // Prepare for parallel region. Indicate the outlined function.
-    llvm::Value *Args[] = {ID};
+    llvm::Value *IsOMPRuntimeInitialized =
+        Bld.getInt16(isOMPRuntimeInitialized() ? 1 : 0);
+    llvm::Value *Args[] = {ID, IsOMPRuntimeInitialized};
     CGF.EmitRuntimeCall(
         createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_kernel_prepare_parallel),
         Args);
