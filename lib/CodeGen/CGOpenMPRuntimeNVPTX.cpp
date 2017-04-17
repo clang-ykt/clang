@@ -124,6 +124,28 @@ enum OpenMPRTLFunctionNVPTX {
   /// void (*kmp_LoadReduceFctPtr)(void *reduceData, void * scratchpad, int32_t
   /// index, int32_t width, int32_t reduce))
   OMPRTL_NVPTX__kmpc_teams_reduce_nowait,
+  /// \brief Call to __kmpc_nvptx_teams_reduce_nowait_simple_spmd(int32_t
+  /// global_tid,
+  /// int32_t num_vars, size_t reduce_size, void *reduce_data,
+  /// void (*kmp_ShuffleReductFctPtr)(void *rhsData, int16_t lane_id, int16_t
+  /// lane_offset, int16_t shortCircuit),
+  /// void (*kmp_InterWarpCopyFctPtr)(void* src, int warp_num),
+  /// void (*kmp_CopyToScratchpadFctPtr)(void *reduceData, void * scratchpad,
+  /// int32_t index, int32_t width),
+  /// void (*kmp_LoadReduceFctPtr)(void *reduceData, void * scratchpad, int32_t
+  /// index, int32_t width, int32_t reduce))
+  OMPRTL_NVPTX__kmpc_teams_reduce_nowait_simple_spmd,
+  /// \brief Call to __kmpc_nvptx_teams_reduce_nowait_simple_generic(int32_t
+  /// global_tid,
+  /// int32_t num_vars, size_t reduce_size, void *reduce_data,
+  /// void (*kmp_ShuffleReductFctPtr)(void *rhsData, int16_t lane_id, int16_t
+  /// lane_offset, int16_t shortCircuit),
+  /// void (*kmp_InterWarpCopyFctPtr)(void* src, int warp_num),
+  /// void (*kmp_CopyToScratchpadFctPtr)(void *reduceData, void * scratchpad,
+  /// int32_t index, int32_t width),
+  /// void (*kmp_LoadReduceFctPtr)(void *reduceData, void * scratchpad, int32_t
+  /// index, int32_t width, int32_t reduce))
+  OMPRTL_NVPTX__kmpc_teams_reduce_nowait_simple_generic,
   /// \brief Call to __kmpc_nvptx_end_reduce_nowait(int32_t global_tid);
   OMPRTL_NVPTX__kmpc_end_reduce,
   /// \brief Call to __kmpc_nvptx_end_reduce(int32_t global_tid);
@@ -1994,6 +2016,94 @@ CGOpenMPRuntimeNVPTX::createNVPTXRuntimeFunction(unsigned Function) {
         llvm::FunctionType::get(CGM.Int32Ty, TypeParams, /*isVarArg=*/false);
     RTLFn = CGM.CreateRuntimeFunction(
         FnTy, /*Name=*/"__kmpc_nvptx_teams_reduce_nowait");
+    break;
+  }
+  case OMPRTL_NVPTX__kmpc_teams_reduce_nowait_simple_spmd: {
+    /// Build int32_t __kmpc_nvptx_teams_reduce_nowait_simple_spmd(int32_t
+    /// global_tid,
+    /// int32_t num_vars, size_t reduce_size, void *reduce_data,
+    /// void (*kmp_ShuffleReductFctPtr)(void *rhsData, int16_t lane_id, int16_t
+    /// lane_offset, int16_t shortCircuit),
+    /// void (*kmp_InterWarpCopyFctPtr)(void* src, int warp_num),
+    /// void (*kmp_CopyToScratchpadFctPtr)(void *reduceData, void * scratchpad,
+    /// int32_t index, int32_t width),
+    /// void (*kmp_LoadReduceFctPtr)(void *reduceData, void * scratchpad,
+    /// int32_t index, int32_t width, int32_t reduce))
+    llvm::Type *ShuffleReduceTypeParams[] = {CGM.VoidPtrTy, CGM.Int16Ty,
+                                             CGM.Int16Ty, CGM.Int16Ty};
+    auto *ShuffleReduceFnTy =
+        llvm::FunctionType::get(CGM.VoidTy, ShuffleReduceTypeParams,
+                                /*isVarArg=*/false);
+    llvm::Type *InterWarpCopyTypeParams[] = {CGM.VoidPtrTy, CGM.Int32Ty};
+    auto *InterWarpCopyFnTy =
+        llvm::FunctionType::get(CGM.VoidTy, InterWarpCopyTypeParams,
+                                /*isVarArg=*/false);
+    llvm::Type *CopyToScratchpadTypeParams[] = {CGM.VoidPtrTy, CGM.VoidPtrTy,
+                                                CGM.Int32Ty, CGM.Int32Ty};
+    auto *CopyToScratchpadFnTy =
+        llvm::FunctionType::get(CGM.VoidTy, CopyToScratchpadTypeParams,
+                                /*isVarArg=*/false);
+    llvm::Type *LoadReduceTypeParams[] = {
+        CGM.VoidPtrTy, CGM.VoidPtrTy, CGM.Int32Ty, CGM.Int32Ty, CGM.Int32Ty};
+    auto *LoadReduceFnTy =
+        llvm::FunctionType::get(CGM.VoidTy, LoadReduceTypeParams,
+                                /*isVarArg=*/false);
+    llvm::Type *TypeParams[] = {CGM.Int32Ty,
+                                CGM.Int32Ty,
+                                CGM.SizeTy,
+                                CGM.VoidPtrTy,
+                                ShuffleReduceFnTy->getPointerTo(),
+                                InterWarpCopyFnTy->getPointerTo(),
+                                CopyToScratchpadFnTy->getPointerTo(),
+                                LoadReduceFnTy->getPointerTo()};
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.Int32Ty, TypeParams, /*isVarArg=*/false);
+    RTLFn = CGM.CreateRuntimeFunction(
+        FnTy, /*Name=*/"__kmpc_nvptx_teams_reduce_nowait_simple_spmd");
+    break;
+  }
+  case OMPRTL_NVPTX__kmpc_teams_reduce_nowait_simple_generic: {
+    /// Build int32_t __kmpc_nvptx_teams_reduce_nowait_simple_generic(int32_t
+    /// global_tid,
+    /// int32_t num_vars, size_t reduce_size, void *reduce_data,
+    /// void (*kmp_ShuffleReductFctPtr)(void *rhsData, int16_t lane_id, int16_t
+    /// lane_offset, int16_t shortCircuit),
+    /// void (*kmp_InterWarpCopyFctPtr)(void* src, int warp_num),
+    /// void (*kmp_CopyToScratchpadFctPtr)(void *reduceData, void * scratchpad,
+    /// int32_t index, int32_t width),
+    /// void (*kmp_LoadReduceFctPtr)(void *reduceData, void * scratchpad,
+    /// int32_t index, int32_t width, int32_t reduce))
+    llvm::Type *ShuffleReduceTypeParams[] = {CGM.VoidPtrTy, CGM.Int16Ty,
+                                             CGM.Int16Ty, CGM.Int16Ty};
+    auto *ShuffleReduceFnTy =
+        llvm::FunctionType::get(CGM.VoidTy, ShuffleReduceTypeParams,
+                                /*isVarArg=*/false);
+    llvm::Type *InterWarpCopyTypeParams[] = {CGM.VoidPtrTy, CGM.Int32Ty};
+    auto *InterWarpCopyFnTy =
+        llvm::FunctionType::get(CGM.VoidTy, InterWarpCopyTypeParams,
+                                /*isVarArg=*/false);
+    llvm::Type *CopyToScratchpadTypeParams[] = {CGM.VoidPtrTy, CGM.VoidPtrTy,
+                                                CGM.Int32Ty, CGM.Int32Ty};
+    auto *CopyToScratchpadFnTy =
+        llvm::FunctionType::get(CGM.VoidTy, CopyToScratchpadTypeParams,
+                                /*isVarArg=*/false);
+    llvm::Type *LoadReduceTypeParams[] = {
+        CGM.VoidPtrTy, CGM.VoidPtrTy, CGM.Int32Ty, CGM.Int32Ty, CGM.Int32Ty};
+    auto *LoadReduceFnTy =
+        llvm::FunctionType::get(CGM.VoidTy, LoadReduceTypeParams,
+                                /*isVarArg=*/false);
+    llvm::Type *TypeParams[] = {CGM.Int32Ty,
+                                CGM.Int32Ty,
+                                CGM.SizeTy,
+                                CGM.VoidPtrTy,
+                                ShuffleReduceFnTy->getPointerTo(),
+                                InterWarpCopyFnTy->getPointerTo(),
+                                CopyToScratchpadFnTy->getPointerTo(),
+                                LoadReduceFnTy->getPointerTo()};
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.Int32Ty, TypeParams, /*isVarArg=*/false);
+    RTLFn = CGM.CreateRuntimeFunction(
+        FnTy, /*Name=*/"__kmpc_nvptx_teams_reduce_nowait_simple_generic");
     break;
   }
   case OMPRTL_NVPTX__kmpc_end_reduce: {
@@ -5698,7 +5808,11 @@ void CGOpenMPRuntimeNVPTX::emitReduction(
                           // int32_t width, int32_t reduce);
     };
     Res = CGF.EmitRuntimeCall(
-        createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_teams_reduce_nowait),
+        createNVPTXRuntimeFunction(selectRuntimeCall<OpenMPRTLFunctionNVPTX>(
+            isSPMDExecutionMode(), isOMPRuntimeInitialized(),
+            {OMPRTL_NVPTX__kmpc_teams_reduce_nowait_simple_spmd,
+             OMPRTL_NVPTX__kmpc_teams_reduce_nowait_simple_generic,
+             OMPRTL_NVPTX__kmpc_teams_reduce_nowait})),
         TeamsArgs);
   }
 
