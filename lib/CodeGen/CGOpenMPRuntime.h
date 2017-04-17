@@ -148,6 +148,11 @@ protected:
   /// \brief Returns pointer to ident_t type.
   llvm::Type *getIdentTyPointerTy();
 
+  /// \brief Returns __kmpc_for_static_init_* runtime function for the specified
+  /// size \a IVSize and sign \a IVSigned.
+  virtual llvm::Constant *createForStaticInitFunction(unsigned IVSize,
+                                                      bool IVSigned);
+
   /// Emits reduction combiner.
   /// \param ReductionOp Reduction operation expression to emit.
   void emitReductionCombiner(CodeGenFunction &CGF, const Expr *ReductionOp);
@@ -574,10 +579,6 @@ private:
   /// \param Function OpenMP runtime function.
   /// \return Specified function.
   llvm::Constant *createRuntimeFunction(unsigned Function);
-
-  /// \brief Returns __kmpc_for_static_init_* runtime function for the specified
-  /// size \a IVSize and sign \a IVSigned.
-  llvm::Constant *createForStaticInitFunction(unsigned IVSize, bool IVSigned);
 
   /// \brief Returns __kmpc_dispatch_init_* runtime function for the specified
   /// size \a IVSize and sign \a IVSigned.

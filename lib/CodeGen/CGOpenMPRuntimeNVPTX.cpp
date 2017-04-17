@@ -3875,6 +3875,65 @@ void CGOpenMPRuntimeNVPTX::emitCriticalRegion(
   CGF.EmitBlock(ExitBB, /*IsFinished=*/true);
 }
 
+namespace {
+template <typename T>
+static T selectRuntimeCall(bool IsSPMDExecutionMode,
+                           bool IsOMPRuntimeInitialized, ArrayRef<T> V) {
+  if (IsOMPRuntimeInitialized) {
+    assert(V.size() >= 3 && "Invalid argument to select runtime call.");
+    return V[2];
+  } else /*Elided runtime*/ {
+    assert(V.size() >= 2 && "Invalid argument to select runtime call.");
+    return IsSPMDExecutionMode ? V[0] : V[1];
+  }
+}
+}
+
+llvm::Constant *
+CGOpenMPRuntimeNVPTX::createForStaticInitFunction(unsigned IVSize,
+                                                  bool IVSigned) {
+  assert((IVSize == 32 || IVSize == 64) &&
+         "IV size is not compatible with the omp runtime");
+  auto Name =
+      IVSize == 32
+          ? (IVSigned ? selectRuntimeCall<StringRef>(
+                            isSPMDExecutionMode(), isOMPRuntimeInitialized(),
+                            {"__kmpc_for_static_init_4_simple_spmd",
+                             "__kmpc_for_static_init_4_simple_generic",
+                             "__kmpc_for_static_init_4"})
+                      : selectRuntimeCall<StringRef>(
+                            isSPMDExecutionMode(), isOMPRuntimeInitialized(),
+                            {"__kmpc_for_static_init_4u_simple_spmd",
+                             "__kmpc_for_static_init_4u_simple_generic",
+                             "__kmpc_for_static_init_4u"}))
+          : (IVSigned ? selectRuntimeCall<StringRef>(
+                            isSPMDExecutionMode(), isOMPRuntimeInitialized(),
+                            {"__kmpc_for_static_init_8_simple_spmd",
+                             "__kmpc_for_static_init_8_simple_generic",
+                             "__kmpc_for_static_init_8"})
+                      : selectRuntimeCall<StringRef>(
+                            isSPMDExecutionMode(), isOMPRuntimeInitialized(),
+                            {"__kmpc_for_static_init_8u_simple_spmd",
+                             "__kmpc_for_static_init_8u_simple_generic",
+                             "__kmpc_for_static_init_8u"}));
+  auto ITy = IVSize == 32 ? CGM.Int32Ty : CGM.Int64Ty;
+  auto PtrTy = llvm::PointerType::getUnqual(ITy);
+  llvm::Type *TypeParams[] = {
+      getIdentTyPointerTy(),                     // loc
+      CGM.Int32Ty,                               // tid
+      CGM.Int32Ty,                               // schedtype
+      llvm::PointerType::getUnqual(CGM.Int32Ty), // p_lastiter
+      PtrTy,                                     // p_lower
+      PtrTy,                                     // p_upper
+      PtrTy,                                     // p_stride
+      ITy,                                       // incr
+      ITy                                        // chunk
+  };
+  llvm::FunctionType *FnTy =
+      llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+  return CGM.CreateRuntimeFunction(FnTy, Name);
+}
+
 //
 // Generate optimized code resembling static schedule with chunk size of 1
 // whenever the standard gives us freedom.  This allows maximum coalescing on

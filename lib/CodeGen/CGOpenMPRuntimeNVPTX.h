@@ -104,6 +104,12 @@ class CGOpenMPRuntimeNVPTX : public CGOpenMPRuntime {
   createKernelInitializerFunction(llvm::Function *WorkerFunction,
                                   bool RequiresOMPRuntime);
 
+protected:
+  /// \brief Returns __kmpc_for_static_init_* runtime function for the specified
+  /// size \a IVSize and sign \a IVSigned.
+  virtual llvm::Constant *createForStaticInitFunction(unsigned IVSize,
+                                                      bool IVSigned) override;
+
 public:
   // \brief Group the captures information for a given context.
   struct DataSharingInfo {
