@@ -25,12 +25,13 @@ using namespace CodeGen;
 
 namespace {
 enum OpenMPRTLFunctionNVPTX {
-  /// \brief Call to void __kmpc_kernel_init(kmp_int32 thread_limit);
+  /// \brief Call to void __kmpc_kernel_init(kmp_int32 thread_limit,
+  /// int16_t RequiresOMPRuntime);
   OMPRTL_NVPTX__kmpc_kernel_init,
-  /// \brief Call to void __kmpc_kernel_deinit();
+  /// \brief Call to void __kmpc_kernel_deinit(int16_t IsOMPRuntimeInitialized);
   OMPRTL_NVPTX__kmpc_kernel_deinit,
   /// \brief Call to void __kmpc_spmd_kernel_init(kmp_int32 thread_limit,
-  /// short RequiresOMPRuntime, short RequiresDataSharing);
+  /// int16_t RequiresOMPRuntime, int16_t RequiresDataSharing);
   OMPRTL_NVPTX__kmpc_spmd_kernel_init,
   /// \brief Call to void __kmpc_spmd_kernel_deinit();
   OMPRTL_NVPTX__kmpc_spmd_kernel_deinit,
@@ -604,7 +605,7 @@ void CGOpenMPRuntimeNVPTX::initializeDataSharing(CodeGenFunction &CGF,
 // \brief Initialize the data sharing slots and pointers and return the
 // generated call.
 llvm::Function *CGOpenMPRuntimeNVPTX::createKernelInitializerFunction(
-    llvm::Function *WorkerFunction) {
+    llvm::Function *WorkerFunction, bool RequiresOMPRuntime) {
   auto &Ctx = CGM.getContext();
 
   // FIXME: Consider to use name based on the worker function name.
@@ -638,37 +639,60 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createKernelInitializerFunction(
   llvm::BasicBlock *ExitBB = CGF.createBasicBlock(".exit");
 
   auto *RetTy = CGM.Int32Ty;
-  auto *One = llvm::ConstantInt::get(RetTy, 1);
-  auto *Zero = llvm::ConstantInt::get(RetTy, 0);
-  CGF.EmitStoreOfScalar(One, CGF.ReturnValue, /*Volatile=*/false, RetQTy);
+  if (RequiresOMPRuntime) {
+    auto *One = llvm::ConstantInt::get(RetTy, 1);
+    auto *Zero = llvm::ConstantInt::get(RetTy, 0);
+    CGF.EmitStoreOfScalar(Zero, CGF.ReturnValue, /*Volatile=*/false, RetQTy);
 
-  auto *IsMaster =
-      Bld.CreateICmpEQ(GetNVPTXThreadID(CGF), GetMasterThreadID(CGF));
-  Bld.CreateCondBr(IsMaster, MasterBB, SyncBB);
+    auto *IsMaster =
+        Bld.CreateICmpEQ(GetNVPTXThreadID(CGF), GetMasterThreadID(CGF));
+    Bld.CreateCondBr(IsMaster, MasterBB, SyncBB);
 
-  CGF.EmitBlock(MasterBB);
-  // First action in sequential region:
-  // Initialize the state of the OpenMP runtime library on the GPU.
-  llvm::Value *Args[] = {GetThreadLimit(CGF, isSPMDExecutionMode())};
-  CGF.EmitRuntimeCall(
-      createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_kernel_init), Args);
-  initializeDataSharing(CGF, /*IsMaster=*/true);
-  CGF.EmitStoreOfScalar(Zero, CGF.ReturnValue, /*Volatile=*/false, RetQTy);
-  CGF.EmitBranch(SyncBB);
+    CGF.EmitBlock(MasterBB);
+    // First action in sequential region:
+    // Initialize the state of the OpenMP runtime library on the GPU.
+    llvm::Value *InitArgs[] = {GetThreadLimit(CGF, isSPMDExecutionMode()),
+                               Bld.getInt16(/*RequiresOMPRuntime=*/1)};
+    CGF.EmitRuntimeCall(
+        createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_kernel_init), InitArgs);
+    initializeDataSharing(CGF, /*IsMaster=*/true);
+    CGF.EmitStoreOfScalar(One, CGF.ReturnValue, /*Volatile=*/false, RetQTy);
+    CGF.EmitBranch(SyncBB);
 
-  CGF.EmitBlock(SyncBB);
-  SyncCTAThreads(CGF);
-  CGF.EmitBranch(WorkerCheckBB);
+    CGF.EmitBlock(SyncBB);
+    SyncCTAThreads(CGF);
+    CGF.EmitBranch(WorkerCheckBB);
 
-  CGF.EmitBlock(WorkerCheckBB);
-  auto *IsWorker = Bld.CreateICmpULT(
-      GetNVPTXThreadID(CGF), GetThreadLimit(CGF, isSPMDExecutionMode()));
-  Bld.CreateCondBr(IsWorker, WorkerBB, ExitBB);
+    CGF.EmitBlock(WorkerCheckBB);
+    auto *IsWorker = Bld.CreateICmpULT(
+        GetNVPTXThreadID(CGF), GetThreadLimit(CGF, isSPMDExecutionMode()));
+    Bld.CreateCondBr(IsWorker, WorkerBB, ExitBB);
 
-  CGF.EmitBlock(WorkerBB);
-  initializeDataSharing(CGF, /*IsMaster=*/false);
-  Bld.CreateCall(WorkerFunction);
-  CGF.EmitBranch(ExitBB);
+    CGF.EmitBlock(WorkerBB);
+    initializeDataSharing(CGF, /*IsMaster=*/false);
+    Bld.CreateCall(WorkerFunction);
+    CGF.EmitBranch(ExitBB);
+  } else {
+    // Initialize the state of the OpenMP runtime library on the GPU.
+    llvm::Value *InitArgs[] = {GetThreadLimit(CGF, isSPMDExecutionMode()),
+                               Bld.getInt16(/*RequiresOMPRuntime=*/0)};
+    CGF.EmitRuntimeCall(
+        createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_kernel_init), InitArgs);
+
+    auto *IsMaster =
+        Bld.CreateICmpEQ(GetNVPTXThreadID(CGF), GetMasterThreadID(CGF));
+    auto *RetVal = CGF.EmitScalarConversion(IsMaster, Ctx.BoolTy, RetQTy,
+                                            SourceLocation());
+    CGF.EmitStoreOfScalar(RetVal, CGF.ReturnValue, /*Volatile=*/false, RetQTy);
+
+    auto *IsWorker = Bld.CreateICmpULT(
+        GetNVPTXThreadID(CGF), GetThreadLimit(CGF, isSPMDExecutionMode()));
+    Bld.CreateCondBr(IsWorker, WorkerBB, ExitBB);
+
+    CGF.EmitBlock(WorkerBB);
+    Bld.CreateCall(WorkerFunction);
+    CGF.EmitBranch(ExitBB);
+  }
 
   CGF.EmitBlock(ExitBB);
   CGF.FinishFunction();
@@ -1475,13 +1499,15 @@ void CGOpenMPRuntimeNVPTX::emitGenericEntryHeader(CodeGenFunction &CGF,
   //  CGF.EmitBlock(MasterBB);
 
   // Mark the current function as entry point.
+  DataSharingFunctionInfoMap[CGF.CurFn].RequiresOMPRuntime =
+      WST.TP.requiresOMPRuntime();
   DataSharingFunctionInfoMap[CGF.CurFn].IsEntryPoint = true;
   DataSharingFunctionInfoMap[CGF.CurFn].EntryWorkerFunction = WST.WorkerFn;
   DataSharingFunctionInfoMap[CGF.CurFn].EntryExitBlock = EST.ExitBB;
 }
 
 void CGOpenMPRuntimeNVPTX::emitGenericEntryFooter(CodeGenFunction &CGF,
-                                           EntryFunctionState &EST) {
+                                                  EntryFunctionState &EST) {
   if (!EST.ExitBB)
     EST.ExitBB = CGF.createBasicBlock(".exit");
 
@@ -1489,9 +1515,12 @@ void CGOpenMPRuntimeNVPTX::emitGenericEntryFooter(CodeGenFunction &CGF,
   CGF.EmitBranch(TerminateBB);
 
   CGF.EmitBlock(TerminateBB);
+  llvm::Value *IsOMPRuntimeInitialized =
+      CGF.Builder.getInt16(EST.TP.requiresOMPRuntime() ? 1 : 0);
   // Signal termination condition.
   CGF.EmitRuntimeCall(
-      createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_kernel_deinit), None);
+      createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_kernel_deinit),
+      {IsOMPRuntimeInitialized});
   // Barrier to terminate worker threads.
   SyncCTAThreads(CGF);
   // Master thread jumps to exit point.
@@ -1522,9 +1551,11 @@ void CGOpenMPRuntimeNVPTX::emitSPMDEntryHeader(
   EST.ExitBB = CGF.createBasicBlock(".sleepy.hollow");
 
   // Initialize the OMP state in the runtime; called by all active threads.
-  llvm::Value *Mode = Bld.getInt16(EST.TP.requiresOMPRuntime() ? 1 : 0);
-  llvm::Value *DS = Bld.getInt16(EST.TP.requiresOMPRuntime() ? 1 : 0);
-  llvm::Value *Args[] = {GetThreadLimit(CGF, isSPMDExecutionMode()), Mode, DS};
+  llvm::Value *RequiresOMPRuntime =
+      Bld.getInt16(EST.TP.requiresOMPRuntime() ? 1 : 0);
+  llvm::Value *DS = Bld.getInt16(EST.TP.requiresDataSharing() ? 1 : 0);
+  llvm::Value *Args[] = {GetThreadLimit(CGF, isSPMDExecutionMode()),
+                         RequiresOMPRuntime, DS};
   CGF.EmitRuntimeCall(
       createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_spmd_kernel_init), Args);
   CGF.EmitBranch(ExecuteBB);
@@ -1558,23 +1589,25 @@ CGOpenMPRuntimeNVPTX::createNVPTXRuntimeFunction(unsigned Function) {
   llvm::Constant *RTLFn = nullptr;
   switch (static_cast<OpenMPRTLFunctionNVPTX>(Function)) {
   case OMPRTL_NVPTX__kmpc_kernel_init: {
-    // Build void __kmpc_kernel_init(kmp_int32 thread_limit);
-    llvm::Type *TypeParams[] = {CGM.Int32Ty};
+    // Build void __kmpc_kernel_init(kmp_int32 thread_limit,
+    // int16_t RequiresOMPRuntime);
+    llvm::Type *TypeParams[] = {CGM.Int32Ty, CGM.Int16Ty};
     llvm::FunctionType *FnTy =
         llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
     RTLFn = CGM.CreateRuntimeFunction(FnTy, "__kmpc_kernel_init");
     break;
   }
   case OMPRTL_NVPTX__kmpc_kernel_deinit: {
-    // Build void __kmpc_kernel_deinit();
+    // Build void __kmpc_kernel_deinit(int16_t IsOMPRuntimeInitialized);
+    llvm::Type *TypeParams[] = {CGM.Int16Ty};
     llvm::FunctionType *FnTy =
-        llvm::FunctionType::get(CGM.VoidTy, {}, /*isVarArg*/ false);
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
     RTLFn = CGM.CreateRuntimeFunction(FnTy, "__kmpc_kernel_deinit");
     break;
   }
   case OMPRTL_NVPTX__kmpc_spmd_kernel_init: {
     // Build void __kmpc_spmd_kernel_init(kmp_int32 thread_limit,
-    // short RequiresOMPRuntime, short RequiresDataSharing);
+    // int16_t RequiresOMPRuntime, int16_t RequiresDataSharing);
     llvm::Type *TypeParams[] = {CGM.Int32Ty, CGM.Int16Ty, CGM.Int16Ty};
     llvm::FunctionType *FnTy =
         llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
@@ -4020,11 +4053,12 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
              "All entry function are expected to have an exit basic block.");
 
       auto *ShouldReturnImmediatelly = llvm::CallInst::Create(
-          createKernelInitializerFunction(DSI.EntryWorkerFunction), "",
-          InsertPtr);
+          createKernelInitializerFunction(DSI.EntryWorkerFunction,
+                                          DSI.RequiresOMPRuntime),
+          "", InsertPtr);
       auto *Cond = llvm::ICmpInst::Create(
           llvm::CmpInst::ICmp, llvm::CmpInst::ICMP_EQ, ShouldReturnImmediatelly,
-          llvm::Constant::getNullValue(CGM.Int32Ty), "", InsertPtr);
+          llvm::ConstantInt::get(CGM.Int32Ty, 1), "", InsertPtr);
       auto *CurrentBB = InsertPtr->getParent();
       auto *MasterBB = CurrentBB->splitBasicBlock(InsertPtr, ".master");
 
