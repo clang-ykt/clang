@@ -164,6 +164,9 @@ def err_drv_expecting_fopenmp_with_fopenmp_targets : Error<
 def warn_drv_omp_offload_target_duplicate : Warning<
   "The OpenMP offloading target '%0' is similar to target '%1' already specified - will be ignored.">, 
   InGroup<OpenMPTarget>;
+def remark_drv_omp_offload_target_missingbcruntime : Warning<
+  "Expect degraded performance on the target device due to missing libomptarget-nvptx.bc in library path.">,
+  InGroup<OpenMPTarget>;
 def err_drv_bitcode_unsupported_on_toolchain : Error<
   "-fembed-bitcode is not supported on versions of iOS prior to 6.0">;
 

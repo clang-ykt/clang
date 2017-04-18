@@ -4957,15 +4957,19 @@ void CudaToolChain::addClangTargetOptions(
     }
 
     std::string LibOmpTargetName = "libomptarget-nvptx.bc";
+    bool FoundBCLibrary = false;
     for (std::string LibraryPath : LibraryPaths) {
       SmallString<128> LibOmpTargetFile(LibraryPath);
       llvm::sys::path::append(LibOmpTargetFile, LibOmpTargetName);
       if (llvm::sys::fs::exists(LibOmpTargetFile)) {
         CC1Args.push_back("-mlink-cuda-bitcode");
         CC1Args.push_back(DriverArgs.MakeArgString(LibOmpTargetFile));
+        FoundBCLibrary = true;
         break;
       }
     }
+    if (!FoundBCLibrary)
+      getDriver().Diag(diag::remark_drv_omp_offload_target_missingbcruntime);
   }
 }
 
