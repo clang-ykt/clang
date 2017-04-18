@@ -263,7 +263,7 @@ private:
       return Mode;
     }
 
-    bool requiresOMPRuntime() const;
+    bool requiresOMPRuntime() const { return RequiresOMPRuntime; }
 
     MatchReasonTy requiresOMPRuntimeReason() const {
       return RequiresOMPRuntimeReason;

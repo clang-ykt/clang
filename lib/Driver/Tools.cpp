@@ -5406,6 +5406,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                        /*Default=*/false))
         CmdArgs.push_back("-fopenmp-combine-dirs");
 
+      if (Args.hasFlag(options::OPT_fopenmp_nvptx_requireruntime,
+                       options::OPT_fopenmp_nvptx_norequireruntime,
+                       /*Default=*/false))
+        CmdArgs.push_back("-fopenmp-nvptx-requireruntime");
+
       Args.AddAllArgs(CmdArgs, options::OPT_fopenmp_version_EQ);
       break;
     default:

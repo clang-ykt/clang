@@ -1071,15 +1071,16 @@ static bool directiveRequiresOMPRuntime(const OMPExecutableDirective &D,
 }
 } // namespace
 
-bool CGOpenMPRuntimeNVPTX::TargetKernelProperties::requiresOMPRuntime() const {
-  return RequiresOMPRuntime;
-}
-
 void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setExecutionMode() {
   Mode = GetExecutionMode(CGM, D);
 }
 
 void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setRequiresOMPRuntime() {
+  if (CGM.getCodeGenOpts().OpenMPRequireGPURuntime) {
+    RequiresOMPRuntime = true;
+    return;
+  }
+
   if (Mode == CGOpenMPRuntimeNVPTX::ExecutionMode::SPMD) {
     const OMPExecutableDirective &SD = *getSPMDDirective(CGM, D);
     RequiresOMPRuntime =
@@ -1155,7 +1156,8 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setRequiresOMPRuntime() {
 // Data sharing support is required if this SPMD construct may have a nested
 // parallel or simd directive.
 void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setRequiresDataSharing() {
-  if (Mode == CGOpenMPRuntimeNVPTX::ExecutionMode::GENERIC) {
+  if (CGM.getCodeGenOpts().OpenMPRequireGPURuntime ||
+      Mode == CGOpenMPRuntimeNVPTX::ExecutionMode::GENERIC) {
     RequiresDataSharing = true;
     return;
   }

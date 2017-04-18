@@ -30,6 +30,7 @@ CODEGENOPT(Name, Bits, Default)
 
 CODEGENOPT(OpenmpCombineDirs, 1, 0) ///< Whether or not to combine openmp directives aggressively.
 CODEGENOPT(OpenmpNonaliasedMaps, 1, 0) ///< Whether or not to add noalias to parameters of map outlining.
+CODEGENOPT(OpenMPRequireGPURuntime, 1, 0) ///< Do not optimize out the OpenMP runtime on the NVPTX target device.
 
 CODEGENOPT(DisableIntegratedAS, 1, 0) ///< -no-integrated-as
 CODEGENOPT(CompressDebugSections, 1, 0) ///< -Wa,-compress-debug-sections
