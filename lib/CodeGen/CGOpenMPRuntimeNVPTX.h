@@ -149,6 +149,22 @@ public:
     UNKNOWN,
   };
 
+  enum MatchReasonCodeKind {
+    Unknown,
+    ExternFunctionDefinition,
+    DirectiveRequiresRuntime,
+    NestedParallelRequiresRuntime,
+    MasterContextExceedsSharedMemory,
+  };
+
+  struct MatchReasonTy {
+    MatchReasonCodeKind RC;
+    SourceLocation Loc;
+    MatchReasonTy(MatchReasonCodeKind RC, SourceLocation Loc)
+        : RC(RC), Loc(Loc) {}
+    MatchReasonTy() : RC(Unknown), Loc(SourceLocation()) {}
+  };
+
 private:
   // \brief Map between a context and its data sharing information.
   typedef llvm::DenseMap<const Decl *, DataSharingInfo> DataSharingInfoMapTy;
@@ -236,11 +252,11 @@ private:
       assert(isOpenMPTargetExecutionDirective(D.getDirectiveKind()) &&
              "Expecting a target execution directive.");
       setExecutionMode();
-      setRequiresOMPRuntime();
       setRequiresDataSharing();
+      setMasterSharedDataSize();
+      setRequiresOMPRuntime();
       setMayContainOrphanedParallel();
       setHasAtMostOneNestedParallelInLexicalScope();
-      setMasterSharedDataSize();
     };
 
     CGOpenMPRuntimeNVPTX::ExecutionMode getExecutionMode() const {
@@ -248,6 +264,10 @@ private:
     }
 
     bool requiresOMPRuntime() const;
+
+    MatchReasonTy requiresOMPRuntimeReason() const {
+      return RequiresOMPRuntimeReason;
+    }
 
     bool requiresDataSharing() const { return RequiresDataSharing; }
 
@@ -277,6 +297,7 @@ private:
     // kernels it is possible to disable the runtime and thus reduce
     // execution overhead.
     bool RequiresOMPRuntime;
+    MatchReasonTy RequiresOMPRuntimeReason;
     // Record if the target region requires data sharing support.  Data
     // sharing support is not required for an SPMD construct if it does not
     // contain a nested parallel or simd directive.

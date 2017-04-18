@@ -56,6 +56,15 @@ def remark_fe_backend_optimization_remark_analysis_aliasing : Remark<"%0; "
     "the '__restrict__' qualifier with the independent array arguments. "
     "Erroneous results will occur if these options are incorrectly applied!">,
     BackendInfo, InGroup<BackendOptimizationRemarkAnalysis>;
+def remark_fe_backend_optimization_remark_analysis_target : Remark<"Offloading kernel to the GPU.\n"
+    "%select{Combined construct detected.|Non-combined construct detected.}0\n"
+    "GPU OpenMP runtime %select{elided.|required.}1\n"
+    "%select{|Master-worker sharing of %3 bytes via GPU %select{shared|global}4 memory.}2"
+    "%select{|\nPerformance may be degraded due to possible orphaned parallel directive.}5">,
+    BackendInfo, InGroup<BackendOptimizationRemarkAnalysis>;
+def remark_fe_backend_optimization_remark_analysis_target_runtime : Remark<
+    "%select{|Call to external function|Directive requires runtime|Simd or nested parallel directive requires runtime|Master stack size too large, use flag to increase size}0">,
+    BackendInfo, InGroup<BackendOptimizationRemarkAnalysis>;
 def warn_fe_backend_optimization_failure : Warning<"%0">, BackendInfo,
     InGroup<BackendOptimizationFailure>, DefaultWarn;
 def note_fe_backend_invalid_loc : Note<"could "

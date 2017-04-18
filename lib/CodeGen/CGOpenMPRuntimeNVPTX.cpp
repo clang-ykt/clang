@@ -18,6 +18,7 @@
 #include "clang/AST/DeclOpenMP.h"
 #include "clang/AST/StmtOpenMP.h"
 #include "clang/AST/StmtVisitor.h"
+#include "clang/Frontend/FrontendDiagnostic.h"
 #include "llvm/ADT/SmallPtrSet.h"
 
 using namespace clang;
@@ -785,10 +786,11 @@ static void EmptyPrePost(const OMPExecutableDirective &) {}
 
 class OpenMPFinder : public ConstStmtVisitor<OpenMPFinder> {
 private:
+  using MatchReasonTy = CGOpenMPRuntimeNVPTX::MatchReasonTy;
   using PrePostMatchTy =
       const llvm::function_ref<void(const OMPExecutableDirective &)>;
   using MatchTy = const llvm::function_ref<bool(const OMPExecutableDirective &,
-                                                bool, bool &)>;
+                                                bool, bool &, MatchReasonTy &)>;
 
   const PrePostMatchTy PreVisit;
   const PrePostMatchTy PostVisit;
@@ -797,6 +799,7 @@ private:
   bool MatchesOpenMP;
   bool IsWithinDeclareTarget;
   llvm::SmallPtrSet<const Stmt *, 8> Visited;
+  MatchReasonTy MatchReason;
 
   Stmt *getBody(const FunctionDecl *FD) {
     const FunctionDecl *D = FD;
@@ -809,7 +812,7 @@ private:
     return D->doesThisDeclarationHaveABody() ? D->getBody() : nullptr;
   }
 
-  void VisitFunctionDecl(const FunctionDecl *FD) {
+  void VisitFunctionDecl(const FunctionDecl *FD, SourceLocation Loc) {
     if (!FD)
       return;
     Stmt *Body = getBody(FD);
@@ -821,6 +824,9 @@ private:
         Visit(Body);
       }
     } else if (!FD->getBuiltinID()) {
+      MatchReason = MatchReasonTy(
+          CGOpenMPRuntimeNVPTX::MatchReasonCodeKind::ExternFunctionDefinition,
+          Loc);
       // If this is an externally defined function that is not a builtin,
       // assume it matches the requested condition.
       MatchesOpenMP = !IsSafeToRemoveRuntime(FD);
@@ -848,20 +854,20 @@ public:
     if (!VisitCalls)
       return;
 
-    VisitFunctionDecl(E->getDirectCallee());
+    VisitFunctionDecl(E->getDirectCallee(), E->getLocStart());
   }
 
   void VisitCXXConstructExpr(const CXXConstructExpr *E) {
     if (!VisitCalls)
       return;
 
-    VisitFunctionDecl(E->getConstructor());
+    VisitFunctionDecl(E->getConstructor(), E->getLocStart());
 
     // Visit the destructor.
     QualType Ty = E->getType();
     const CXXRecordDecl *RD = Ty->getAsCXXRecordDecl();
     if (!MatchesOpenMP && RD)
-      VisitFunctionDecl(RD->getDestructor());
+      VisitFunctionDecl(RD->getDestructor(), E->getLocStart());
   }
 
   // Found an OMP directive.
@@ -870,7 +876,8 @@ public:
     PreVisit(D);
 
     bool ShouldVisitDirectiveBody = false;
-    MatchesOpenMP = Matcher(D, IsWithinDeclareTarget, ShouldVisitDirectiveBody);
+    MatchesOpenMP = Matcher(D, IsWithinDeclareTarget, ShouldVisitDirectiveBody,
+                            MatchReason);
 
     if (ShouldVisitDirectiveBody && D.hasAssociatedStmt())
       Visit(cast<CapturedStmt>(D.getAssociatedStmt())->getCapturedStmt());
@@ -879,6 +886,7 @@ public:
   }
 
   bool matchesOpenMP() { return MatchesOpenMP; }
+  MatchReasonTy matchReason() { return MatchReason; }
 };
 
 /// discard all CompoundStmts intervening between two constructs
@@ -1064,10 +1072,7 @@ static bool directiveRequiresOMPRuntime(const OMPExecutableDirective &D,
 } // namespace
 
 bool CGOpenMPRuntimeNVPTX::TargetKernelProperties::requiresOMPRuntime() const {
-  if (Mode == CGOpenMPRuntimeNVPTX::ExecutionMode::SPMD)
-    return RequiresOMPRuntime;
-  else /* Generic mode */
-    return RequiresOMPRuntime || MasterSharedDataSize > DS_SimpleBufferSize;
+  return RequiresOMPRuntime;
 }
 
 void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setExecutionMode() {
@@ -1080,14 +1085,20 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setRequiresOMPRuntime() {
     RequiresOMPRuntime =
         directiveRequiresOMPRuntime(SD, /*IsSPMDDirective=*/true,
                                     /*IsInParallelRegion=*/true);
+    RequiresOMPRuntimeReason =
+        MatchReasonTy(DirectiveRequiresRuntime, SD.getLocStart());
     if (!RequiresOMPRuntime) {
-      auto &&CondGen = [](const OMPExecutableDirective &D, bool,
-                          bool &) -> bool { return true; };
+      auto &&CondGen = [](const OMPExecutableDirective &D, bool, bool &,
+                          MatchReasonTy &MatchReason) -> bool {
+        MatchReason = MatchReasonTy(DirectiveRequiresRuntime, D.getLocStart());
+        return true;
+      };
       OpenMPFinder Finder(CondGen, [](const OMPExecutableDirective &D) {},
                           [](const OMPExecutableDirective &D) {});
       Finder.Visit(
           cast<CapturedStmt>(SD.getAssociatedStmt())->getCapturedStmt());
       RequiresOMPRuntime = Finder.matchesOpenMP();
+      RequiresOMPRuntimeReason = Finder.matchReason();
     }
   } else { // GENERIC
     // Identify nested parallel/simd within lexical scope of the target.
@@ -1097,21 +1108,30 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setRequiresOMPRuntime() {
       if (isOpenMPParallelDirective(Kind) || Kind == OMPD_simd)
         ParallelLevel++;
     };
-    auto &&CondGen = [&ParallelLevel](const OMPExecutableDirective &D,
-                                      bool IsWithinDeclareTarget,
-                                      bool &ShouldVisitDirectiveBody) -> bool {
+    auto &&CondGen = [&ParallelLevel](
+        const OMPExecutableDirective &D, bool IsWithinDeclareTarget,
+        bool &ShouldVisitDirectiveBody, MatchReasonTy &MatchReason) -> bool {
       // If this directive is inside a declare target function, we
       // need the runtime to handle it.
-      if (IsWithinDeclareTarget)
+      if (IsWithinDeclareTarget) {
+        MatchReason = MatchReasonTy(DirectiveRequiresRuntime, D.getLocStart());
         return true;
+      }
 
       // We cannot handle nested parallelism without the runtime.
-      if (ParallelLevel > 1)
+      if (ParallelLevel > 1) {
+        MatchReason =
+            MatchReasonTy(NestedParallelRequiresRuntime, D.getLocStart());
         return true;
+      }
 
       ShouldVisitDirectiveBody = true;
-      return directiveRequiresOMPRuntime(D, /*IsSPMDDirective=*/false,
-                                         ParallelLevel == 1);
+      if (directiveRequiresOMPRuntime(D, /*IsSPMDDirective=*/false,
+                                      ParallelLevel == 1)) {
+        MatchReason = MatchReasonTy(DirectiveRequiresRuntime, D.getLocStart());
+        return true;
+      }
+      return false;
     };
     auto &&PostMatch = [&ParallelLevel](const OMPExecutableDirective &D) {
       OpenMPDirectiveKind Kind = D.getDirectiveKind();
@@ -1121,6 +1141,13 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setRequiresOMPRuntime() {
     OpenMPFinder Finder(CondGen, PreMatch, PostMatch);
     Finder.Visit(cast<CapturedStmt>(D.getAssociatedStmt())->getCapturedStmt());
     RequiresOMPRuntime = Finder.matchesOpenMP();
+    RequiresOMPRuntimeReason = Finder.matchReason();
+
+    if (!RequiresOMPRuntime && MasterSharedDataSize > DS_SimpleBufferSize) {
+      RequiresOMPRuntime = true;
+      RequiresOMPRuntimeReason =
+          MatchReasonTy(MasterContextExceedsSharedMemory, D.getLocStart());
+    }
   }
 }
 
@@ -1139,7 +1166,8 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setRequiresDataSharing() {
   // alone. Assume a nested 'parallel' if there is a call to an external
   // function.
   auto &&CondGen = [](const OMPExecutableDirective &D, bool,
-                      bool &ShouldVisitDirectiveBody) -> bool {
+                      bool &ShouldVisitDirectiveBody,
+                      MatchReasonTy &MatchReason) -> bool {
     OpenMPDirectiveKind Kind = D.getDirectiveKind();
     bool Match = isOpenMPParallelDirective(Kind) || Kind == OMPD_simd;
     ShouldVisitDirectiveBody = !Match;
@@ -1154,9 +1182,9 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setRequiresDataSharing() {
 
 void CGOpenMPRuntimeNVPTX::TargetKernelProperties::
     setMayContainOrphanedParallel() {
-  auto &&CondGen = [](const OMPExecutableDirective &D,
-                      bool IsWithinDeclareTarget,
-                      bool &ShouldVisitDirectiveBody) -> bool {
+  auto &&CondGen =
+      [](const OMPExecutableDirective &D, bool IsWithinDeclareTarget,
+         bool &ShouldVisitDirectiveBody, MatchReasonTy &MatchReason) -> bool {
     ShouldVisitDirectiveBody = true;
     return IsWithinDeclareTarget
                ? isOpenMPParallelDirective(D.getDirectiveKind())
@@ -1170,9 +1198,9 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::
 void CGOpenMPRuntimeNVPTX::TargetKernelProperties::
     setHasAtMostOneNestedParallelInLexicalScope() {
   unsigned NestedParallelCount = 0;
-  auto &&CondGen =
-      [&NestedParallelCount](const OMPExecutableDirective &D, bool,
-                             bool &ShouldVisitDirectiveBody) -> bool {
+  auto &&CondGen = [&NestedParallelCount](const OMPExecutableDirective &D, bool,
+                                          bool &ShouldVisitDirectiveBody,
+                                          MatchReasonTy &MatchReason) -> bool {
     ShouldVisitDirectiveBody = true;
     if (isOpenMPParallelDirective(D.getDirectiveKind())) {
       ShouldVisitDirectiveBody = false;
@@ -2341,6 +2369,19 @@ void CGOpenMPRuntimeNVPTX::emitTargetOutlinedFunction(
   }
 
   SetPropertyExecutionMode(CGM, OutlinedFn->getName(), Mode);
+
+  CGM.getContext().getDiagnostics().Report(
+      D.getLocStart(),
+      diag::remark_fe_backend_optimization_remark_analysis_target)
+      << (TP.getExecutionMode() == CGOpenMPRuntimeNVPTX::ExecutionMode::GENERIC)
+      << TP.requiresOMPRuntime() << (TP.masterSharedDataSize() > 0)
+      << TP.masterSharedDataSize() << TP.requiresOMPRuntime()
+      << TP.mayContainOrphanedParallel();
+  if (TP.requiresOMPRuntime())
+    CGM.getContext().getDiagnostics().Report(
+        TP.requiresOMPRuntimeReason().Loc,
+        diag::remark_fe_backend_optimization_remark_analysis_target_runtime)
+        << TP.requiresOMPRuntimeReason().RC;
 }
 
 void CGOpenMPRuntimeNVPTX::emitNumThreadsClause(CodeGenFunction &CGF,
