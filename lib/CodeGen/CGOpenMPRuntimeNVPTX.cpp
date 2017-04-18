@@ -762,6 +762,8 @@ public:
 // Check if the call is to a function in the OpenMP runtime library
 // that can be safely called even with the runtime uninitialized.
 static bool IsSafeToRemoveRuntime(const FunctionDecl *FD) {
+  if (!FD->getDeclName().isIdentifier())
+    return false;
   StringRef Name = FD->getName();
   bool RuntimeNotRequired =
       Name.equals("omp_get_wtime") || Name.equals("omp_get_wtick") ||
