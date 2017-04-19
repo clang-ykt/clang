@@ -6528,16 +6528,16 @@ public:
 };
 }
 
-// check for inner (nested) SPMD teams construct, if any
+// check for inner (nested) teams + distribute construct, if any
 static const OMPExecutableDirective *
-getNestedTeamsSPMDDirective(const OMPExecutableDirective &D) {
+getNestedTeamsDistributeKindDirective(const OMPExecutableDirective &D) {
   const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
 
   if (auto *NestedDir = dyn_cast_or_null<OMPExecutableDirective>(
           ignoreCompoundStmts(CS.getCapturedStmt()))) {
     OpenMPDirectiveKind DirectiveKind = NestedDir->getDirectiveKind();
     if (isOpenMPTeamsDirective(DirectiveKind) &&
-        isOpenMPParallelDirective(DirectiveKind))
+        isOpenMPDistributeDirective(DirectiveKind))
       return NestedDir;
   }
 
@@ -6550,11 +6550,11 @@ void CGOpenMPRuntime::emitTargetNumIterationsCall(
         CodeGenFunction &CGF, const OMPLoopDirective &D)> &SizeEmitter) {
   OpenMPDirectiveKind Kind = D.getDirectiveKind();
   const OMPExecutableDirective *TD = &D;
-  // Get nested teams distribute parallel for, if any.
-  if (Kind == OMPD_target && (TD = getNestedTeamsSPMDDirective(D)))
+  // Get nested teams distribute kind directive, if any.
+  if (Kind == OMPD_target && (TD = getNestedTeamsDistributeKindDirective(D)))
     Kind = TD->getDirectiveKind();
 
-  if (isOpenMPWorksharingDirective(Kind) && isOpenMPTeamsDirective(Kind)) {
+  if (isOpenMPDistributeDirective(Kind) && isOpenMPTeamsDirective(Kind)) {
     auto &Ctx = CGF.getContext();
     const OMPLoopDirective &LD = *dyn_cast<OMPLoopDirective>(TD);
     FirstPrivateChecker Checker(Ctx, /* target construct */ D);
