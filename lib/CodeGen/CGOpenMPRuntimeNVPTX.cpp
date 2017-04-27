@@ -1008,7 +1008,7 @@ getSPMDDirective(const CodeGenModule &CGM, const OMPExecutableDirective &D) {
   case OMPD_target:
   case OMPD_target_simd: {
     const OMPExecutableDirective *NestedDir =
-        getNestedTeamsSPMDDirective(D, CGM.getLangOpts().OpenMPCombineDirs);
+        getNestedTeamsSPMDDirective(D, CGM.getCodeGenOpts().OpenmpCombineDirs);
     assert(NestedDir && "Failed to find nested teams SPMD directive.");
     return NestedDir;
   }
