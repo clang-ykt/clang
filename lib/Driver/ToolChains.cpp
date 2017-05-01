@@ -1813,6 +1813,8 @@ CudaInstallationDetector::CudaInstallationDetector(
   if (Args.hasArg(options::OPT_cuda_path_EQ))
     CudaPathCandidates.push_back(
         Args.getLastArgValue(options::OPT_cuda_path_EQ));
+  else if (char *env = ::getenv("CUDAPATH"))
+    CudaPathCandidates.push_back(D.SysRoot + env);
   else {
     CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda-8.0");
     CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda");
