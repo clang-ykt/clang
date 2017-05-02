@@ -1683,13 +1683,15 @@ bool Parser::ParseOpenMPVarList(OpenMPDirectiveKind DKind,
         else if (Data.MapType == OMPC_MAP_always)
           Diag(Tok, diag::err_omp_map_type_missing);
         ConsumeToken();
-      } else if (PP.LookAhead(0).is(tok::comma) || IsMapClauseModifierToken(PP.LookAhead(0))) {
-        // always can be followed by comma or directly by the type modifier: distinguish here
+      } else if (PP.LookAhead(0).is(tok::comma) ||
+                 IsMapClauseModifierToken(PP.LookAhead(0))) {
+        // always can be followed by comma or directly by the type modifier:
+        // distinguish here
         bool hasComma = PP.LookAhead(0).is(tok::comma);
         if ((hasComma && IsMapClauseModifierToken(PP.LookAhead(1)) &&
-            PP.LookAhead(2).is(tok::colon)) ||
+             PP.LookAhead(2).is(tok::colon)) ||
             (!hasComma && IsMapClauseModifierToken(PP.LookAhead(0)) &&
-            PP.LookAhead(1).is(tok::colon))) {
+             PP.LookAhead(1).is(tok::colon))) {
           Data.MapTypeModifier = Data.MapType;
           if (Data.MapTypeModifier != OMPC_MAP_always) {
             Diag(Tok, diag::err_omp_unknown_map_type_modifier);
