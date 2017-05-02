@@ -1676,7 +1676,6 @@ bool Parser::ParseOpenMPVarList(OpenMPDirectiveKind DKind,
     Data.DepLinMapLoc = Tok.getLocation();
     bool ColonExpected = false;
 
-
     if (IsMapClauseModifierToken(Tok)) {
       if (PP.LookAhead(0).is(tok::colon)) {
         if (Data.MapType == OMPC_MAP_unknown)
