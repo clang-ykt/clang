@@ -1299,26 +1299,80 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setMasterSharedDataSize() {
 
   llvm::SmallSet<const VarDecl *, 32> AlreadySharedDecls;
   for (auto *Dir : DSDirectives) {
+    printf("-----------------> Shared Decl\n");
     const CapturedStmt *CS = cast<CapturedStmt>(Dir->getAssociatedStmt());
     const RecordDecl *RD = CS->getCapturedRecordDecl();
     auto CurField = RD->field_begin();
     auto CurCap = CS->capture_begin();
+
+    printf(" ================================== \n");
+
+    int count = 0;
+    for (CapturedStmt::const_capture_init_iterator I = CS->capture_init_begin(),
+                                                   E = CS->capture_init_end();
+         I != E; ++I){
+      printf("   ----------> cap init iterator = %d\n", count++);
+      (*I)->dump();
+    }
+
+    printf(" ================================== \n");
+
+    auto FirstField = RD->field_begin();
+    auto LastField = RD->field_end();
+    count = 0;
+    for(; FirstField != LastField; ++FirstField){
+      printf("   ----------> Field count = %d       CurField->hasCapturedVLAType() = %d \n", count++, FirstField->hasCapturedVLAType());
+      FirstField->dump();
+    }
+
+    printf(" ================================== \n");
+
+    auto FirstCap = CS->capture_begin();
+    auto LastCap = CS->capture_end();
+    count = 0;
+    for(; FirstCap != LastCap; ++FirstCap){
+      printf("   ----------> cap count = %d\n", count++);
+    }
+
+    printf(" ================================== \n");
+
     for (CapturedStmt::const_capture_init_iterator I = CS->capture_init_begin(),
                                                    E = CS->capture_init_end();
          I != E; ++I, ++CurField, ++CurCap) {
+      printf("   -----------------> Iteration\n");
       // Track the data sharing type.
       bool DSRef = false;
-      QualType ElemTy = (*I)->getType();
+      printf("   -----------------> after decl 1\n");
+      QualType ElemTy;
+      if (*I)
+        ElemTy = (*I)->getType();
+      printf("   -----------------> after decl 2\n");
       const VarDecl *CurVD = nullptr;
 
+      printf("   -----------------> After get type\n");
+
+      (*I)->dump();
+      CurField->dump();
+      //CurCap->dump();
+
+      printf("   -----------------> Has VLA Type: %d\n", CurField->hasCapturedVLAType());
+
+      // ++I;
+      // ++CurField;
+      // ++CurCap;
+
       if (CurField->hasCapturedVLAType()) {
-        llvm_unreachable(
-            "VLAs are not yet supported in NVPTX target data sharing!");
+        printf("   -----------------> Branch 1\n");
+        CurField->getCapturedVLAType()->dump();
+        // llvm_unreachable(
+        //     "VLAs are not yet supported in NVPTX target data sharing!");
         continue;
       } else if (CurCap->capturesThis()) {
+        printf("   -----------------> Branch 2\n");
         // We use null to indicate 'this'.
         CurVD = nullptr;
       } else {
+        printf("   -----------------> Branch 3\n");
         // Get the variable that is initializing the capture.
         CurVD = CurCap->getCapturedVar();
 
@@ -1353,6 +1407,7 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setMasterSharedDataSize() {
         ElemTy = C.getPointerType(ElemTy);
 
       unsigned Bytes = C.getTypeSizeInChars(ElemTy).getQuantity();
+      printf("   --------> Bytes = %d\n", Bytes);
       MasterSharedDataSize += Bytes;
     }
 
@@ -2909,14 +2964,16 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
          I != E; ++I, ++CurField, ++CurCap) {
 
       const VarDecl *CurVD = nullptr;
-      QualType ElemTy = (*I)->getType();
+      QualType ElemTy;
+      if (*I)
+        ElemTy = (*I)->getType();
 
       // Track the data sharing type.
       DataSharingInfo::DataSharingType DST = DataSharingInfo::DST_Val;
 
       if (CurField->hasCapturedVLAType()) {
-        llvm_unreachable(
-            "VLAs are not yet supported in NVPTX target data sharing!");
+        // llvm_unreachable(
+        //     "VLAs are not yet supported in NVPTX target data sharing!");
         continue;
       } else if (CurCap->capturesThis()) {
         // We use null to indicate 'this'.
@@ -3466,20 +3523,28 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   // Create temporary variables to contain the new args.
   SmallVector<Address, 32> ArgsAddresses;
 
+  unsigned NameIdx = 0;
   auto *RD = CS.getCapturedRecordDecl();
   auto CurField = RD->field_begin();
   for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
                                             CE = CS.capture_end();
        CI != CE; ++CI, ++CurField) {
-    assert(!CI->capturesVariableArrayType() && "Not expecting to capture VLA!");
+    // assert(!CI->capturesVariableArrayType() && "Not expecting to capture VLA!");
+    CurField->dump();
+
+    QualType ElemTy = CurField->getType();
+
+    if (CI->capturesVariableArrayType()){
+      ArgsAddresses.push_back(CGF.CreateMemTemp(ElemTy, "vla.addr." + std::to_string(NameIdx)));
+      NameIdx++;
+      continue;
+    }
 
     StringRef Name;
     if (CI->capturesThis())
       Name = "this";
     else
       Name = CI->getCapturedVar()->getName();
-
-    QualType ElemTy = CurField->getType();
 
     // If this is a capture by copy the element type has to be the pointer to
     // the data.
@@ -3525,10 +3590,16 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
         DSI.MasterRecordType->getAs<RecordType>()->getDecl()->field_begin();
     for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
                                               CE = CS.capture_end();
-         CI != CE; ++CI, ++ArgsIdx, ++FI) {
+         CI != CE; ++CI, ++ArgsIdx) {
+      printf(" ------------------ >>>  CI->capturesVariableArrayType() = %d \n", CI->capturesVariableArrayType());
+      if (CI->capturesVariableArrayType())
+        // Create Value store
+        continue;
       const VarDecl *VD = CI->capturesThis() ? nullptr : CI->getCapturedVar();
+      FI->dump();
       CreateAddressStoreForVariable(CGF, VD, FI->getType(), DSI, CastedDataAddr,
                                     ArgsAddresses[ArgsIdx]);
+      ++FI;
     }
 
     // Get the addresses of the loop bounds if required.
@@ -3633,10 +3704,18 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     }
   });
 
+  printf("        -------------- >>>> \n");
   auto CapInfo = DSI.CapturesValues.begin();
   auto FI = DSI.MasterRecordType->getAs<RecordType>()->getDecl()->field_begin();
   auto CI = CS.capture_begin();
-  for (unsigned i = 0; i < CS.capture_size(); ++i, ++FI, ++CI, ++CapInfo) {
+  for (unsigned i = 0; i < CS.capture_size(); ++i, ++CI, ++CapInfo) {
+    FI->dump();
+    printf("      --------------- >>>> CI->capturesVariableArrayType() = %d\n", CI->capturesVariableArrayType());
+    if (CI->capturesVariableArrayType()) {
+      Arg = CGF.EmitLoadOfScalar(CastLV, SourceLocation());
+      Args.push_back(Arg);
+      continue;
+    }
     auto *Arg = CGF.EmitLoadOfScalar(ArgsAddresses[i], /*Volatile=*/false,
                                      Ctx.getPointerType(FI->getType()),
                                      SourceLocation());
@@ -3662,6 +3741,8 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     }
 
     Args.push_back(Arg);
+
+    ++FI;
   }
 
   CGF.EmitCallOrInvoke(&OutlinedParallelFn, Args);
