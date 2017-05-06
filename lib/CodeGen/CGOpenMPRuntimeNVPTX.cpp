@@ -1550,7 +1550,7 @@ void CGOpenMPRuntimeNVPTX::emitWorkerLoop(CodeGenFunction &CGF,
 void CGOpenMPRuntimeNVPTX::emitGenericEntryHeader(CodeGenFunction &CGF,
                                                   EntryFunctionState &EST,
                                                   WorkerFunctionState &WST) {
-  printf(" --------- Emit Generic ENTRY HEADER \n");
+  // printf(" --------- Emit Generic ENTRY HEADER \n");
   //  // Setup BBs in entry function.
   //  llvm::BasicBlock *WorkerCheckBB =
   //  CGF.createBasicBlock(".check.for.worker");
@@ -2281,13 +2281,13 @@ void CGOpenMPRuntimeNVPTX::emitGenericKernel(const OMPExecutableDirective &D,
 
   // CGM.CurFn->dump()
 
-  printf("\n ------- emitTargetOutlinedFunctionHelper \n");
+  // printf("\n ------- emitTargetOutlinedFunctionHelper \n");
   emitTargetOutlinedFunctionHelper(D, ParentName, OutlinedFn, OutlinedFnID,
                                    IsOffloadEntry, CodeGen);
 
   // CGM.CurFn->dump()
 
-  printf("\n ------- emitWorkerFunction \n");
+  // printf("\n ------- emitWorkerFunction \n");
   // Create the worker function
   emitWorkerFunction(WST);
 
@@ -3077,8 +3077,8 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
 
   auto &EnclosingFuncInfo = DataSharingFunctionInfoMap[EnclosingCGF.CurFn];
 
-  printf("\n  --------------- createDataSharingPerFunctionInfrastructure\n");
-  EnclosingCGF.CurFn->dump();
+  // printf("\n  --------------- createDataSharingPerFunctionInfrastructure\n");
+  // EnclosingCGF.CurFn->dump();
 
   // If we already have a data sharing initializer of this function, don't need
   // to create a new one.
@@ -3791,7 +3791,7 @@ void CGOpenMPRuntimeNVPTX::emitGenericParallelCall(
   llvm::Function *Fn = cast<llvm::Function>(OutlinedFn);
   llvm::Function *WFn = WrapperFunctionsMap[Fn];
   assert(WFn && "Wrapper function does not exist??");
-  printf("\n ------------ emitGenericParallelCall \n");
+  // printf("\n ------------ emitGenericParallelCall \n");
 
   // Force inline this outlined function at its call site.
   Fn->removeFnAttr(llvm::Attribute::NoInline);
@@ -3802,8 +3802,8 @@ void CGOpenMPRuntimeNVPTX::emitGenericParallelCall(
   // function.
   createDataSharingPerFunctionInfrastructure(CGF);
 
-  printf("\n ------------ emitGenericParallelCall. After createDataSharingPerFunctionInfrastructure \n");
-  CGF.CurFn->dump();
+  // printf("\n ------------ emitGenericParallelCall. After createDataSharingPerFunctionInfrastructure \n");
+  // CGF.CurFn->dump();
 
   auto *RTLoc = emitUpdateLocation(CGF, Loc);
   auto &&L0ParallelGen = [this, WFn, &CapturedVars](CodeGenFunction &CGF,
@@ -3969,7 +3969,7 @@ void CGOpenMPRuntimeNVPTX::emitSPMDParallelCall(
 void CGOpenMPRuntimeNVPTX::emitParallelCall(
     CodeGenFunction &CGF, SourceLocation Loc, llvm::Value *OutlinedFn,
     ArrayRef<llvm::Value *> CapturedVars, const Expr *IfCond) {
-  printf("\n ----------------  emitParallelCall \n");
+  // printf("\n ----------------  emitParallelCall \n");
   if (!CGF.HaveInsertPoint())
     return;
 
@@ -4453,7 +4453,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
 
     llvm::BasicBlock &HeaderBB = Fn->front();
 
-    printf("\n ----- BasicBlock ----- \n");
+    // printf("\n ----- BasicBlock ----- \n");
     llvm::Instruction *SharedDataInfrastructureInsertPoint = nullptr;
     for (auto &BB : Fn->getBasicBlockList()) {
       if (BB.getName() == "omp.init.ds") {
@@ -4485,18 +4485,21 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
         LastNonAllocaNonRefReplacement = LastNonAllocaReplacement;
     }
 
+    llvm::Instruction *DSInsertPtr = nullptr;
+    if (SharedDataInfrastructureInsertPoint)
+      DSInsertPtr = SharedDataInfrastructureInsertPoint;
+
     // We will start inserting after the first alloca or at the beginning of the
     // function.
     llvm::Instruction *InsertPtr = nullptr;
-    if (SharedDataInfrastructureInsertPoint)
-      InsertPtr = SharedDataInfrastructureInsertPoint;
-    else if (LastAlloca)
+    if (LastAlloca)
       InsertPtr = LastAlloca->getNextNode();
     else
       InsertPtr = &(*HeaderBB.begin());
 
-    printf("\n ------------ emitRegistrationFunction\n");
-    InsertPtr->dump();
+    // printf("\n ------------ emitRegistrationFunction\n");
+    // DSInsertPtr->dump();
+    // DSInsertPtr->getParent()->dump();
 
     assert(InsertPtr && "Empty function???");
 
@@ -4528,7 +4531,11 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     // If there is nothing to share, and this is an entry point, we should
     // initialize the data sharing logic anyways.
     if (!DSI.InitializationFunction && DSI.IsEntryPoint) {
-      InitializeEntryPoint(InsertPtr);
+      if (DSInsertPtr) {
+        InitializeEntryPoint(DSInsertPtr);
+      } else {
+        InitializeEntryPoint(InsertPtr);
+      }
       continue;
     }
 
@@ -4569,6 +4576,9 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
 
     // Save the insertion point of the initialization call.
     auto InitializationInsertPtr = InsertPtr;
+    if (DSInsertPtr)
+      InitializationInsertPtr = DSInsertPtr;
+
     if (LastNonAllocaNonRefReplacement)
       InitializationInsertPtr = LastNonAllocaNonRefReplacement->getNextNode();
 
@@ -4576,6 +4586,9 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     // to be replaced or after the alloca.
     if (LastNonAllocaReplacement)
       InsertPtr = LastNonAllocaReplacement->getNextNode();
+
+    if (DSInsertPtr)
+      InsertPtr = DSInsertPtr;
 
     // Do the replacements now.
     for (auto &R : Replacements) {
@@ -4615,7 +4628,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
       InsertPtr = To;
     }
 
-    // Move the initialization insert point if it is before the the current
+    // Move the initialization insert point if it is before the current
     // initialization insert point.
     for (auto *I = InsertPtr; I; I = I->getNextNode())
       if (I == InitializationInsertPtr) {
