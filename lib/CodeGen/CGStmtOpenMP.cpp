@@ -3149,6 +3149,16 @@ void CodeGenFunction::EmitOMPDistributeLoop(
   auto IVDecl = cast<VarDecl>(IVExpr->getDecl());
   EmitVarDecl(*IVDecl);
 
+  llvm::BasicBlock &HeaderBB = CurFn->front();
+  llvm::Instruction *LastInstr = nullptr;
+  for (auto &I : HeaderBB) {
+    LastInstr = &I;
+  }
+
+  llvm::BasicBlock *InitDS = createBasicBlock("omp.init.ds");
+  EmitBranch(InitDS);
+  EmitBlock(InitDS);
+
   // Emit the iterations count variable.
   // If it is not a variable, Sema decided to calculate iterations count on each
   // iteration (e.g., it is foldable into a constant).

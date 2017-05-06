@@ -4430,6 +4430,17 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
 
     llvm::BasicBlock &HeaderBB = Fn->front();
 
+    llvm::Instruction *SharedDataInfrastructureInsertPoint = nullptr;
+    for (auto &BB : Fn->getBasicBlockList()) {
+      if (BB.getName() == "omp.init.ds") {
+        for(auto &I : BB.getInstList()) {
+          SharedDataInfrastructureInsertPoint = &I;
+          break;
+        }
+        break;
+      }
+    }
+
     // Find the last alloca and the last replacement that is not an alloca.
     llvm::Instruction *LastAlloca = nullptr;
     llvm::Instruction *LastNonAllocaReplacement = nullptr;
@@ -4456,7 +4467,9 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     // We will start inserting after the first alloca or at the beginning of the
     // function.
     llvm::Instruction *InsertPtr = nullptr;
-    if (LastAlloca)
+    if (SharedDataInfrastructureInsertPoint)
+      InsertPtr = SharedDataInfrastructureInsertPoint;
+    else if (LastAlloca)
       InsertPtr = LastAlloca->getNextNode();
     else
       InsertPtr = &(*HeaderBB.begin());
