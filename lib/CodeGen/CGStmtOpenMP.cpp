@@ -3149,12 +3149,6 @@ void CodeGenFunction::EmitOMPDistributeLoop(
   auto IVDecl = cast<VarDecl>(IVExpr->getDecl());
   EmitVarDecl(*IVDecl);
 
-  llvm::BasicBlock &HeaderBB = CurFn->front();
-  llvm::Instruction *LastInstr = nullptr;
-  for (auto &I : HeaderBB) {
-    LastInstr = &I;
-  }
-
   llvm::BasicBlock *InitDS = createBasicBlock("omp.init.ds");
   EmitBranch(InitDS);
   EmitBlock(InitDS);
