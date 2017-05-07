@@ -4502,13 +4502,13 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     // DSInsertPtr->dump();
     // DSInsertPtr->getParent()->dump();
 
-    printf("\n InsertPtr: \n");
-    InsertPtr->dump();
-    printf("\n DSInsertPtr: \n");
-    DSInsertPtr->dump();
+    // printf("\n InsertPtr: \n");
+    // InsertPtr->dump();
+    // printf("\n DSInsertPtr: \n");
+    // DSInsertPtr->dump();
 
-    Fn->dump();
-    printf("\n -------------------------------------- 1\n");
+    // Fn->dump();
+    // printf("\n -------------------------------------- 1\n");
 
     assert(InsertPtr && "Empty function???");
 
@@ -4583,18 +4583,18 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
       InitArgs.push_back(Replacement);
     }
 
-    printf("\n InsertPtr: \n");
-    InsertPtr->dump();
-    printf("\n DSInsertPtr: \n");
-    DSInsertPtr->dump();
+    // printf("\n InsertPtr: \n");
+    // InsertPtr->dump();
+    // printf("\n DSInsertPtr: \n");
+    // DSInsertPtr->dump();
 
-    Fn->dump();
-    printf("\n -------------------------------------- 2\n");
+    // Fn->dump();
+    // printf("\n -------------------------------------- 2\n");
 
     // Save the insertion point of the initialization call.
     auto InitializationInsertPtr = InsertPtr;
-    if (DSInsertPtr)
-      InitializationInsertPtr = DSInsertPtr;
+    // if (DSInsertPtr)
+    //   InitializationInsertPtr = DSInsertPtr;
 
     if (LastNonAllocaNonRefReplacement)
       InitializationInsertPtr = LastNonAllocaNonRefReplacement->getNextNode();
@@ -4604,87 +4604,106 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     if (LastNonAllocaReplacement)
       InsertPtr = LastNonAllocaReplacement->getNextNode();
 
-    if (DSInsertPtr)
-      InsertPtr = DSInsertPtr;
+    // printf("\n OLD InsertPtr before we change it to DSInsertPtr: \n");
+    // InsertPtr->dump();
 
-    printf("\n InsertPtr: \n");
-    InsertPtr->dump();
-    printf("\n DSInsertPtr: \n");
-    DSInsertPtr->dump();
+    // if (DSInsertPtr)
+    //   InsertPtr = DSInsertPtr;
 
-    Fn->dump();
-    printf("\n -------------------------------------- 2.5\n");
+    // printf("\n InsertPtr: \n");
+    // InsertPtr->dump();
+    // printf("\n DSInsertPtr: \n");
+    // DSInsertPtr->dump();
+
+    // Fn->dump();
+    // printf("\n -------------------------------------- 2.5\n");
 
     // Do the replacements now.
     for (auto &R : Replacements) {
       auto *From = R.first;
       auto *To = new llvm::LoadInst(R.second, "", /*isVolatile=*/false,
                                     PointerAlign, InsertPtr);
-      From->dump();
-      To->dump();
+      // From->dump();
+      // To->dump();
 
       // Check if there are uses of From before To and move them after To. These
       // are usually the function epilogue stores.
-      for (auto &StartBlock : Fn->getBasicBlockList()) {
-        printf(" \n ====================== %s\n ", StartBlock.getName().str().c_str());
-        for (auto II = StartBlock.begin(), IE = StartBlock.end(); II != IE;) {
-          llvm::Instruction *I = &*II;
-          ++II;
+      // for (auto &StartBlock : Fn->getBasicBlockList()) {
+      //   printf(" \n ====================== %s\n ", StartBlock.getName().str().c_str());
+      //   for (auto II = StartBlock.begin(), IE = StartBlock.end(); II != IE;) {
+      for (auto II = HeaderBB.begin(), IE = HeaderBB.end(); II != IE;) {
+        llvm::Instruction *I = &*II;
+        ++II;
 
-          if (I == To)
+        if (I == To)
+          break;
+        if (I == From)
+          continue;
+
+        bool NeedsToMove = false;
+        for (auto *U : From->users()) {
+          // Is this a user of from? If so we need to move it.
+          if (I == U) {
+            NeedsToMove = true;
             break;
-          if (I == From)
-            continue;
-
-          bool NeedsToMove = false;
-          for (auto *U : From->users()) {
-            // Is this a user of from? If so we need to move it.
-            if (I == U) {
-              NeedsToMove = true;
-              break;
-            }
           }
-
-          if (!NeedsToMove)
-            continue;
-
-          I->moveBefore(To->getNextNode());
         }
-        if (hasOMPInitDSBlock) {
-          if (StartBlock.getName() == "omp.init.ds")
-            break;
-        } else
-            break;
+
+        if (!NeedsToMove)
+          continue;
+
+        I->moveBefore(To->getNextNode());
       }
+      //   if (hasOMPInitDSBlock) {
+      //     if (StartBlock.getName() == "omp.init.ds")
+      //       break;
+      //   } else
+      //       break;
+      // }
 
       From->replaceAllUsesWith(To);
 
       // Make sure the following calls are inserted before these loads.
       InsertPtr = To;
 
-      printf("\n InsertPtr: \n");
-      InsertPtr->dump();
-      printf("\n DSInsertPtr: \n");
-      DSInsertPtr->dump();
-      Fn->dump();
-      printf("\n -------------------------------------- 2.5\n");
+      // printf("\n InsertPtr: \n");
+      // InsertPtr->dump();
+      // printf("\n DSInsertPtr: \n");
+      // DSInsertPtr->dump();
+      // Fn->dump();
+      // printf("\n -------------------------------------- 2.5\n");
     }
 
-    printf("\n InsertPtr: \n");
-    InsertPtr->dump();
-    printf("\n DSInsertPtr: \n");
-    DSInsertPtr->dump();
+    // printf("\n InsertPtr: \n");
+    // InsertPtr->dump();
+    // printf("\n DSInsertPtr: \n");
+    // DSInsertPtr->dump();
 
-    Fn->dump();
-    printf("\n -------------------------------------- 3\n");
+    // Fn->dump();
+    // printf("\n -------------------------------------- 3\n");
 
     // Move the initialization insert point if it is before the current
     // initialization insert point.
-    for (auto *I = InsertPtr; I; I = I->getNextNode())
-      if (I == InitializationInsertPtr) {
-        InitializationInsertPtr = InsertPtr;
-        break;
+    // printf("\n InsertPtr: \n");
+    // InsertPtr->dump();
+    // printf("\n InitializationInsertPtr: \n");
+    // InitializationInsertPtr->dump();
+
+    if (!hasOMPInitDSBlock) {
+      for (auto *I = InsertPtr; I; I = I->getNextNode())
+        if (I == InitializationInsertPtr) {
+          InitializationInsertPtr = InsertPtr;
+          break;
+        }
+    } else {
+      for (auto &BB : Fn->getBasicBlockList()) {
+        if (BB.getName() == "omp.init.ds") {
+          InitializationInsertPtr = &(*BB.begin());
+          InsertPtr = InitializationInsertPtr;
+          break;
+        }
       }
+    }
 
     // If this is an entry point, we have to initialize the data sharing first.
     if (DSI.IsEntryPoint)
@@ -4726,8 +4745,8 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
           "Unexpected type in data sharing initialization arguments.");
     }
 
-    Fn->dump();
-    printf("\n -------------------------------------- 4\n");
+    // Fn->dump();
+    // printf("\n -------------------------------------- 4\n");
 
     (void)llvm::CallInst::Create(DSI.InitializationFunction, InitArgs, "",
                                  InsertPtr);
@@ -4747,8 +4766,8 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
               ClosingArgs, "", Ret);
     }
 
-    Fn->dump();
-    printf("\n -------------------------------------- 5\n");
+    // Fn->dump();
+    // printf("\n -------------------------------------- 5\n");
   }
 
   // Make the default registration procedure.
