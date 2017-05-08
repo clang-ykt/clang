@@ -3144,14 +3144,14 @@ void CodeGenFunction::EmitOMPFlushDirective(const OMPFlushDirective &S) {
 void CodeGenFunction::EmitOMPDistributeLoop(
     const OMPLoopDirective &S,
     const RegionCodeGenTy &CodeGenDistributeLoopContent) {
+  llvm::BasicBlock *InitDS = createBasicBlock("omp.init.ds");
+  EmitBranch(InitDS);
+  EmitBlock(InitDS);
+
   // Emit the loop iteration variable.
   auto IVExpr = cast<DeclRefExpr>(S.getIterationVariable());
   auto IVDecl = cast<VarDecl>(IVExpr->getDecl());
   EmitVarDecl(*IVDecl);
-
-  llvm::BasicBlock *InitDS = createBasicBlock("omp.init.ds");
-  EmitBranch(InitDS);
-  EmitBlock(InitDS);
 
   // Emit the iterations count variable.
   // If it is not a variable, Sema decided to calculate iterations count on each

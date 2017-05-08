@@ -4451,6 +4451,9 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     llvm::Function *Fn = DS.first;
     DataSharingFunctionInfo &DSI = DS.second;
 
+    // Fn->dump();
+    // printf("\n -------------------------------------- 0\n");
+
     llvm::BasicBlock &HeaderBB = Fn->front();
 
     // printf("\n ----- BasicBlock ----- \n");
@@ -4510,7 +4513,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     // Fn->dump();
     // printf("\n -------------------------------------- 1\n");
 
-    assert(InsertPtr && "Empty function???");
+    // assert(InsertPtr && "Empty function???");
 
     // Helper to emit the initializaion code at the provided insertion point.
     auto &&InitializeEntryPoint = [this, &DSI](llvm::Instruction *&InsertPtr) {
@@ -4607,8 +4610,8 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     // printf("\n OLD InsertPtr before we change it to DSInsertPtr: \n");
     // InsertPtr->dump();
 
-    // if (DSInsertPtr)
-    //   InsertPtr = DSInsertPtr;
+    if (DSInsertPtr)
+      InsertPtr = DSInsertPtr;
 
     // printf("\n InsertPtr: \n");
     // InsertPtr->dump();
@@ -4625,6 +4628,26 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
                                     PointerAlign, InsertPtr);
       // From->dump();
       // To->dump();
+
+      // printf("\n From uses \n");
+      // for (auto *U : From->users()) {
+      //   U->dump();
+      //   printf(" ====> \n");
+      //   for (auto *UU : U->users()) 
+      //     UU->dump();
+      //   printf(" <==== \n");
+      // }
+      // printf(" End From uses \n");
+
+      // Fn->dump();
+      // printf("\n -------------------------------------- 2.6\n");
+
+      // for (auto II = HeaderBB.begin(), IE = HeaderBB.end(); II != IE;) {
+      //   llvm::Instruction *I = &*II;
+      //   ++II;
+
+      //   if ()
+      // }
 
       // Check if there are uses of From before To and move them after To. These
       // are usually the function epilogue stores.
@@ -4663,6 +4686,65 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
 
       From->replaceAllUsesWith(To);
 
+      for (auto *U : To->users()) {\
+        // Check if the use of the out register is before
+        // it is being initialized.
+        //
+        // To: %9 = load i32, i32* %8, align 8
+
+        llvm::Instruction *UInstr;
+        if (!(UInstr = dyn_cast<llvm::Instruction>(U)))
+          llvm_unreachable("This usage is not a valid instruction.");
+
+        // Check for the uses of %9
+        for (auto *Usage : U->users()) {
+          // Usage of %9 example:
+          //
+          // store i32 %9, i32* %conv5, align 4
+          //
+          //   If this usage is BEFORE the initialization of %9
+          // then we must move the usage after the initialization.
+
+          // Let's check to see if the usage is BEFORE.
+          bool InitFound = false;
+          for (auto &StartBlock : Fn->getBasicBlockList()) {
+            for (auto II = StartBlock.begin(), IE = StartBlock.end(); II != IE;) {
+              llvm::Instruction *I = &*II;
+              ++II;
+
+              //   If we come across the init before the usage then
+              // 
+              if (U == I)
+                InitFound = true;
+
+              if (Usage == I)
+                if (!InitFound)
+                  I->moveBefore(UInstr->getNextNode());
+
+            }
+            // Only visit the header and omp.init.ds (if it exists) blocks.
+            if (hasOMPInitDSBlock) {
+              if (StartBlock.getName() == "omp.init.ds")
+                break;
+            } else
+                break;
+          }
+        }
+      }
+
+      // printf("\n To uses \n");
+      // for (auto *U : To->users()) {
+      //   U->dump();
+      //   printf(" ====> \n");
+      //   for (auto *UU : U->users())
+      //     UU->dump();
+      //   printf(" <==== \n");
+      // }
+      // printf(" End To uses \n");
+
+      // Fn->dump();
+      // printf("\n -------------------------------------- 2.7\n");
+
       // Make sure the following calls are inserted before these loads.
       InsertPtr = To;
 
@@ -4670,8 +4752,6 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
       // InsertPtr->dump();
       // printf("\n DSInsertPtr: \n");
       // DSInsertPtr->dump();
-      // Fn->dump();
-      // printf("\n -------------------------------------- 2.5\n");
     }
 
     // printf("\n InsertPtr: \n");
