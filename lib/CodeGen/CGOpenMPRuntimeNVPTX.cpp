@@ -2278,7 +2278,6 @@ void CGOpenMPRuntimeNVPTX::emitGenericKernel(const OMPExecutableDirective &D,
     }
   } Action(*this, EST, WST);
   CodeGen.setAction(Action);
-
   emitTargetOutlinedFunctionHelper(D, ParentName, OutlinedFn, OutlinedFnID,
                                    IsOffloadEntry, CodeGen);
 
@@ -3137,9 +3136,8 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   }
 
   FunctionArgList ArgList;
-  for (auto &I : ArgImplDecls){
+  for (auto &I : ArgImplDecls)
     ArgList.push_back(&I);
-  }
 
   auto &CGFI =
       CGM.getTypes().arrangeBuiltinFunctionDeclaration(Ctx.VoidTy, ArgList);
@@ -4480,6 +4478,8 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     else
       InsertPtr = &(*HeaderBB.begin());
 
+    assert(InsertPtr && "Empty function???");
+
     // Helper to emit the initializaion code at the provided insertion point.
     auto &&InitializeEntryPoint = [this, &DSI](llvm::Instruction *&InsertPtr) {
       assert(DSI.EntryWorkerFunction &&
@@ -4508,11 +4508,10 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     // If there is nothing to share, and this is an entry point, we should
     // initialize the data sharing logic anyways.
     if (!DSI.InitializationFunction && DSI.IsEntryPoint) {
-      if (DSInsertPtr) {
+      if (DSInsertPtr)
         InitializeEntryPoint(DSInsertPtr);
-      } else {
+      else
         InitializeEntryPoint(InsertPtr);
-      }
       continue;
     }
 
@@ -4553,7 +4552,6 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
 
     // Save the insertion point of the initialization call.
     auto InitializationInsertPtr = InsertPtr;
-
     if (LastNonAllocaNonRefReplacement)
       InitializationInsertPtr = LastNonAllocaNonRefReplacement->getNextNode();
 
@@ -4599,7 +4597,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
 
       From->replaceAllUsesWith(To);
 
-      for (auto *U : To->users()) {\
+      for (auto *U : To->users()) {
         // Check if the use of the out register is before
         // it is being initialized.
         //
@@ -4625,8 +4623,6 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
               llvm::Instruction *I = &*II;
               ++II;
 
-              //   If we come across the init before the usage then
-              // 
               if (U == I)
                 InitFound = true;
 
