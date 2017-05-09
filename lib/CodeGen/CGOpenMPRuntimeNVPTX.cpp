@@ -20,7 +20,6 @@
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace clang;
 using namespace CodeGen;
@@ -4433,12 +4432,10 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
 
     llvm::Instruction *SharedDataInfrastructureInsertPoint = nullptr;
     bool hasOMPInitDSBlock = false;
-    llvm::BasicBlock *InitDSBlock = nullptr;
     for (auto &BB : Fn->getBasicBlockList()) {
       if (BB.getName() == "omp.init.ds") {
         SharedDataInfrastructureInsertPoint = &(*BB.begin());
         hasOMPInitDSBlock = true;
-        InitDSBlock = &BB;
         break;
       }
     }
@@ -4718,9 +4715,6 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
                   OMPRTL_NVPTX__kmpc_data_sharing_environment_end),
               ClosingArgs, "", Ret);
     }
-
-    if (InitDSBlock)
-      MergeBlockIntoPredecessor(InitDSBlock);
   }
 
   // Make the default registration procedure.
