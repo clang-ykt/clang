@@ -3523,6 +3523,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   // Create temporary variables to contain the new args.
   SmallVector<Address, 32> ArgsAddresses;
 
+  printf("\n PREPARE ALLOCA's - Populate ArgsAddresses\n");
   unsigned NameIdx = 0;
   auto *RD = CS.getCapturedRecordDecl();
   auto CurField = RD->field_begin();
@@ -3535,6 +3536,8 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     QualType ElemTy = CurField->getType();
 
     if (CI->capturesVariableArrayType()){
+      printf("\n Type of the VLA: \n");
+      ElemTy->dump();
       ArgsAddresses.push_back(CGF.CreateMemTemp(ElemTy, "vla.addr." + std::to_string(NameIdx)));
       NameIdx++;
       continue;
@@ -3592,9 +3595,11 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
                                               CE = CS.capture_end();
          CI != CE; ++CI, ++ArgsIdx) {
       printf(" ------------------ >>>  CI->capturesVariableArrayType() = %d \n", CI->capturesVariableArrayType());
-      if (CI->capturesVariableArrayType())
+      if (CI->capturesVariableArrayType()){
         // Create Value store
+        
         continue;
+      }
       const VarDecl *VD = CI->capturesThis() ? nullptr : CI->getCapturedVar();
       FI->dump();
       CreateAddressStoreForVariable(CGF, VD, FI->getType(), DSI, CastedDataAddr,
@@ -3705,20 +3710,42 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   });
 
   printf("        -------------- >>>> \n");
+
+  CGF.CurFn->dump();
+
   auto CapInfo = DSI.CapturesValues.begin();
   auto FI = DSI.MasterRecordType->getAs<RecordType>()->getDecl()->field_begin();
   auto CI = CS.capture_begin();
   for (unsigned i = 0; i < CS.capture_size(); ++i, ++CI, ++CapInfo) {
-    FI->dump();
-    printf("      --------------- >>>> CI->capturesVariableArrayType() = %d\n", CI->capturesVariableArrayType());
+    printf("      --------------- >>>> CI->capturesVariableArrayType() = %d CI->capturesVariableByCopy() = %d \n", CI->capturesVariableArrayType(), CI->capturesVariableByCopy());
     if (CI->capturesVariableArrayType()) {
+      auto *CapturedVar = CI->getCapturedVar();
+      auto CapturedTy = CapturedVar->getType();
+      CapturedTy->dump();
+
+      auto *Arg = CGF.EmitLoadOfScalar(ArgsAddresses[i], /*Volatile=*/false,
+                                       Ctx.getPointerType(CapturedTy),
+                                       SourceLocation());
+      Arg->dump();
+
+      auto LV = CGF.MakeNaturalAlignAddrLValue(Arg, CapturedTy);
+      auto CastLV =
+          castValueToUintptr(CGF, CapturedTy, CapturedVar->getName(), LV);
+
       Arg = CGF.EmitLoadOfScalar(CastLV, SourceLocation());
+
+      Arg->dump();
+
       Args.push_back(Arg);
       continue;
     }
+    // FI->dump();
+
     auto *Arg = CGF.EmitLoadOfScalar(ArgsAddresses[i], /*Volatile=*/false,
                                      Ctx.getPointerType(FI->getType()),
                                      SourceLocation());
+
+    Arg->dump();
 
     // If this is a capture by value, we need to load the data. Additionally, if
     // its not a pointer we may need to cast it to uintptr.
@@ -3738,6 +3765,12 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
           castValueToUintptr(CGF, CapturedTy, CapturedVar->getName(), LV);
 
       Arg = CGF.EmitLoadOfScalar(CastLV, SourceLocation());
+
+      // if (CI->capturesVariableArrayType()) {
+      //   //   // auto *Arg = CGF.EmitLoadOfScalar(CastLV, SourceLocation());
+      //   //   // Args.push_back(Arg);
+      //   continue;
+      // }
     }
 
     Args.push_back(Arg);
