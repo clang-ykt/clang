@@ -3150,9 +3150,46 @@ void CodeGenFunction::EmitOMPFlushDirective(const OMPFlushDirective &S) {
 void CodeGenFunction::EmitOMPDistributeLoop(
     const OMPLoopDirective &S,
     const RegionCodeGenTy &CodeGenDistributeLoopContent) {
-  llvm::BasicBlock *InitDS = createBasicBlock("omp.init.ds");
-  EmitBranch(InitDS);
-  EmitBlock(InitDS);
+
+  // Insert an omp.init.ds block at the end of the entry header before any branch.
+  // Check if function already has an omp.init.ds block
+  bool hasOMPInitDSBlock = false;
+  for (auto &BB : CurFn->getBasicBlockList())
+    if (BB.getName() == "omp.init.ds"){
+      hasOMPInitDSBlock = true;
+      break;
+    }
+
+  // Emit omp.init.ds block if we have no emitted one before
+  if (!hasOMPInitDSBlock) {
+    llvm::BasicBlock *InitDS;
+    llvm::BasicBlock *AfterHeaderBB;
+    llvm::BasicBlock *HeaderBB = &CurFn->front();
+    llvm::Instruction *OldBI = HeaderBB->getTerminator();
+    llvm::Instruction *InsertPt = nullptr;
+    if (OldBI){
+      InsertPt = OldBI->getPrevNode();
+      llvm::BasicBlock *InitDSCont = createBasicBlock("omp.init.continue");
+      EmitBranch(InitDSCont);
+      InitDS = createBasicBlock("omp.init.ds");
+      EmitBlock(InitDS);
+      EmitBranch(InitDS);
+      llvm::Instruction *NewTerminator = InitDS->getTerminator();
+      AfterHeaderBB = HeaderBB->getNextNode();
+      NewTerminator->moveBefore(OldBI);
+      Builder.SetInsertPoint(InitDS);
+      EmitBranch(HeaderBB);
+      NewTerminator = InitDS->getTerminator();
+      OldBI->moveBefore(NewTerminator);
+      NewTerminator->eraseFromParent();
+      EmitBlock(InitDSCont);
+      InitDS->moveAfter(HeaderBB);
+    } else {
+      InitDS = createBasicBlock("omp.init.ds");
+      EmitBranch(InitDS);
+      EmitBlock(InitDS);
+    }
+  }
 
   // Emit the loop iteration variable.
   auto IVExpr = cast<DeclRefExpr>(S.getIterationVariable());
