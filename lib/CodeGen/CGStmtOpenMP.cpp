@@ -368,7 +368,10 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
                 CD->getBody()->getLocStart());
   unsigned Cnt = UseCapturedArgumentsOnly ? 0 : ImplicitParamStop;
   I = S.captures().begin();
+  printf("\n GenerateOpenMPCapturedStmtFunction \n");
   for (auto *FD : RD->fields()) {
+    FD->dump();
+    printf("\n --> %d \n", I->capturesVariable() || I->capturesVariableByCopy());
     if (I->capturesVariable() || I->capturesVariableByCopy()) {
       auto *Var = I->getCapturedVar();
       if (auto *C = dyn_cast<OMPCapturedExprDecl>(Var)) {
@@ -379,10 +382,12 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
           continue;
         }
       }
+      Var->dump();
     }
 
     // If we are capturing a pointer by copy we don't need to do anything, just
     // use the value that we get from the arguments.
+    printf("\n --> %d \n", I->capturesVariableByCopy() && FD->getType()->isAnyPointerType());
     if (I->capturesVariableByCopy() && FD->getType()->isAnyPointerType()) {
       const VarDecl *CurVD = I->getCapturedVar();
       Address LocalAddr = GetAddrOfLocalVar(Args[Cnt]);
@@ -411,6 +416,7 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
       auto *ExprArg =
           EmitLoadOfLValue(CastedArgLVal, SourceLocation()).getScalarVal();
       auto VAT = FD->getCapturedVLAType();
+      printf(" branch 1\n");
       VLASizeMap[VAT->getSizeExpr()] = ExprArg;
     } else if (I->capturesVariable()) {
       auto *Var = I->getCapturedVar();
@@ -426,6 +432,8 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
               ArgAddr, ArgLVal.getType()->castAs<PointerType>());
         }
       }
+      printf(" branch 2\n");
+      Var->dump();
       setAddrOfLocalVar(
           Var, Address(ArgAddr.getPointer(), getContext().getDeclAlign(Var)));
     } else if (I->capturesVariableByCopy()) {
@@ -433,6 +441,8 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
              "Not expecting a captured pointer.");
       auto *Var = I->getCapturedVar();
       QualType VarTy = Var->getType();
+      printf(" branch 3\n");
+      Var->dump();
       setAddrOfLocalVar(Var, castValueFromUintptr(*this, FD->getType(),
                                                   Args[Cnt]->getName(), ArgLVal,
                                                   VarTy->isReferenceType()));
@@ -3151,6 +3161,9 @@ void CodeGenFunction::EmitOMPDistributeLoop(
     const OMPLoopDirective &S,
     const RegionCodeGenTy &CodeGenDistributeLoopContent) {
 
+  // printf("\n -------------------------- DISTRIBUTE 1\n");
+  // CurFn->dump();
+
   // Insert an omp.init.ds block at the end of the entry header before any branch.
   // Check if function already has an omp.init.ds block
   bool hasOMPInitDSBlock = false;
@@ -3190,6 +3203,13 @@ void CodeGenFunction::EmitOMPDistributeLoop(
       EmitBlock(InitDS);
     }
   }
+
+  // llvm::BasicBlock *InitDS = createBasicBlock("omp.init.ds");
+  // EmitBranch(InitDS);
+  // EmitBlock(InitDS);
+
+  // printf("\n -------------------------- DISTRIBUTE 2\n");
+  // CurFn->dump();
 
   // Emit the loop iteration variable.
   auto IVExpr = cast<DeclRefExpr>(S.getIterationVariable());

@@ -2924,6 +2924,8 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
       } else {
         // Get the variable that is initializing the capture.
         CurVD = CurCap->getCapturedVar();
+        printf("\n ------------- EMIT DS DATA\n");
+        CurVD->dump();
 
         // If this is an OpenMP capture declaration, we need to look at the
         // original declaration.
@@ -2938,6 +2940,8 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
         else {
           // If we have an alloca for this variable, then we need to share the
           // storage too, not only the reference.
+          printf("\n ------------- EMIT DS DATA 2\n");
+          OrigVD->dump();
           auto *Val = cast<llvm::Instruction>(
               CGF.GetAddrOfLocalVar(OrigVD).getPointer());
           if (isa<llvm::LoadInst>(Val))
@@ -4715,6 +4719,9 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
                   OMPRTL_NVPTX__kmpc_data_sharing_environment_end),
               ClosingArgs, "", Ret);
     }
+
+    printf("\n --------------------------------------- REGISTRATION \n");
+    Fn->dump();
   }
 
   // Make the default registration procedure.
