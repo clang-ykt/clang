@@ -3160,10 +3160,6 @@ void CodeGenFunction::EmitOMPFlushDirective(const OMPFlushDirective &S) {
 void CodeGenFunction::EmitOMPDistributeLoop(
     const OMPLoopDirective &S,
     const RegionCodeGenTy &CodeGenDistributeLoopContent) {
-
-  // printf("\n -------------------------- DISTRIBUTE 1\n");
-  // CurFn->dump();
-
   // Insert an omp.init.ds block at the end of the entry header before any branch.
   // Check if function already has an omp.init.ds block
   bool hasOMPInitDSBlock = false;
@@ -3203,13 +3199,6 @@ void CodeGenFunction::EmitOMPDistributeLoop(
       EmitBlock(InitDS);
     }
   }
-
-  // llvm::BasicBlock *InitDS = createBasicBlock("omp.init.ds");
-  // EmitBranch(InitDS);
-  // EmitBlock(InitDS);
-
-  // printf("\n -------------------------- DISTRIBUTE 2\n");
-  // CurFn->dump();
 
   // Emit the loop iteration variable.
   auto IVExpr = cast<DeclRefExpr>(S.getIterationVariable());

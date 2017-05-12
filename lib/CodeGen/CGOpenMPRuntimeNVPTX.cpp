@@ -4598,52 +4598,62 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
 
       From->replaceAllUsesWith(To);
 
-      for (auto *U : To->users()) {
-        // Check if the use of the out register is before
-        // it is being initialized.
-        //
-        // To: %9 = load i32, i32* %8, align 8
-
-        llvm::Instruction *UInstr;
-        if (!(UInstr = dyn_cast<llvm::Instruction>(U)))
-          llvm_unreachable("This usage is not a valid instruction.");
-
-        // Check for the uses of %9
-        for (auto *Usage : U->users()) {
-          // Usage of %9 example:
-          //
-          // store i32 %9, i32* %conv5, align 4
-          //
-          //   If this usage is BEFORE the initialization of %9
-          // then we must move the usage after the initialization.
-
-          // Let's check to see if the usage is BEFORE.
-          bool InitFound = false;
-          for (auto &StartBlock : Fn->getBasicBlockList()) {
-            for (auto II = StartBlock.begin(), IE = StartBlock.end(); II != IE;) {
-              llvm::Instruction *I = &*II;
-              ++II;
-
-              if (U == I)
-                InitFound = true;
-
-              if (Usage == I)
-                if (!InitFound)
-                  I->moveBefore(UInstr->getNextNode());
-
-            }
-            // Only visit the header and omp.init.ds (if it exists) blocks.
-            if (hasOMPInitDSBlock) {
-              if (StartBlock.getName() == "omp.init.ds")
-                break;
-            } else
-                break;
-          }
-        }
-      }
-
       // Make sure the following calls are inserted before these loads.
       InsertPtr = To;
+    }
+
+    bool InstructionWasMoved = true;
+    while(InstructionWasMoved){
+      InstructionWasMoved = false;
+      for (auto &StartBlock : Fn->getBasicBlockList()) {
+        for (auto II = StartBlock.begin(), IE = StartBlock.end(); II != IE;) {
+          llvm::Instruction *OuterInstr = &*II;
+          ++II;
+
+          if (dyn_cast<llvm::AllocaInst>(OuterInstr))
+            continue;
+
+          if (dyn_cast<llvm::StoreInst>(OuterInstr))
+            continue;
+
+          // Instruction I is the current instruction
+          // Scan the two blocks and check if a usage of II is found
+          // before it is initialized.
+          for (auto *Usage : OuterInstr->users()) {
+            // Let's check to see if the usage is BEFORE the init.
+            Usage->dump();
+            bool InitFound = false;
+            for (auto &StartBlock : Fn->getBasicBlockList()) {
+              for (auto JJ = StartBlock.begin(), IE = StartBlock.end(); JJ != IE;) {
+                llvm::Instruction *InnerInstr = &*JJ;
+                ++JJ;
+
+                if (OuterInstr == InnerInstr)
+                  InitFound = true;
+
+                if (Usage == InnerInstr)
+                  if (!InitFound){
+                     InnerInstr->moveBefore(OuterInstr->getNextNode());
+                     InstructionWasMoved = true;
+                  }
+
+              }
+              // Only visit the header and omp.init.ds (if it exists) blocks.
+              if (hasOMPInitDSBlock) {
+                if (StartBlock.getName() == "omp.init.ds")
+                  break;
+              } else
+                  break;
+            }
+          }
+        }
+        // Only visit the header and omp.init.ds (if it exists) blocks.
+        if (hasOMPInitDSBlock) {
+          if (StartBlock.getName() == "omp.init.ds")
+            break;
+        } else
+            break;
+      }
     }
 
     if (!hasOMPInitDSBlock) {
