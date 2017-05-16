@@ -32,6 +32,8 @@ class OMPLexicalScope final : public CodeGenFunction::LexicalScope {
       if (auto *CPI = OMPClauseWithPreInit::get(C)) {
         if (auto *PreInit = cast_or_null<DeclStmt>(CPI->getPreInitStmt())) {
           for (const auto *I : PreInit->decls()) {
+            printf(" ---------------- !I->hasAttr<OMPCaptureNoInitAttr>() = %d\n", !I->hasAttr<OMPCaptureNoInitAttr>());
+            cast<VarDecl>(*I).dump();
             if (!I->hasAttr<OMPCaptureNoInitAttr>())
               CGF.EmitVarDecl(cast<VarDecl>(*I));
             else {
@@ -58,24 +60,33 @@ public:
       : CodeGenFunction::LexicalScope(CGF, S.getSourceRange()),
         InlinedShareds(CGF) {
     emitPreInitStmt(CGF, S);
+    printf("\n ---------------- After PRE INIT\n");
+    CGF.CurFn->dump();
     if (AsInlined) {
       if (S.hasAssociatedStmt()) {
         auto *CS = cast<CapturedStmt>(S.getAssociatedStmt());
         for (auto &C : CS->captures()) {
           if (C.capturesVariable() || C.capturesVariableByCopy()) {
+            printf("\nVariable is captured\n");
             auto *VD = C.getCapturedVar();
+            VD->dump();
             DeclRefExpr DRE(const_cast<VarDecl *>(VD),
                             isCapturedVar(CGF, VD) ||
                                 (CGF.CapturedStmtInfo &&
                                  InlinedShareds.isGlobalVarCaptured(VD)),
                             VD->getType().getNonReferenceType(), VK_LValue,
                             SourceLocation());
+            DRE.dump();
             InlinedShareds.addPrivate(VD, [&CGF, &DRE]() -> Address {
               return CGF.EmitLValue(&DRE).getAddress();
             });
           }
         }
+        printf("\n ---------------- After Capture\n");
+        CGF.CurFn->dump();
         (void)InlinedShareds.Privatize();
+        printf("\n ---------------- After PRIVATIZATION\n");
+        CGF.CurFn->dump();
       }
     }
   }
@@ -368,10 +379,7 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
                 CD->getBody()->getLocStart());
   unsigned Cnt = UseCapturedArgumentsOnly ? 0 : ImplicitParamStop;
   I = S.captures().begin();
-  printf("\n GenerateOpenMPCapturedStmtFunction \n");
   for (auto *FD : RD->fields()) {
-    FD->dump();
-    printf("\n --> %d \n", I->capturesVariable() || I->capturesVariableByCopy());
     if (I->capturesVariable() || I->capturesVariableByCopy()) {
       auto *Var = I->getCapturedVar();
       if (auto *C = dyn_cast<OMPCapturedExprDecl>(Var)) {
@@ -382,12 +390,10 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
           continue;
         }
       }
-      Var->dump();
     }
 
     // If we are capturing a pointer by copy we don't need to do anything, just
     // use the value that we get from the arguments.
-    printf("\n --> %d \n", I->capturesVariableByCopy() && FD->getType()->isAnyPointerType());
     if (I->capturesVariableByCopy() && FD->getType()->isAnyPointerType()) {
       const VarDecl *CurVD = I->getCapturedVar();
       Address LocalAddr = GetAddrOfLocalVar(Args[Cnt]);
@@ -416,7 +422,6 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
       auto *ExprArg =
           EmitLoadOfLValue(CastedArgLVal, SourceLocation()).getScalarVal();
       auto VAT = FD->getCapturedVLAType();
-      printf(" branch 1\n");
       VLASizeMap[VAT->getSizeExpr()] = ExprArg;
     } else if (I->capturesVariable()) {
       auto *Var = I->getCapturedVar();
@@ -432,8 +437,6 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
               ArgAddr, ArgLVal.getType()->castAs<PointerType>());
         }
       }
-      printf(" branch 2\n");
-      Var->dump();
       setAddrOfLocalVar(
           Var, Address(ArgAddr.getPointer(), getContext().getDeclAlign(Var)));
     } else if (I->capturesVariableByCopy()) {
@@ -441,8 +444,6 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
              "Not expecting a captured pointer.");
       auto *Var = I->getCapturedVar();
       QualType VarTy = Var->getType();
-      printf(" branch 3\n");
-      Var->dump();
       setAddrOfLocalVar(Var, castValueFromUintptr(*this, FD->getType(),
                                                   Args[Cnt]->getName(), ArgLVal,
                                                   VarTy->isReferenceType()));
@@ -3162,6 +3163,9 @@ void CodeGenFunction::EmitOMPDistributeLoop(
     const RegionCodeGenTy &CodeGenDistributeLoopContent) {
   // Insert an omp.init.ds block at the end of the entry header before any branch.
   // Check if function already has an omp.init.ds block
+  printf("\n   -------------------------------- DISTRIBUTE LOOP (TOP) \n");
+  CurFn->dump();
+
   bool hasOMPInitDSBlock = false;
   for (auto &BB : CurFn->getBasicBlockList())
     if (BB.getName() == "omp.init.ds"){
@@ -3445,7 +3449,11 @@ void CodeGenFunction::EmitOMPDistributeParallelForDirective(
                                         PrePostActionTy &) {
     CGF.EmitOMPDistributeLoop(S, CGParallelFor);
   };
+  printf("\n ------------------------- DISTR. PAR FOR\n");
+  CurFn->dump();
   OMPLexicalScope Scope(*this, S, /*AsInlined=*/true);
+  printf("\n ------------------------- DISTR. PAR FOR: after lexical\n");
+  CurFn->dump();
   OMPCancelStackRAII CancelRegion(*this, OMPD_distribute_parallel_for,
                                   /*HasCancel=*/false);
   CGM.getOpenMPRuntime().emitInlinedDirective(*this, OMPD_distribute, CodeGen,

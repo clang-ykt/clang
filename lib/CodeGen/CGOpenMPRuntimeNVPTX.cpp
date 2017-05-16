@@ -2924,8 +2924,6 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
       } else {
         // Get the variable that is initializing the capture.
         CurVD = CurCap->getCapturedVar();
-        printf("\n ------------- EMIT DS DATA\n");
-        CurVD->dump();
 
         // If this is an OpenMP capture declaration, we need to look at the
         // original declaration.
@@ -2940,8 +2938,6 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
         else {
           // If we have an alloca for this variable, then we need to share the
           // storage too, not only the reference.
-          printf("\n ------------- EMIT DS DATA 2\n");
-          OrigVD->dump();
           auto *Val = cast<llvm::Instruction>(
               CGF.GetAddrOfLocalVar(OrigVD).getPointer());
           if (isa<llvm::LoadInst>(Val))
@@ -3056,6 +3052,8 @@ static LValue castValueToUintptr(CodeGenFunction &CGF, QualType SrcType,
 
 void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
     CodeGenFunction &EnclosingCGF) {
+  printf("\n ------------------- ENCLOSING FUNCTION BEFORE\n");
+  EnclosingCGF.CurFn->dump();
   const Decl *CD = EnclosingCGF.CurCodeDecl;
   auto &Ctx = CGM.getContext();
 
@@ -3139,8 +3137,11 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   }
 
   FunctionArgList ArgList;
-  for (auto &I : ArgImplDecls)
+  int count = 0;
+  for (auto &I : ArgImplDecls) {
     ArgList.push_back(&I);
+    count++;
+  }
 
   auto &CGFI =
       CGM.getTypes().arrangeBuiltinFunctionDeclaration(Ctx.VoidTy, ArgList);
@@ -3163,6 +3164,9 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
     CGF.Builder.CreateCondBr(Cond, MasterBB, ExitBB);
     CGF.EmitBlock(MasterBB);
   }
+
+  printf("\n ------------------- ENCLOSING FUNCTION AFTER\n");
+  EnclosingCGF.CurFn->dump();
 
   // Create the variables to save the slot, stack, frame and active threads.
   auto ArgsIt = ArgList.begin();
@@ -3355,17 +3359,24 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   emitParallelismLevelCode(CGF, ParallelLevelGen, L0ParallelGen, L1ParallelGen,
                            Sequential);
 
+  printf("===============> Generate the values to replace\n");
   // Generate the values to replace.
   auto FI = MasterRD->field_begin();
   for (unsigned i = 0; i < OrigAddresses.size(); ++i, ++FI) {
     llvm::Value *OriginalVal = nullptr;
+    printf("\n  FI:\n");
+    FI->dump();
     if (const VarDecl *VD = DSI.CapturesValues[i].first) {
+      printf("      VD: \n");
+      VD->dump();
       DeclRefExpr DRE(const_cast<VarDecl *>(VD),
                       /*RefersToEnclosingVariableOrCapture=*/false,
                       VD->getType().getNonReferenceType(), VK_LValue,
                       SourceLocation());
       Address OriginalAddr = EnclosingCGF.EmitOMPHelperVar(&DRE).getAddress();
       OriginalVal = OriginalAddr.getPointer();
+      printf("      OriginalVal: \n");
+      OriginalVal->dump();
     } else
       OriginalVal = CGF.LoadCXXThis();
 
@@ -4444,6 +4455,9 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
       }
     }
 
+    printf("\n --------------------------------------- REGISTRATION \n");
+    Fn->dump();
+
     // Find the last alloca and the last replacement that is not an alloca.
     llvm::Instruction *LastAlloca = nullptr;
     llvm::Instruction *LastNonAllocaReplacement = nullptr;
@@ -4536,9 +4550,13 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     // Create the remaining arguments. One if it is a reference sharing (the
     // reference itself), two otherwise (the address of the replacement and the
     // value to be replaced).
+    printf("\n ======================== Special Args:\n");
     for (auto &VR : DSI.ValuesToBeReplaced) {
       auto *Replacement = VR.first;
+      printf("\n   Replacement\n");
+      Replacement->dump();
       bool IsReference = VR.second;
+      printf("   IsReference = %d \n", IsReference);
       // Is it a reference? If not, create the address alloca.
       if (!IsReference) {
         InitArgs.push_back(new llvm::AllocaInst(
@@ -4621,7 +4639,6 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
           // before it is initialized.
           for (auto *Usage : OuterInstr->users()) {
             // Let's check to see if the usage is BEFORE the init.
-            Usage->dump();
             bool InitFound = false;
             for (auto &StartBlock : Fn->getBasicBlockList()) {
               for (auto JJ = StartBlock.begin(), IE = StartBlock.end(); JJ != IE;) {
@@ -4672,26 +4689,91 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
       }
     }
 
+    printf("\n --------------------------------------- REGISTRATION 1\n");
+    Fn->dump();
+
     // If this is an entry point, we have to initialize the data sharing first.
     if (DSI.IsEntryPoint)
       InitializeEntryPoint(InitializationInsertPtr);
 
+    printf("\n --------------------------------------- REGISTRATION 2\n");
+    Fn->dump();
+
     // Adjust address spaces in the function arguments.
     auto FArg = DSI.InitializationFunction->arg_begin();
     for (auto &Arg : InitArgs) {
+      printf("\n Arg : \n");
+      Arg->dump();
+
+      printf(" FArg : \n");
+      FArg->dump();
 
       // If the argument is not in the header of the function (usually because
       // it is after the scheduling of an outermost loop), create a clone
       // in there and use it instead.
-      if (auto *I = dyn_cast<llvm::Instruction>(Arg))
+      if (auto *I = dyn_cast<llvm::Instruction>(Arg)) {
         if (I->getParent() != &Fn->front()) {
+          printf("   Arg in header\n");
           auto *CI = I->clone();
+          I->dump();
           Arg = CI;
           CI->insertBefore(InsertPtr);
+
+          // The operator of the newly added load instruction needs to be
+          // changed to use the reference variable it is an alias of. This
+          // means that we have to look among the uses of this reference variable
+          // and check whether it is actually an alias.
+          // Loaded value is an alias if this situation occurs:
+          //
+          // %X = load i32*, i32** %mya.addr
+          // store i32* %X, i32** %tmp
+          //
+          // if (isa<llvm::LoadInst>(I)) {
+          //   printf("   IS a LOAD INST\n");
+          //   auto LoadedValue = I->getOperand(0);
+          //   LoadedValue->dump();
+
+          //   llvm::SmallVector<llvm::Value*, 16> Values;
+          //   Values.push_back(LoadedValue);
+
+          //   while(!Value.empty()){
+          //     llvm::Value* CurrentValue = Value.pop_back();
+
+          //     for (auto Usage : CurrentValue->users()) {
+          //       Usage->dump();
+
+          //       if (auto *ST = dyn_cast<llvm::StoreInst>(Usage)) {
+          //         ST->insertBefore(InsertPtr);
+          //         // 
+          //         Values.push_back(ST->getOperand(0));
+          //       }
+          //     }
+          //   }
+
+          //   for (auto Usage : LoadedValue->users()) {
+              
+          //     if (auto *ST = dyn_cast<llvm::StoreInst>(Usage)) {
+          //       // Check if it is a store TO the LOADED VALUE
+          //       ST->getOperand(1)->dump();
+          //       if (ST->getOperand(1) == LoadedValue) {
+          //         printf("      STORE TO LOADED VALUE FOUND!!!\n");
+          //         // Check if the stored value (operando 0) has been previously loaded 
+          //         // from a variable of the same type (is an alias).
+          //         ST->insertBefore(InsertPtr);
+          //         LoadedValue = ST->getOperand(0);
+          //         break;
+          //       }
+          //     }
+          //   }
+          // } else {
+          //   llvm_unreachable("Unexpected instruction type.");
+          // }
         }
+      }
 
       // Types match, nothing to do.
       if (FArg->getType() == Arg->getType()) {
+        printf("   Function arg type and arg type match! All good! \n");
         ++FArg;
         continue;
       }
@@ -4712,8 +4794,14 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
           "Unexpected type in data sharing initialization arguments.");
     }
 
+    printf("\n --------------------------------------- REGISTRATION 3\n");
+    Fn->dump();
+
     (void)llvm::CallInst::Create(DSI.InitializationFunction, InitArgs, "",
                                  InsertPtr);
+
+    printf("\n --------------------------------------- REGISTRATION 4\n");
+    Fn->dump();
 
     // Close the environment. The saved stack is in the 4 first entries of the
     // arguments array.
@@ -4729,9 +4817,6 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
                   OMPRTL_NVPTX__kmpc_data_sharing_environment_end),
               ClosingArgs, "", Ret);
     }
-
-    printf("\n --------------------------------------- REGISTRATION \n");
-    Fn->dump();
   }
 
   // Make the default registration procedure.
