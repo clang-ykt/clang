@@ -14,6 +14,7 @@
 
 #include "TreeTransform.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/ASTLambda.h"
 #include "clang/AST/ASTMutationListener.h"
 #include "clang/AST/CXXInheritance.h"
 #include "clang/AST/Decl.h"
@@ -962,6 +963,11 @@ class ImplicitDeviceFunctionChecker
 public:
   ImplicitDeviceFunctionChecker(Sema &SemaReference) : SemaRef(SemaReference){};
 
+  /// Traverse implicit functions.
+  bool shouldVisitImplicitCode() const { return true; }
+  /// Traverse template instantiations.
+  bool shouldVisitTemplateInstantiations() const { return true; }
+
   /// Traverse body of lambda, and mark it the with OMPDeclareTargetDeclAttr
   bool TraverseLambdaCapture(LambdaExpr *LE, const LambdaCapture *C,
                              Expr *Init);
@@ -1038,6 +1044,16 @@ bool ImplicitDeviceFunctionChecker::VisitFunctionDecl(FunctionDecl *F) {
         SemaRef.Context, OMPDeclareTargetDeclAttr::MT_To);
     F->addAttr(A);
     TraverseDecl(F);
+  }
+  /// Traverse lambda if the function call is a lambda operator call.
+  if (isLambdaCallOperator(F)) {
+    auto *D = cast<Decl>(F->getParent());
+    if (!D->hasAttr<OMPDeclareTargetDeclAttr>()) {
+      Attr *A = OMPDeclareTargetDeclAttr::CreateImplicit(
+          SemaRef.Context, OMPDeclareTargetDeclAttr::MT_To);
+      D->addAttr(A);
+      TraverseDecl(cast<Decl>(F->getParent()));
+    }
   }
   return true;
 }

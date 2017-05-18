@@ -4952,7 +4952,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                                     getToolChain().GetDefaultStandaloneDebug());
   if (DebugInfoKind == codegenoptions::LimitedDebugInfo && NeedFullDebug)
     DebugInfoKind = codegenoptions::FullDebugInfo;
-  RenderDebugEnablingArgs(Args, CmdArgs, DebugInfoKind, DwarfVersion,
+
+  if (!(IsOpenMPDevice && getToolChain().getTriple().isNVPTX()))
+    RenderDebugEnablingArgs(Args, CmdArgs, DebugInfoKind, DwarfVersion,
                           DebuggerTuning);
 
   // -ggnu-pubnames turns on gnu style pubnames in the backend.
