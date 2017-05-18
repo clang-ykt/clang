@@ -950,9 +950,6 @@ void CodeGenFunction::StartFunction(GlobalDecl GD,
     else
       Ty = VD->getType();
 
-    printf("\n ================ >>>>>>>>>>>>>> Type?\n");
-    Ty->dump();
-
     if (Ty->isVariablyModifiedType())
       EmitVariablyModifiedType(Ty);
   }
@@ -1836,22 +1833,17 @@ void CodeGenFunction::EmitVariablyModifiedType(QualType type) {
       break;
 
     case Type::VariableArray: {
-      printf("============= Type is VariableArray\n");
       // Losing element qualification here is fine.
       const VariableArrayType *vat = cast<VariableArrayType>(ty);
 
       // Unknown size indication requires no size computation.
       // Otherwise, evaluate and record it.
       if (const Expr *size = vat->getSizeExpr()) {
-        printf("============= 1\n");
-        size->dump();
         // It's possible that we might have emitted this already,
         // e.g. with a typedef and a pointer to it.
         llvm::Value *&entry = VLASizeMap[size];
-        printf(" =========== Entry: \n");
         if (!entry) {
           llvm::Value *Size = EmitScalarExpr(size);
-          Size->dump();
 
           // C11 6.7.6.2p5:
           //   If the size is an expression that is not an integer constant
