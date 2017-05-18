@@ -325,6 +325,7 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
       II = &getContext().Idents.get("vla");
     }
     if (ArgType->isVariablyModifiedType()) {
+      // printf("\n ========================== IS VLA arg\n");
       bool IsReference = ArgType->isLValueReferenceType();
       ArgType =
           getContext().getCanonicalParamType(ArgType.getNonReferenceType());
@@ -363,8 +364,15 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
   unsigned Cnt = UseCapturedArgumentsOnly ? 0 : ImplicitParamStop;
   I = S.captures().begin();
   for (auto *FD : RD->fields()) {
+    printf("\n\n ========================= FD:");
+    CurFn->dump();
+    printf("\nFD:\n");
+    FD->dump();
     if (I->capturesVariable() || I->capturesVariableByCopy()) {
+      printf("========================= 1\n");
       auto *Var = I->getCapturedVar();
+      printf("Var:\n");
+      Var->dump();
       if (auto *C = dyn_cast<OMPCapturedExprDecl>(Var)) {
         // Check to see if the capture is to be a parameter in the
         // outlined function at this level.
@@ -378,12 +386,16 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
     // If we are capturing a pointer by copy we don't need to do anything, just
     // use the value that we get from the arguments.
     if (I->capturesVariableByCopy() && FD->getType()->isAnyPointerType()) {
+      printf("========================= 2\n");
       const VarDecl *CurVD = I->getCapturedVar();
+      printf("Var:\n");
+      CurVD->dump();
       Address LocalAddr = GetAddrOfLocalVar(Args[Cnt]);
       // If the variable is a reference we need to materialize it here.
       if (CurVD->getType()->isReferenceType()) {
         Address RefAddr = CreateMemTemp(CurVD->getType(), getPointerAlign(),
                                         ".materialized_ref");
+        printf("== Emit Store of Scalar!\n");
         EmitStoreOfScalar(LocalAddr.getPointer(), RefAddr, /*Volatile=*/false,
                           CurVD->getType());
         LocalAddr = RefAddr;
@@ -398,15 +410,21 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
         MakeAddrLValue(GetAddrOfLocalVar(Args[Cnt]), Args[Cnt]->getType(),
                        AlignmentSource::Decl);
     if (FD->hasCapturedVLAType()) {
+      printf("\n ========================= 3 : Capture the VLA!\n");
       LValue CastedArgLVal =
           MakeAddrLValue(castValueFromUintptr(*this, FD->getType(),
                                               Args[Cnt]->getName(), ArgLVal),
                          FD->getType(), AlignmentSource::Decl);
       auto *ExprArg =
           EmitLoadOfLValue(CastedArgLVal, SourceLocation()).getScalarVal();
+      ExprArg->dump();
       auto VAT = FD->getCapturedVLAType();
+      VAT->dump();
       VLASizeMap[VAT->getSizeExpr()] = ExprArg;
+      // const VarDecl *CurVD = I->getCapturedVar();
+      // setAddrOfLocalVar(CurVD, GetAddrOfLocalVar(Args[Cnt]));
     } else if (I->capturesVariable()) {
+      printf("\n ========================= 4\n");
       auto *Var = I->getCapturedVar();
       QualType VarTy = Var->getType();
       Address ArgAddr = ArgLVal.getAddress();
@@ -420,17 +438,23 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
               ArgAddr, ArgLVal.getType()->castAs<PointerType>());
         }
       }
+      printf("\n ====== Var:\n");
+      Var->dump();
       setAddrOfLocalVar(
           Var, Address(ArgAddr.getPointer(), getContext().getDeclAlign(Var)));
     } else if (I->capturesVariableByCopy()) {
+      printf("\n ========================= 5\n");
       assert(!FD->getType()->isAnyPointerType() &&
              "Not expecting a captured pointer.");
       auto *Var = I->getCapturedVar();
       QualType VarTy = Var->getType();
+      printf("\n ====== Var:\n");
+      Var->dump();
       setAddrOfLocalVar(Var, castValueFromUintptr(*this, FD->getType(),
                                                   Args[Cnt]->getName(), ArgLVal,
                                                   VarTy->isReferenceType()));
     } else {
+      printf("\n ========================= 6\n");
       // If 'this' is captured, load it into CXXThisValue.
       assert(I->capturesThis());
       CXXThisValue =
@@ -443,6 +467,9 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
   PGO.assignRegionCounters(GlobalDecl(CD), F);
   CapturedStmtInfo->EmitBody(*this, CD->getBody());
   FinishFunction(CD->getBodyRBrace());
+
+  printf("\n ================= AFTER GenerateOpenMPCapturedStmtFunction\n");
+  F->dump();
 
   return F;
 }

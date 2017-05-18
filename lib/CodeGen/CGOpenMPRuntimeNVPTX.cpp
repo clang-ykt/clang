@@ -3162,6 +3162,14 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   for (auto *F : MasterRD->fields()) {
     QualType ArgTy = F->getType();
 
+    if (ArgTy->isVariablyModifiedType()) {
+      bool IsReference = ArgTy->isLValueReferenceType();
+      ArgTy = Ctx.getCanonicalParamType(ArgTy.getNonReferenceType());
+      if (IsReference && !ArgTy->isPointerType()) {
+        ArgTy = Ctx.getLValueReferenceType(ArgTy, /*SpelledAsLValue=*/false);
+      }
+    }
+
     // If this is not a reference the right address type is the pointer type of
     // the type that is the record.
     if (CapturesIt->second != DataSharingInfo::DST_Ref)
@@ -3202,6 +3210,11 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
       EnclosingCGF.CurFn->getName() + ".data_share", &CGM.getModule());
   CGM.SetInternalFunctionAttributes(/*D=*/nullptr, Fn, CGFI);
   Fn->setLinkage(llvm::GlobalValue::InternalLinkage);
+
+  printf("\n =============== ENCLOSING CGF\n");
+  EnclosingCGF.CurFn->dump();
+  printf("\n =============== CREATE DS INF\n");
+  Fn->dump();
 
   CodeGenFunction CGF(CGM, /*suppressNewContext=*/true);
   CGF.StartFunction(GlobalDecl(), Ctx.VoidTy, Fn, CGFI, ArgList);
@@ -3524,7 +3537,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   SmallVector<Address, 32> ArgsAddresses;
 
   printf("\n PREPARE ALLOCA's - Populate ArgsAddresses\n");
-  unsigned NameIdx = 0;
+  int NameIdx = 0;
   auto *RD = CS.getCapturedRecordDecl();
   auto CurField = RD->field_begin();
   for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
@@ -3593,11 +3606,11 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
         DSI.MasterRecordType->getAs<RecordType>()->getDecl()->field_begin();
     for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
                                               CE = CS.capture_end();
-         CI != CE; ++CI, ++ArgsIdx) {
+         CI != CE; ++CI) {
       printf(" ------------------ >>>  CI->capturesVariableArrayType() = %d \n", CI->capturesVariableArrayType());
       if (CI->capturesVariableArrayType()){
         // Create Value store
-        
+        ++ArgsIdx;
         continue;
       }
       const VarDecl *VD = CI->capturesThis() ? nullptr : CI->getCapturedVar();
@@ -3605,6 +3618,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
       CreateAddressStoreForVariable(CGF, VD, FI->getType(), DSI, CastedDataAddr,
                                     ArgsAddresses[ArgsIdx]);
       ++FI;
+      ++ArgsIdx;
     }
 
     // Get the addresses of the loop bounds if required.
@@ -3716,31 +3730,37 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   auto CapInfo = DSI.CapturesValues.begin();
   auto FI = DSI.MasterRecordType->getAs<RecordType>()->getDecl()->field_begin();
   auto CI = CS.capture_begin();
-  for (unsigned i = 0; i < CS.capture_size(); ++i, ++CI, ++CapInfo) {
+  auto CurrentField = RD->field_begin();
+
+  printf("\n -------------> ArgsAddresses.size() = %zu\n", ArgsAddresses.size());
+  printf("\n -------------> CS.capture_size() = %u\n", CS.capture_size());
+
+  // for (unsigned i = 0; i < CS.capture_size(); ++i, ++CI, ++CapInfo, ++CurrentField) {
+  //   CurrentField->dump();
+  // }
+
+  for (unsigned i = 0/*, ArgIdx = 0*/; i < CS.capture_size(); ++i, ++CI, ++CapInfo, ++CurrentField) {
     printf("      --------------- >>>> CI->capturesVariableArrayType() = %d CI->capturesVariableByCopy() = %d \n", CI->capturesVariableArrayType(), CI->capturesVariableByCopy());
     if (CI->capturesVariableArrayType()) {
-      auto *CapturedVar = CI->getCapturedVar();
-      auto CapturedTy = CapturedVar->getType();
+      // auto *CapturedVar = CI->getCapturedVar();
+      auto CapturedTy = CurrentField->getType();
+      printf("Captured type:\n");
       CapturedTy->dump();
-
       auto *Arg = CGF.EmitLoadOfScalar(ArgsAddresses[i], /*Volatile=*/false,
                                        Ctx.getPointerType(CapturedTy),
                                        SourceLocation());
+      printf("Arg:\n");
       Arg->dump();
-
-      auto LV = CGF.MakeNaturalAlignAddrLValue(Arg, CapturedTy);
-      auto CastLV =
-          castValueToUintptr(CGF, CapturedTy, CapturedVar->getName(), LV);
-
-      Arg = CGF.EmitLoadOfScalar(CastLV, SourceLocation());
-
-      Arg->dump();
-
+      // auto LV = CGF.MakeNaturalAlignAddrLValue(Arg, CapturedTy);
+      // auto CastLV = castValueToUintptr(CGF, CapturedTy, CurrentField->getName(), LV);
+      // Arg = CGF.EmitLoadOfScalar(CastLV, SourceLocation());
+      // Arg->dump();
       Args.push_back(Arg);
       continue;
     }
     // FI->dump();
 
+    printf(" -----> i = %d\n", i);
     auto *Arg = CGF.EmitLoadOfScalar(ArgsAddresses[i], /*Volatile=*/false,
                                      Ctx.getPointerType(FI->getType()),
                                      SourceLocation());
@@ -3776,10 +3796,15 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     Args.push_back(Arg);
 
     ++FI;
+    // ++ArgIdx;
   }
+  CGF.CurFn->dump();
+
+  (&OutlinedParallelFn)->dump();
 
   CGF.EmitCallOrInvoke(&OutlinedParallelFn, Args);
   CGF.FinishFunction();
+  CGF.CurFn->dump();
   return Fn;
 }
 
