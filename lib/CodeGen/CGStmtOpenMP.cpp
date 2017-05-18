@@ -423,6 +423,8 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
           EmitLoadOfLValue(CastedArgLVal, SourceLocation()).getScalarVal();
       auto VAT = FD->getCapturedVLAType();
       VLASizeMap[VAT->getSizeExpr()] = ExprArg;
+      // const VarDecl *CurVD = I->getCapturedVar();
+      // setAddrOfLocalVar(CurVD, GetAddrOfLocalVar(Args[Cnt]));
     } else if (I->capturesVariable()) {
       auto *Var = I->getCapturedVar();
       QualType VarTy = Var->getType();
