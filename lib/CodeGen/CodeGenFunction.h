@@ -664,6 +664,7 @@ public:
       // Generate the private entry.
       Address Addr = PrivateGen();
       QualType VarTy = LocalVD->getType();
+      // Doru
       if (VarTy->isReferenceType()) {
         Address Temp = CGF.CreateMemTemp(VarTy);
         CGF.Builder.CreateStore(Addr.getPointer(), Temp);

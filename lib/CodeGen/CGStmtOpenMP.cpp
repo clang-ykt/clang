@@ -32,6 +32,8 @@ class OMPLexicalScope final : public CodeGenFunction::LexicalScope {
       if (auto *CPI = OMPClauseWithPreInit::get(C)) {
         if (auto *PreInit = cast_or_null<DeclStmt>(CPI->getPreInitStmt())) {
           for (const auto *I : PreInit->decls()) {
+            // printf(" ---------------- !I->hasAttr<OMPCaptureNoInitAttr>() = %d\n", !I->hasAttr<OMPCaptureNoInitAttr>());
+            // cast<VarDecl>(*I).dump();
             if (!I->hasAttr<OMPCaptureNoInitAttr>())
               CGF.EmitVarDecl(cast<VarDecl>(*I));
             else {
@@ -58,24 +60,33 @@ public:
       : CodeGenFunction::LexicalScope(CGF, S.getSourceRange()),
         InlinedShareds(CGF) {
     emitPreInitStmt(CGF, S);
+    // printf("\n ---------------- After PRE INIT\n");
+    // CGF.CurFn->dump();
     if (AsInlined) {
       if (S.hasAssociatedStmt()) {
         auto *CS = cast<CapturedStmt>(S.getAssociatedStmt());
         for (auto &C : CS->captures()) {
           if (C.capturesVariable() || C.capturesVariableByCopy()) {
+            // printf("\nVariable is captured\n");
             auto *VD = C.getCapturedVar();
+            // VD->dump();
             DeclRefExpr DRE(const_cast<VarDecl *>(VD),
                             isCapturedVar(CGF, VD) ||
                                 (CGF.CapturedStmtInfo &&
                                  InlinedShareds.isGlobalVarCaptured(VD)),
                             VD->getType().getNonReferenceType(), VK_LValue,
                             SourceLocation());
+            // DRE.dump();
             InlinedShareds.addPrivate(VD, [&CGF, &DRE]() -> Address {
               return CGF.EmitLValue(&DRE).getAddress();
             });
           }
         }
+        // printf("\n ---------------- After Capture\n");
+        // CGF.CurFn->dump();
         (void)InlinedShareds.Privatize();
+        // printf("\n ---------------- After PRIVATIZATION\n");
+        // CGF.CurFn->dump();
       }
     }
   }
@@ -185,6 +196,17 @@ llvm::Value *CodeGenFunction::getTypeSize(QualType Ty) {
   } else
     Size = CGM.getSize(SizeInChars);
   return Size;
+}
+
+static QualType getCanonicalParamType(ASTContext &C, QualType T) {
+  if (T->isLValueReferenceType()) {
+    return C.getLValueReferenceType(
+        getCanonicalParamType(C, T.getNonReferenceType()),
+        /*SpelledAsLValue=*/false);
+  }
+  if (T->isPointerType())
+    return C.getPointerType(getCanonicalParamType(C, T->getPointeeType()));
+  return C.getCanonicalParamType(T);
 }
 
 void CodeGenFunction::GenerateOpenMPCapturedVars(
@@ -325,13 +347,8 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
       II = &getContext().Idents.get("vla");
     }
     if (ArgType->isVariablyModifiedType()) {
-      bool IsReference = ArgType->isLValueReferenceType();
       ArgType =
-          getContext().getCanonicalParamType(ArgType.getNonReferenceType());
-      if (IsReference && !ArgType->isPointerType()) {
-        ArgType = getContext().getLValueReferenceType(
-            ArgType, /*SpelledAsLValue=*/false);
-      }
+          getCanonicalParamType(getContext(), ArgType.getNonReferenceType());
     }
     if (NonAliasedMaps &&
         (ArgType->isAnyPointerType() || ArgType->isReferenceType()))
@@ -406,6 +423,8 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
           EmitLoadOfLValue(CastedArgLVal, SourceLocation()).getScalarVal();
       auto VAT = FD->getCapturedVLAType();
       VLASizeMap[VAT->getSizeExpr()] = ExprArg;
+      // const VarDecl *CurVD = I->getCapturedVar();
+      // setAddrOfLocalVar(CurVD, GetAddrOfLocalVar(Args[Cnt]));
     } else if (I->capturesVariable()) {
       auto *Var = I->getCapturedVar();
       QualType VarTy = Var->getType();
@@ -2271,8 +2290,6 @@ void CodeGenFunction::EmitOMPTeamsDistributeDirective(
     const OMPTeamsDistributeDirective &S) {
   auto &&CGDistributeInlined = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
     OMPPrivateScope PrivateScope(CGF);
-    (void)CGF.EmitOMPFirstprivateClause(S, PrivateScope);
-    CGF.EmitOMPPrivateClause(S, PrivateScope);
     CGF.EmitOMPReductionClauseInit(S, PrivateScope);
     (void)PrivateScope.Privatize();
     auto &&CGDistributeLoop = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
@@ -3146,6 +3163,49 @@ void CodeGenFunction::EmitOMPFlushDirective(const OMPFlushDirective &S) {
 void CodeGenFunction::EmitOMPDistributeLoop(
     const OMPLoopDirective &S,
     const RegionCodeGenTy &CodeGenDistributeLoopContent) {
+  // Insert an omp.init.ds block at the end of the entry header before any branch.
+  // Check if function already has an omp.init.ds block
+  // printf("\n   -------------------------------- DISTRIBUTE LOOP (TOP) \n");
+  // CurFn->dump();
+
+  bool hasOMPInitDSBlock = false;
+  for (auto &BB : CurFn->getBasicBlockList())
+    if (BB.getName() == "omp.init.ds"){
+      hasOMPInitDSBlock = true;
+      break;
+    }
+
+  // Emit omp.init.ds block if we have no emitted one before
+  if (!hasOMPInitDSBlock) {
+    llvm::BasicBlock *InitDS;
+    llvm::BasicBlock *AfterHeaderBB;
+    llvm::BasicBlock *HeaderBB = &CurFn->front();
+    llvm::Instruction *OldBI = HeaderBB->getTerminator();
+    llvm::Instruction *InsertPt = nullptr;
+    if (OldBI){
+      InsertPt = OldBI->getPrevNode();
+      llvm::BasicBlock *InitDSCont = createBasicBlock("omp.init.continue");
+      EmitBranch(InitDSCont);
+      InitDS = createBasicBlock("omp.init.ds");
+      EmitBlock(InitDS);
+      EmitBranch(InitDS);
+      llvm::Instruction *NewTerminator = InitDS->getTerminator();
+      AfterHeaderBB = HeaderBB->getNextNode();
+      NewTerminator->moveBefore(OldBI);
+      Builder.SetInsertPoint(InitDS);
+      EmitBranch(HeaderBB);
+      NewTerminator = InitDS->getTerminator();
+      OldBI->moveBefore(NewTerminator);
+      NewTerminator->eraseFromParent();
+      EmitBlock(InitDSCont);
+      InitDS->moveAfter(HeaderBB);
+    } else {
+      InitDS = createBasicBlock("omp.init.ds");
+      EmitBranch(InitDS);
+      EmitBlock(InitDS);
+    }
+  }
+
   // Emit the loop iteration variable.
   auto IVExpr = cast<DeclRefExpr>(S.getIterationVariable());
   auto IVDecl = cast<VarDecl>(IVExpr->getDecl());
@@ -3391,7 +3451,11 @@ void CodeGenFunction::EmitOMPDistributeParallelForDirective(
                                         PrePostActionTy &) {
     CGF.EmitOMPDistributeLoop(S, CGParallelFor);
   };
+  // printf("\n ------------------------- DISTR. PAR FOR\n");
+  // CurFn->dump();
   OMPLexicalScope Scope(*this, S, /*AsInlined=*/true);
+  // printf("\n ------------------------- DISTR. PAR FOR: after lexical\n");
+  // CurFn->dump();
   OMPCancelStackRAII CancelRegion(*this, OMPD_distribute_parallel_for,
                                   /*HasCancel=*/false);
   CGM.getOpenMPRuntime().emitInlinedDirective(*this, OMPD_distribute, CodeGen,

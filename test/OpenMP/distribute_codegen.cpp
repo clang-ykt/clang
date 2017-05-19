@@ -82,7 +82,9 @@ void without_schedule_clause(float *a, float *b, float *c, float *d) {
 // CHECK:  [[BBINNEND]]:
 // CHECK:  br label %[[LPEXIT:.+]]
 // CHECK:  [[LPEXIT]]:
-// CHECK:  call void @__kmpc_for_static_fini(%ident_t* [[DEF_LOC_0]], i32 [[GBL_TIDV]])
+// CHECK-DAG:  [[GBL_TID_1:%.+]] = load i32*, i32** [[TID_ADDR]]
+// CHECK-DAG:  [[GBL_TIDV_1:%.+]] = load i32, i32* [[GBL_TID_1]]
+// CHECK:  call void @__kmpc_for_static_fini(%ident_t* [[DEF_LOC_0]], i32 [[GBL_TIDV_1]])
 // CHECK:  ret void
 
 
@@ -144,7 +146,9 @@ void static_not_chunked(float *a, float *b, float *c, float *d) {
 // CHECK:  [[BBINNEND]]:
 // CHECK:  br label %[[LPEXIT:.+]]
 // CHECK:  [[LPEXIT]]:
-// CHECK:  call void @__kmpc_for_static_fini(%ident_t* [[DEF_LOC_0]], i32 [[GBL_TIDV]])
+// CHECK-DAG:  [[GBL_TID_1:%.+]] = load i32*, i32** [[TID_ADDR]]
+// CHECK-DAG:  [[GBL_TIDV_1:%.+]] = load i32, i32* [[GBL_TID_1]]
+// CHECK:  call void @__kmpc_for_static_fini(%ident_t* [[DEF_LOC_0]], i32 [[GBL_TIDV_1]])
 // CHECK:  ret void
 
 
@@ -206,7 +210,9 @@ void static_chunked(float *a, float *b, float *c, float *d) {
 // CHECK:  [[BBINNEND]]:
 // CHECK:  br label %[[LPEXIT:.+]]
 // CHECK:  [[LPEXIT]]:
-// CHECK:  call void @__kmpc_for_static_fini(%ident_t* [[DEF_LOC_0]], i32 [[GBL_TIDV]])
+// CHECK-DAG:  [[GBL_TID_1:%.+]] = load i32*, i32** [[TID_ADDR]]
+// CHECK-DAG:  [[GBL_TIDV_1:%.+]] = load i32, i32* [[GBL_TID_1]]
+// CHECK:  call void @__kmpc_for_static_fini(%ident_t* [[DEF_LOC_0]], i32 [[GBL_TIDV_1]])
 // CHECK:  ret void
 
 // CHECK-LABEL: test_precond
