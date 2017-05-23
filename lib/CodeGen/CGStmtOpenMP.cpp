@@ -3165,8 +3165,8 @@ void CodeGenFunction::EmitOMPDistributeLoop(
     const RegionCodeGenTy &CodeGenDistributeLoopContent) {
   // Insert an omp.init.ds block at the end of the entry header before any branch.
   // Check if function already has an omp.init.ds block
-  // printf("\n   -------------------------------- DISTRIBUTE LOOP (TOP) \n");
-  // CurFn->dump();
+  printf("\n   -------------------------------- DISTRIBUTE LOOP (TOP) \n");
+  CurFn->dump();
 
   bool hasOMPInitDSBlock = false;
   for (auto &BB : CurFn->getBasicBlockList())
@@ -3175,7 +3175,7 @@ void CodeGenFunction::EmitOMPDistributeLoop(
       break;
     }
 
-  // Emit omp.init.ds block if we have no emitted one before
+  // Emit omp.init.ds block if we have not emitted one before
   if (!hasOMPInitDSBlock) {
     llvm::BasicBlock *InitDS;
     llvm::BasicBlock *AfterHeaderBB;
@@ -3205,6 +3205,9 @@ void CodeGenFunction::EmitOMPDistributeLoop(
       EmitBlock(InitDS);
     }
   }
+
+  printf("\n   -------------------------------- DISTRIBUTE LOOP (TOP) \n");
+  CurFn->dump();
 
   // Emit the loop iteration variable.
   auto IVExpr = cast<DeclRefExpr>(S.getIterationVariable());
