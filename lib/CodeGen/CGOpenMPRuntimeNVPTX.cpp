@@ -1063,7 +1063,7 @@ static bool directiveRequiresOMPRuntime(const OMPExecutableDirective &D,
     return !IsInParallelRegion;
   } else if (Kind == OMPD_teams || Kind == OMPD_distribute ||
              Kind == OMPD_teams_distribute ||
-             Kind == OMPD_teams_distribute_simd) {
+             Kind == OMPD_teams_distribute_simd || Kind == OMPD_atomic) {
     return false;
   } else {
     return true;
@@ -1091,6 +1091,12 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setRequiresOMPRuntime() {
     if (!RequiresOMPRuntime) {
       auto &&CondGen = [](const OMPExecutableDirective &D, bool, bool &,
                           MatchReasonTy &MatchReason) -> bool {
+        OpenMPDirectiveKind Kind = D.getDirectiveKind();
+        // Pretty much all directives nested in an SPMD directive require
+        // the OpenMP runtime to process.  The only exception is the atomic
+        // directive.
+        if (Kind == OMPD_atomic)
+          return false;
         MatchReason = MatchReasonTy(DirectiveRequiresRuntime, D.getLocStart());
         return true;
       };

@@ -3591,18 +3591,23 @@ static std::pair<bool, RValue> emitOMPAtomicRMW(CodeGenFunction &CGF, LValue X,
                                                 BinaryOperatorKind BO,
                                                 llvm::AtomicOrdering AO,
                                                 bool IsXLHSInRHSPart) {
-  auto &Context = CGF.CGM.getContext();
+  //auto &Context = CGF.CGM.getContext();
   // Allow atomicrmw only if 'x' and 'update' are integer values, lvalue for 'x'
   // expression is simple and atomic is allowed for the given type for the
   // target platform.
+
+  // since the OpenMP requires user to guarantee the alignment, the
+  // compiler check for alignment is removed.
+  // The alignment check is OK for c frontend, but may fail for Fortran
+  // this change should not be merged into the trunk
   if (BO == BO_Comma || !Update.isScalar() ||
       !Update.getScalarVal()->getType()->isIntegerTy() ||
       !X.isSimple() || (!isa<llvm::ConstantInt>(Update.getScalarVal()) &&
                         (Update.getScalarVal()->getType() !=
                          X.getAddress().getElementType())) ||
-      !X.getAddress().getElementType()->isIntegerTy() ||
+      !X.getAddress().getElementType()->isIntegerTy() /*||
       !Context.getTargetInfo().hasBuiltinAtomic(
-          Context.getTypeSize(X.getType()), Context.toBits(X.getAlignment())))
+          Context.getTypeSize(X.getType()), Context.toBits(X.getAlignment()))*/)
     return std::make_pair(false, RValue::get(nullptr));
 
   llvm::AtomicRMWInst::BinOp RMWOp;
