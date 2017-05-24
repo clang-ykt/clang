@@ -4732,7 +4732,6 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
           CI->insertBefore(InsertPtr);
 
           if (isa<llvm::LoadInst>(I)) {
-            printf("   IS a LOAD INST\n");
             auto LoadedValue = I->getOperand(0);
 
             for (auto Usage : LoadedValue->users()) {
