@@ -3053,8 +3053,6 @@ static LValue castValueToUintptr(CodeGenFunction &CGF, QualType SrcType,
 
 void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
     CodeGenFunction &EnclosingCGF) {
-  // printf("\n ------------------- ENCLOSING FUNCTION BEFORE\n");
-  // EnclosingCGF.CurFn->dump();
   const Decl *CD = EnclosingCGF.CurCodeDecl;
   auto &Ctx = CGM.getContext();
 
@@ -3173,9 +3171,6 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
     CGF.Builder.CreateCondBr(Cond, MasterBB, ExitBB);
     CGF.EmitBlock(MasterBB);
   }
-
-  // printf("\n ------------------- ENCLOSING FUNCTION AFTER\n");
-  // EnclosingCGF.CurFn->dump();
 
   // Create the variables to save the slot, stack, frame and active threads.
   auto ArgsIt = ArgList.begin();
@@ -3368,24 +3363,17 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   emitParallelismLevelCode(CGF, ParallelLevelGen, L0ParallelGen, L1ParallelGen,
                            Sequential);
 
-  // printf("===============> Generate the values to replace\n");
   // Generate the values to replace.
   auto FI = MasterRD->field_begin();
   for (unsigned i = 0; i < OrigAddresses.size(); ++i, ++FI) {
     llvm::Value *OriginalVal = nullptr;
-    // printf("\n  FI:\n");
-    // FI->dump();
     if (const VarDecl *VD = DSI.CapturesValues[i].first) {
-      // printf("      VD: \n");
-      // VD->dump();
       DeclRefExpr DRE(const_cast<VarDecl *>(VD),
                       /*RefersToEnclosingVariableOrCapture=*/false,
                       VD->getType().getNonReferenceType(), VK_LValue,
                       SourceLocation());
       Address OriginalAddr = EnclosingCGF.EmitOMPHelperVar(&DRE).getAddress();
       OriginalVal = OriginalAddr.getPointer();
-      // printf("      OriginalVal: \n");
-      // OriginalVal->dump();
     } else
       OriginalVal = CGF.LoadCXXThis();
 
@@ -4487,9 +4475,6 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
       }
     }
 
-    // printf("\n --------------------------------------- REGISTRATION \n");
-    // Fn->dump();
-
     // Find the last alloca and the last replacement that is not an alloca.
     llvm::Instruction *LastAlloca = nullptr;
     llvm::Instruction *LastNonAllocaReplacement = nullptr;
@@ -4582,13 +4567,9 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     // Create the remaining arguments. One if it is a reference sharing (the
     // reference itself), two otherwise (the address of the replacement and the
     // value to be replaced).
-    // printf("\n ======================== Special Args:\n");
     for (auto &VR : DSI.ValuesToBeReplaced) {
       auto *Replacement = VR.first;
-      // printf("\n   Replacement\n");
-      // Replacement->dump();
       bool IsReference = VR.second;
-      // printf("   IsReference = %d \n", IsReference);
       // Is it a reference? If not, create the address alloca.
       if (!IsReference) {
         InitArgs.push_back(new llvm::AllocaInst(
@@ -4619,31 +4600,42 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
       auto *From = R.first;
       auto *To = new llvm::LoadInst(R.second, "", /*isVolatile=*/false,
                                     PointerAlign, InsertPtr);
+      llvm::Instruction *ToInstr = To;
 
       // Check if there are uses of From before To and move them after To. These
       // are usually the function epilogue stores.
-      for (auto II = HeaderBB.begin(), IE = HeaderBB.end(); II != IE;) {
-        llvm::Instruction *I = &*II;
-        ++II;
+      for (auto &StartBlock : Fn->getBasicBlockList()) {
+        // Only visit the header and omp.init.ds (if it exists) blocks.
+        for (auto II = StartBlock.begin(), IE = StartBlock.end(); II != IE;) {
+          llvm::Instruction *I = &*II;
+          ++II;
 
-        if (I == To)
-          break;
-        if (I == From)
-          continue;
-
-        bool NeedsToMove = false;
-        for (auto *U : From->users()) {
-          // Is this a user of from? If so we need to move it.
-          if (I == U) {
-            NeedsToMove = true;
+          if (I == To)
             break;
+          if (I == From)
+            continue;
+
+          bool NeedsToMove = false;
+          for (auto *U : From->users()) {
+            // Is this a user of from? If so we need to move it.
+            if (I == U) {
+              NeedsToMove = true;
+              break;
+            }
           }
+
+          if (!NeedsToMove)
+            continue;
+
+          I->moveBefore(ToInstr->getNextNode());
+          ToInstr = ToInstr->getNextNode();
         }
-
-        if (!NeedsToMove)
-          continue;
-
-        I->moveBefore(To->getNextNode());
+        // Only visit the header and omp.init.ds (if it exists) blocks.
+        if (hasOMPInitDSBlock) {
+          if (StartBlock.getName() == "omp.init.ds")
+            break;
+        } else
+            break;
       }
 
       From->replaceAllUsesWith(To);
@@ -4652,11 +4644,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
       InsertPtr = To;
     }
 
-    printf("\n --------------------------------------- REGISTRATION \n");
-    Fn->dump();
-    printf(" =================== Should I apply corrections to? %s %d\n", Fn->getName().str().c_str(), hasOMPInitDSBlock);
     if (hasOMPInitDSBlock) {
-      printf(" Function name I apply corrections to: %s\n", Fn->getName().str().c_str());
       bool InstructionWasMoved = true;
       while(InstructionWasMoved){
         InstructionWasMoved = false;
@@ -4711,9 +4699,6 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
       }
     }
 
-    printf("\n --------------------------------------- After REGISTRATION \n");
-    Fn->dump();
-
     if (!hasOMPInitDSBlock) {
       for (auto *I = InsertPtr; I; I = I->getNextNode())
         if (I == InitializationInsertPtr) {
@@ -4730,40 +4715,25 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
       }
     }
 
-    // printf("\n --------------------------------------- REGISTRATION 1\n");
-    // Fn->dump();
-
     // If this is an entry point, we have to initialize the data sharing first.
     if (DSI.IsEntryPoint)
       InitializeEntryPoint(InitializationInsertPtr);
 
-    // printf("\n --------------------------------------- REGISTRATION 2\n");
-    // Fn->dump();
-
     // Adjust address spaces in the function arguments.
     auto FArg = DSI.InitializationFunction->arg_begin();
     for (auto &Arg : InitArgs) {
-      // printf("\n Arg : \n");
-      // Arg->dump();
-
-      // printf(" FArg : \n");
-      // FArg->dump();
-
       // If the argument is not in the header of the function (usually because
       // it is after the scheduling of an outermost loop), create a clone
       // in there and use it instead.
       if (auto *I = dyn_cast<llvm::Instruction>(Arg)) {
         if (I->getParent() != &Fn->front()) {
-          printf("   Arg in header\n");
           auto *CI = I->clone();
-          I->dump();
           Arg = CI;
           CI->insertBefore(InsertPtr);
 
           if (isa<llvm::LoadInst>(I)) {
             printf("   IS a LOAD INST\n");
             auto LoadedValue = I->getOperand(0);
-            LoadedValue->dump();
 
             for (auto Usage : LoadedValue->users()) {
               if (auto *ST = dyn_cast<llvm::StoreInst>(Usage)) {
@@ -4783,7 +4753,6 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
 
       // Types match, nothing to do.
       if (FArg->getType() == Arg->getType()) {
-        // printf("   Function arg type and arg type match! All good! \n");
         ++FArg;
         continue;
       }
@@ -4804,14 +4773,8 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
           "Unexpected type in data sharing initialization arguments.");
     }
 
-    // printf("\n --------------------------------------- REGISTRATION 3\n");
-    // Fn->dump();
-
     (void)llvm::CallInst::Create(DSI.InitializationFunction, InitArgs, "",
                                  InsertPtr);
-
-    // printf("\n --------------------------------------- REGISTRATION 4\n");
-    // Fn->dump();
 
     // Close the environment. The saved stack is in the 4 first entries of the
     // arguments array.
