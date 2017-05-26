@@ -3585,10 +3585,15 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
         DSI.MasterRecordType->getAs<RecordType>()->getDecl()->field_begin();
     for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
                                               CE = CS.capture_end();
-         CI != CE; ++CI, ++ArgsIdx, ++FI) {
+         CI != CE; ++CI, ++ArgsIdx) {
+      if (CI->capturesVariableArrayType()){
+        // Create Value store
+        continue;
+      }
       const VarDecl *VD = CI->capturesThis() ? nullptr : CI->getCapturedVar();
       CreateAddressStoreForVariable(CGF, VD, FI->getType(), DSI, CastedDataAddr,
                                     ArgsAddresses[ArgsIdx], SourceLaneID);
+      FI++;
     }
 
     // Get the addresses of the loop bounds if required.
