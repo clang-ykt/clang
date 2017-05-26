@@ -7,6 +7,7 @@
 // RUN: %clang_cc1 -fopenmp-implicit-declare-target -DCK1  -verify -fopenmp -x c++ -triple nvptx64-unknown-unknown -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm %s -fopenmp-is-device -fopenmp-host-ir-file-path %t-ppc-host.bc -o - | FileCheck %s --check-prefix CK1 --check-prefix CK1-64
 #ifdef CK1
 
+__thread int id;
 template<typename t>
 t bar(t i);
 static int foo(int i) { return bar<int>(i); }
@@ -22,7 +23,7 @@ int fooz()
   #pragma omp target
   {
     foo(i);
-    baz(i);
+    baz(id);
   }
   // CK1-NOT:	define linkonce_odr i32 @_{{.+}}faz
   // CK1-NOT:	define linkonce_odr i32 @_{{.+}}baz

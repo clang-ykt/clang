@@ -1063,7 +1063,7 @@ static bool directiveRequiresOMPRuntime(const OMPExecutableDirective &D,
     return !IsInParallelRegion;
   } else if (Kind == OMPD_teams || Kind == OMPD_distribute ||
              Kind == OMPD_teams_distribute ||
-             Kind == OMPD_teams_distribute_simd) {
+             Kind == OMPD_teams_distribute_simd || Kind == OMPD_atomic) {
     return false;
   } else {
     return true;
@@ -1091,6 +1091,12 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setRequiresOMPRuntime() {
     if (!RequiresOMPRuntime) {
       auto &&CondGen = [](const OMPExecutableDirective &D, bool, bool &,
                           MatchReasonTy &MatchReason) -> bool {
+        OpenMPDirectiveKind Kind = D.getDirectiveKind();
+        // Pretty much all directives nested in an SPMD directive require
+        // the OpenMP runtime to process.  The only exception is the atomic
+        // directive.
+        if (Kind == OMPD_atomic)
+          return false;
         MatchReason = MatchReasonTy(DirectiveRequiresRuntime, D.getLocStart());
         return true;
       };
@@ -3144,8 +3150,11 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   }
 
   FunctionArgList ArgList;
-  for (auto &I : ArgImplDecls)
+  int count = 0;
+  for (auto &I : ArgImplDecls) {
     ArgList.push_back(&I);
+    count++;
+  }
 
   auto &CGFI =
       CGM.getTypes().arrangeBuiltinFunctionDeclaration(Ctx.VoidTy, ArgList);
@@ -4467,6 +4476,16 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
 
     llvm::BasicBlock &HeaderBB = Fn->front();
 
+    llvm::Instruction *SharedDataInfrastructureInsertPoint = nullptr;
+    bool hasOMPInitDSBlock = false;
+    for (auto &BB : Fn->getBasicBlockList()) {
+      if (BB.getName() == "omp.init.ds") {
+        SharedDataInfrastructureInsertPoint = &(*BB.begin());
+        hasOMPInitDSBlock = true;
+        break;
+      }
+    }
+
     // Find the last alloca and the last replacement that is not an alloca.
     llvm::Instruction *LastAlloca = nullptr;
     llvm::Instruction *LastNonAllocaReplacement = nullptr;
@@ -4489,6 +4508,10 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
       if (!It->second)
         LastNonAllocaNonRefReplacement = LastNonAllocaReplacement;
     }
+
+    llvm::Instruction *DSInsertPtr = nullptr;
+    if (SharedDataInfrastructureInsertPoint)
+      DSInsertPtr = SharedDataInfrastructureInsertPoint;
 
     // We will start inserting after the first alloca or at the beginning of the
     // function.
@@ -4528,7 +4551,10 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     // If there is nothing to share, and this is an entry point, we should
     // initialize the data sharing logic anyways.
     if (!DSI.InitializationFunction && DSI.IsEntryPoint) {
-      InitializeEntryPoint(InsertPtr);
+      if (DSInsertPtr)
+        InitializeEntryPoint(DSInsertPtr);
+      else
+        InitializeEntryPoint(InsertPtr);
       continue;
     }
 
@@ -4577,36 +4603,50 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     if (LastNonAllocaReplacement)
       InsertPtr = LastNonAllocaReplacement->getNextNode();
 
+    if (DSInsertPtr)
+      InsertPtr = DSInsertPtr;
+
     // Do the replacements now.
     for (auto &R : Replacements) {
       auto *From = R.first;
       auto *To = new llvm::LoadInst(R.second, "", /*isVolatile=*/false,
                                     PointerAlign, InsertPtr);
+      llvm::Instruction *ToInstr = To;
 
       // Check if there are uses of From before To and move them after To. These
       // are usually the function epilogue stores.
-      for (auto II = HeaderBB.begin(), IE = HeaderBB.end(); II != IE;) {
-        llvm::Instruction *I = &*II;
-        ++II;
+      for (auto &StartBlock : Fn->getBasicBlockList()) {
+        // Only visit the header and omp.init.ds (if it exists) blocks.
+        for (auto II = StartBlock.begin(), IE = StartBlock.end(); II != IE;) {
+          llvm::Instruction *I = &*II;
+          ++II;
 
-        if (I == To)
-          break;
-        if (I == From)
-          continue;
-
-        bool NeedsToMove = false;
-        for (auto *U : From->users()) {
-          // Is this a user of from? If so we need to move it.
-          if (I == U) {
-            NeedsToMove = true;
+          if (I == To)
             break;
+          if (I == From)
+            continue;
+
+          bool NeedsToMove = false;
+          for (auto *U : From->users()) {
+            // Is this a user of from? If so we need to move it.
+            if (I == U) {
+              NeedsToMove = true;
+              break;
+            }
           }
+
+          if (!NeedsToMove)
+            continue;
+
+          I->moveBefore(ToInstr->getNextNode());
+          ToInstr = ToInstr->getNextNode();
         }
-
-        if (!NeedsToMove)
-          continue;
-
-        I->moveBefore(To->getNextNode());
+        // Only visit the header and omp.init.ds (if it exists) blocks.
+        if (hasOMPInitDSBlock) {
+          if (StartBlock.getName() == "omp.init.ds")
+            break;
+        } else
+            break;
       }
 
       From->replaceAllUsesWith(To);
@@ -4615,13 +4655,76 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
       InsertPtr = To;
     }
 
-    // Move the initialization insert point if it is before the the current
-    // initialization insert point.
-    for (auto *I = InsertPtr; I; I = I->getNextNode())
-      if (I == InitializationInsertPtr) {
-        InitializationInsertPtr = InsertPtr;
-        break;
+    if (hasOMPInitDSBlock) {
+      bool InstructionWasMoved = true;
+      while(InstructionWasMoved){
+        InstructionWasMoved = false;
+        for (auto &StartBlock : Fn->getBasicBlockList()) {
+          for (auto II = StartBlock.begin(), IE = StartBlock.end(); II != IE;) {
+            llvm::Instruction *OuterInstr = &*II;
+            ++II;
+
+            if (dyn_cast<llvm::AllocaInst>(OuterInstr))
+              continue;
+
+            if (dyn_cast<llvm::StoreInst>(OuterInstr))
+              continue;
+
+            // Instruction I is the current instruction
+            // Scan the two blocks and check if a usage of II is found
+            // before it is initialized.
+            for (auto *Usage : OuterInstr->users()) {
+              // Let's check to see if the usage is BEFORE the init.
+              bool InitFound = false;
+              for (auto &StartBlock : Fn->getBasicBlockList()) {
+                for (auto JJ = StartBlock.begin(), IE = StartBlock.end(); JJ != IE;) {
+                  llvm::Instruction *InnerInstr = &*JJ;
+                  ++JJ;
+
+                  if (OuterInstr == InnerInstr)
+                    InitFound = true;
+
+                  if (Usage == InnerInstr)
+                    if (!InitFound){
+                       InnerInstr->moveBefore(OuterInstr->getNextNode());
+                       InstructionWasMoved = true;
+                    }
+
+                }
+                // Only visit the header and omp.init.ds (if it exists) blocks.
+                if (hasOMPInitDSBlock) {
+                  if (StartBlock.getName() == "omp.init.ds")
+                    break;
+                } else
+                    break;
+              }
+            }
+          }
+          // Only visit the header and omp.init.ds (if it exists) blocks.
+          if (hasOMPInitDSBlock) {
+            if (StartBlock.getName() == "omp.init.ds")
+              break;
+          } else
+              break;
+        }
       }
+    }
+
+    if (!hasOMPInitDSBlock) {
+      for (auto *I = InsertPtr; I; I = I->getNextNode())
+        if (I == InitializationInsertPtr) {
+          InitializationInsertPtr = InsertPtr;
+          break;
+        }
+    } else {
+      for (auto &BB : Fn->getBasicBlockList()) {
+        if (BB.getName() == "omp.init.ds") {
+          InitializationInsertPtr = &(*BB.begin());
+          InsertPtr = InitializationInsertPtr;
+          break;
+        }
+      }
+    }
 
     // If this is an entry point, we have to initialize the data sharing first.
     if (DSI.IsEntryPoint)
@@ -4630,16 +4733,33 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     // Adjust address spaces in the function arguments.
     auto FArg = DSI.InitializationFunction->arg_begin();
     for (auto &Arg : InitArgs) {
-
       // If the argument is not in the header of the function (usually because
       // it is after the scheduling of an outermost loop), create a clone
       // in there and use it instead.
-      if (auto *I = dyn_cast<llvm::Instruction>(Arg))
+      if (auto *I = dyn_cast<llvm::Instruction>(Arg)) {
         if (I->getParent() != &Fn->front()) {
           auto *CI = I->clone();
           Arg = CI;
           CI->insertBefore(InsertPtr);
+
+          if (isa<llvm::LoadInst>(I)) {
+            auto LoadedValue = I->getOperand(0);
+
+            for (auto Usage : LoadedValue->users()) {
+              if (auto *ST = dyn_cast<llvm::StoreInst>(Usage)) {
+                auto *STClone = ST->clone();
+                STClone->insertBefore(CI);
+                if (auto *LD = dyn_cast<llvm::LoadInst>(STClone->getOperand(0))) {
+                  auto *LDClone = LD->clone();
+                  STClone->setOperand(0, LDClone);
+                  LDClone->insertBefore(STClone);
+                }
+                break;
+              }
+            }
+          }
         }
+      }
 
       // Types match, nothing to do.
       if (FArg->getType() == Arg->getType()) {

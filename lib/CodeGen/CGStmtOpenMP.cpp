@@ -3152,6 +3152,46 @@ void CodeGenFunction::EmitOMPFlushDirective(const OMPFlushDirective &S) {
 void CodeGenFunction::EmitOMPDistributeLoop(
     const OMPLoopDirective &S,
     const RegionCodeGenTy &CodeGenDistributeLoopContent) {
+  // Insert an omp.init.ds block at the end of the entry header before any branch.
+  // Check if function already has an omp.init.ds block
+  bool hasOMPInitDSBlock = false;
+  for (auto &BB : CurFn->getBasicBlockList())
+    if (BB.getName() == "omp.init.ds"){
+      hasOMPInitDSBlock = true;
+      break;
+    }
+
+  // Emit omp.init.ds block if we have not emitted one before
+  if (!hasOMPInitDSBlock) {
+    llvm::BasicBlock *InitDS;
+    llvm::BasicBlock *AfterHeaderBB;
+    llvm::BasicBlock *HeaderBB = &CurFn->front();
+    llvm::Instruction *OldBI = HeaderBB->getTerminator();
+    llvm::Instruction *InsertPt = nullptr;
+    if (OldBI){
+      InsertPt = OldBI->getPrevNode();
+      llvm::BasicBlock *InitDSCont = createBasicBlock("omp.init.continue");
+      EmitBranch(InitDSCont);
+      InitDS = createBasicBlock("omp.init.ds");
+      EmitBlock(InitDS);
+      EmitBranch(InitDS);
+      llvm::Instruction *NewTerminator = InitDS->getTerminator();
+      AfterHeaderBB = HeaderBB->getNextNode();
+      NewTerminator->moveBefore(OldBI);
+      Builder.SetInsertPoint(InitDS);
+      EmitBranch(HeaderBB);
+      NewTerminator = InitDS->getTerminator();
+      OldBI->moveBefore(NewTerminator);
+      NewTerminator->eraseFromParent();
+      EmitBlock(InitDSCont);
+      InitDS->moveAfter(HeaderBB);
+    } else {
+      InitDS = createBasicBlock("omp.init.ds");
+      EmitBranch(InitDS);
+      EmitBlock(InitDS);
+    }
+  }
+
   // Emit the loop iteration variable.
   auto IVExpr = cast<DeclRefExpr>(S.getIterationVariable());
   auto IVDecl = cast<VarDecl>(IVExpr->getDecl());
@@ -3397,6 +3437,7 @@ void CodeGenFunction::EmitOMPDistributeParallelForDirective(
                                         PrePostActionTy &) {
     CGF.EmitOMPDistributeLoop(S, CGParallelFor);
   };
+
   OMPLexicalScope Scope(*this, S, /*AsInlined=*/true);
   OMPCancelStackRAII CancelRegion(*this, OMPD_distribute_parallel_for,
                                   /*HasCancel=*/false);
@@ -3550,18 +3591,23 @@ static std::pair<bool, RValue> emitOMPAtomicRMW(CodeGenFunction &CGF, LValue X,
                                                 BinaryOperatorKind BO,
                                                 llvm::AtomicOrdering AO,
                                                 bool IsXLHSInRHSPart) {
-  auto &Context = CGF.CGM.getContext();
+  //auto &Context = CGF.CGM.getContext();
   // Allow atomicrmw only if 'x' and 'update' are integer values, lvalue for 'x'
   // expression is simple and atomic is allowed for the given type for the
   // target platform.
+
+  // since the OpenMP requires user to guarantee the alignment, the
+  // compiler check for alignment is removed.
+  // The alignment check is OK for c frontend, but may fail for Fortran
+  // this change should not be merged into the trunk
   if (BO == BO_Comma || !Update.isScalar() ||
       !Update.getScalarVal()->getType()->isIntegerTy() ||
       !X.isSimple() || (!isa<llvm::ConstantInt>(Update.getScalarVal()) &&
                         (Update.getScalarVal()->getType() !=
                          X.getAddress().getElementType())) ||
-      !X.getAddress().getElementType()->isIntegerTy() ||
+      !X.getAddress().getElementType()->isIntegerTy() /*||
       !Context.getTargetInfo().hasBuiltinAtomic(
-          Context.getTypeSize(X.getType()), Context.toBits(X.getAlignment())))
+          Context.getTypeSize(X.getType()), Context.toBits(X.getAlignment()))*/)
     return std::make_pair(false, RValue::get(nullptr));
 
   llvm::AtomicRMWInst::BinOp RMWOp;
