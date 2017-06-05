@@ -720,14 +720,14 @@ enum OpenMPRTLFunction {
   // arg_num, void** args_base, void **args, size_t *arg_sizes, int32_t
   // *arg_types);
   OMPRTL__tgt_target,
-  // Call to int32_t __tgt_target_teams(int32_t device_id, void *host_ptr,
-  // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
-  // int32_t *arg_types, int32_t num_teams, int32_t thread_limit);
-  OMPRTL__tgt_target_teams,
   // Call to int32_t __tgt_target_nowait(int32_t device_id, void *host_ptr, int32_t
   // arg_num, void** args_base, void **args, size_t *arg_sizes, int32_t
   // *arg_types);
   OMPRTL__tgt_target_nowait,
+  // Call to int32_t __tgt_target_teams(int32_t device_id, void *host_ptr,
+  // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
+  // int32_t *arg_types, int32_t num_teams, int32_t thread_limit);
+  OMPRTL__tgt_target_teams,
   // Call to int32_t __tgt_target_teams_nowait(int32_t device_id, void *host_ptr,
   // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
   // int32_t *arg_types, int32_t num_teams, int32_t thread_limit);
@@ -6699,6 +6699,9 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
 
   assert(OutlinedFn && "Invalid outlined function!");
 
+  // Check if directive has nowait clause
+  bool hasNowait = D.hasClausesOfKind<OMPNowaitClause>();
+
   auto &Ctx = CGF.getContext();
 
   // Fill up the arrays with all the captured variables.
@@ -6777,7 +6780,7 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
   // Fill up the pointer arrays and transfer execution to the device.
   auto &&ThenGen = [&Ctx, &BasePointers, &Pointers, &Sizes, &MapTypes, Device,
                     OutlinedFnID, OffloadError, OffloadErrorQType,
-                    &D](CodeGenFunction &CGF, PrePostActionTy &) {
+                    &D, hasNowait](CodeGenFunction &CGF, PrePostActionTy &) {
     auto &RT = CGF.CGM.getOpenMPRuntime();
     // Emit the offloading arrays.
     TargetDataInfo Info;
@@ -6830,15 +6833,23 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
           Info.PointersArray, Info.SizesArray,
           Info.MapTypesArray, NumTeams,
           ThreadLimit};
-      Return = CGF.EmitRuntimeCall(
-          RT.createRuntimeFunction(OMPRTL__tgt_target_teams), OffloadingArgs);
+      if (hasNowait)
+        Return = CGF.EmitRuntimeCall(
+          RT.createRuntimeFunction(OMPRTL__tgt_target_teams_nowait), OffloadingArgs);
+      else
+        Return = CGF.EmitRuntimeCall(
+            RT.createRuntimeFunction(OMPRTL__tgt_target_teams), OffloadingArgs);
     } else {
       llvm::Value *OffloadingArgs[] = {
           DeviceID,           OutlinedFnID,
           PointerNum,         Info.BasePointersArray,
           Info.PointersArray, Info.SizesArray,
           Info.MapTypesArray};
-      Return = CGF.EmitRuntimeCall(RT.createRuntimeFunction(OMPRTL__tgt_target),
+      if (hasNowait)
+        Return = CGF.EmitRuntimeCall(RT.createRuntimeFunction(OMPRTL__tgt_target_nowait),
+                                 OffloadingArgs);
+      else
+        Return = CGF.EmitRuntimeCall(RT.createRuntimeFunction(OMPRTL__tgt_target),
                                    OffloadingArgs);
     }
 
@@ -7466,6 +7477,7 @@ void CGOpenMPRuntime::emitTargetDataCalls(
     CGF.EmitRuntimeCall(RT.createRuntimeFunction(OMPRTL__tgt_target_data_begin),
                         OffloadingArgs);
 
+
     // If device pointer privatization is required, emit the body of the region
     // here. It will have to be duplicated: with and without privatization.
     if (!Info.CaptureDeviceAddrMap.empty())
@@ -7589,18 +7601,29 @@ void CGOpenMPRuntime::emitTargetDataStandAloneCall(
     // Select the right runtime function call for each expected standalone
     // directive.
     OpenMPRTLFunction RTLFn;
+    // Check if directive has nowait clause
+    bool hasNowait = D.hasClausesOfKind<OMPNowaitClause>();
     switch (D.getDirectiveKind()) {
     default:
       llvm_unreachable("Unexpected standalone target data directive.");
       break;
     case OMPD_target_enter_data:
-      RTLFn = OMPRTL__tgt_target_data_begin;
+      if (hasNowait)
+        RTLFn = OMPRTL__tgt_target_data_begin_nowait;
+      else
+        RTLFn = OMPRTL__tgt_target_data_begin;
       break;
     case OMPD_target_exit_data:
-      RTLFn = OMPRTL__tgt_target_data_end;
+      if (hasNowait)
+        RTLFn = OMPRTL__tgt_target_data_end_nowait;
+      else
+        RTLFn = OMPRTL__tgt_target_data_end;
       break;
     case OMPD_target_update:
-      RTLFn = OMPRTL__tgt_target_data_update;
+      if (hasNowait)
+        RTLFn = OMPRTL__tgt_target_data_update_nowait;
+      else
+        RTLFn = OMPRTL__tgt_target_data_update;
       break;
     }
     CGF.EmitRuntimeCall(RT.createRuntimeFunction(RTLFn), OffloadingArgs);
