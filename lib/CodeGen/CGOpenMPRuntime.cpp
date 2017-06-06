@@ -720,7 +720,8 @@ enum OpenMPRTLFunction {
   // arg_num, void** args_base, void **args, size_t *arg_sizes, int32_t
   // *arg_types);
   OMPRTL__tgt_target,
-  // Call to int32_t __tgt_target_nowait(int32_t device_id, void *host_ptr, int32_t
+  // Call to int32_t __tgt_target_nowait(int32_t device_id, void *host_ptr,
+  // int32_t
   // arg_num, void** args_base, void **args, size_t *arg_sizes, int32_t
   // *arg_types);
   OMPRTL__tgt_target_nowait,
@@ -728,7 +729,8 @@ enum OpenMPRTLFunction {
   // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
   // int32_t *arg_types, int32_t num_teams, int32_t thread_limit);
   OMPRTL__tgt_target_teams,
-  // Call to int32_t __tgt_target_teams_nowait(int32_t device_id, void *host_ptr,
+  // Call to int32_t __tgt_target_teams_nowait(int32_t device_id, void
+  // *host_ptr,
   // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
   // int32_t *arg_types, int32_t num_teams, int32_t thread_limit);
   OMPRTL__tgt_target_teams_nowait,
@@ -739,19 +741,22 @@ enum OpenMPRTLFunction {
   // Call to void __tgt_target_data_begin(int32_t device_id, int32_t arg_num,
   // void** args_base, void **args, size_t *arg_sizes, int32_t *arg_types);
   OMPRTL__tgt_target_data_begin,
-  // Call to void __tgt_target_data_begin_nowait(int32_t device_id, int32_t arg_num,
+  // Call to void __tgt_target_data_begin_nowait(int32_t device_id, int32_t
+  // arg_num,
   // void** args_base, void **args, size_t *arg_sizes, int32_t *arg_types);
   OMPRTL__tgt_target_data_begin_nowait,
   // Call to void __tgt_target_data_end(int32_t device_id, int32_t arg_num,
   // void** args_base, void **args, size_t *arg_sizes, int32_t *arg_types);
   OMPRTL__tgt_target_data_end,
-  // Call to void __tgt_target_data_end_nowait(int32_t device_id, int32_t arg_num,
+  // Call to void __tgt_target_data_end_nowait(int32_t device_id, int32_t
+  // arg_num,
   // void** args_base, void **args, size_t *arg_sizes, int32_t *arg_types);
   OMPRTL__tgt_target_data_end_nowait,
   // Call to void __tgt_target_data_update(int32_t device_id, int32_t arg_num,
   // void** args_base, void **args, size_t *arg_sizes, int32_t *arg_types);
   OMPRTL__tgt_target_data_update,
-  // Call to void __tgt_target_data_update_nowait(int32_t device_id, int32_t arg_num,
+  // Call to void __tgt_target_data_update_nowait(int32_t device_id, int32_t
+  // arg_num,
   // void** args_base, void **args, size_t *arg_sizes, int32_t *arg_types);
   OMPRTL__tgt_target_data_update_nowait,
 };
@@ -1748,7 +1753,8 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
     break;
   }
   case OMPRTL__tgt_target_nowait: {
-    // Build int32_t __tgt_target_nowait(int32_t device_id, void *host_ptr, int32_t
+    // Build int32_t __tgt_target_nowait(int32_t device_id, void *host_ptr,
+    // int32_t
     // arg_num, void** args_base, void **args, size_t *arg_sizes, int32_t
     // *arg_types);
     llvm::Type *TypeParams[] = {CGM.Int32Ty,
@@ -1764,7 +1770,8 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
     break;
   }
   case OMPRTL__tgt_target_teams_nowait: {
-    // Build int32_t __tgt_target_teams_nowait(int32_t device_id, void *host_ptr,
+    // Build int32_t __tgt_target_teams_nowait(int32_t device_id, void
+    // *host_ptr,
     // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
     // int32_t *arg_types, int32_t num_teams, int32_t thread_limit);
     llvm::Type *TypeParams[] = {CGM.Int32Ty,
@@ -1816,7 +1823,8 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
     break;
   }
   case OMPRTL__tgt_target_data_begin_nowait: {
-    // Build void __tgt_target_data_begin_nowait(int32_t device_id, int32_t arg_num,
+    // Build void __tgt_target_data_begin_nowait(int32_t device_id, int32_t
+    // arg_num,
     // void** args_base, void **args, size_t *arg_sizes, int32_t *arg_types);
     llvm::Type *TypeParams[] = {CGM.Int32Ty,
                                 CGM.Int32Ty,
@@ -1844,7 +1852,8 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
     break;
   }
   case OMPRTL__tgt_target_data_end_nowait: {
-    // Build void __tgt_target_data_end_nowait(int32_t device_id, int32_t arg_num,
+    // Build void __tgt_target_data_end_nowait(int32_t device_id, int32_t
+    // arg_num,
     // void** args_base, void **args, size_t *arg_sizes, int32_t *arg_types);
     llvm::Type *TypeParams[] = {CGM.Int32Ty,
                                 CGM.Int32Ty,
@@ -1872,7 +1881,8 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
     break;
   }
   case OMPRTL__tgt_target_data_update_nowait: {
-    // Build void __tgt_target_data_update_nowait(int32_t device_id, int32_t arg_num,
+    // Build void __tgt_target_data_update_nowait(int32_t device_id, int32_t
+    // arg_num,
     // void** args_base, void **args, size_t *arg_sizes, int32_t *arg_types);
     llvm::Type *TypeParams[] = {CGM.Int32Ty,
                                 CGM.Int32Ty,
@@ -6779,8 +6789,8 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
 
   // Fill up the pointer arrays and transfer execution to the device.
   auto &&ThenGen = [&Ctx, &BasePointers, &Pointers, &Sizes, &MapTypes, Device,
-                    OutlinedFnID, OffloadError, OffloadErrorQType,
-                    &D, hasNowait](CodeGenFunction &CGF, PrePostActionTy &) {
+                    OutlinedFnID, OffloadError, OffloadErrorQType, &D,
+                    hasNowait](CodeGenFunction &CGF, PrePostActionTy &) {
     auto &RT = CGF.CGM.getOpenMPRuntime();
     // Emit the offloading arrays.
     TargetDataInfo Info;
@@ -6835,7 +6845,8 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
           ThreadLimit};
       if (hasNowait)
         Return = CGF.EmitRuntimeCall(
-          RT.createRuntimeFunction(OMPRTL__tgt_target_teams_nowait), OffloadingArgs);
+            RT.createRuntimeFunction(OMPRTL__tgt_target_teams_nowait),
+            OffloadingArgs);
       else
         Return = CGF.EmitRuntimeCall(
             RT.createRuntimeFunction(OMPRTL__tgt_target_teams), OffloadingArgs);
@@ -6846,11 +6857,12 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
           Info.PointersArray, Info.SizesArray,
           Info.MapTypesArray};
       if (hasNowait)
-        Return = CGF.EmitRuntimeCall(RT.createRuntimeFunction(OMPRTL__tgt_target_nowait),
-                                 OffloadingArgs);
+        Return = CGF.EmitRuntimeCall(
+            RT.createRuntimeFunction(OMPRTL__tgt_target_nowait),
+            OffloadingArgs);
       else
-        Return = CGF.EmitRuntimeCall(RT.createRuntimeFunction(OMPRTL__tgt_target),
-                                   OffloadingArgs);
+        Return = CGF.EmitRuntimeCall(
+            RT.createRuntimeFunction(OMPRTL__tgt_target), OffloadingArgs);
     }
 
     CGF.EmitStoreOfScalar(Return, OffloadError);
