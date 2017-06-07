@@ -5890,6 +5890,13 @@ void CGOpenMPRuntimeNVPTX::emitReduction(
   if (!CGF.HaveInsertPoint())
     return;
 
+  if (SimpleReduction) {
+    CGOpenMPRuntime::emitReduction(CGF, Loc, Privates, LHSExprs, RHSExprs,
+                                   ReductionOps, WithNowait, SimpleReduction,
+                                   ReductionKind);
+    return;
+  }
+
   bool TeamsReduction = isOpenMPTeamsDirective(ReductionKind);
   bool ParallelReduction = isOpenMPParallelDirective(ReductionKind);
   bool SimdReduction = isOpenMPSimdDirective(ReductionKind);

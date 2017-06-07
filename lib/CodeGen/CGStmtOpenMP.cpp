@@ -1915,8 +1915,11 @@ void CodeGenFunction::EmitOMPSimdLoop(const OMPLoopDirective &S,
 }
 
 void CodeGenFunction::EmitOMPSimdDirective(const OMPSimdDirective &S) {
+#if 0
   bool OutlinedSimd =
       CGM.getLangOpts().OpenMPIsDevice && CGM.getTriple().isNVPTX();
+#endif
+  bool OutlinedSimd = false;
   EmitOMPSimdLoop(S, OutlinedSimd);
 }
 

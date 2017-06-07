@@ -4316,9 +4316,12 @@ static unsigned CheckOpenMPLoop(
   }
 
   // Build iteration variable initializer for simd loop on nvptx.
+#if 0
   bool OutlinedSimd = DKind == OMPD_simd &&
                       SemaRef.getLangOpts().OpenMPIsDevice &&
                       SemaRef.Context.getTargetInfo().getTriple().isNVPTX();
+#endif
+  bool OutlinedSimd = false;
   ExprResult LaneInit;
   ExprResult NumLanes;
   if (OutlinedSimd) {
