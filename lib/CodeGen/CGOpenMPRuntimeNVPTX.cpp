@@ -1397,6 +1397,30 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setMasterSharedDataSize() {
   }
 }
 
+static const OMPExecutableDirective *
+getTeamsDirective(const CodeGenModule &CGM, const OMPExecutableDirective &D) {
+  switch (D.getDirectiveKind()) {
+  case OMPD_target:
+  case OMPD_target_simd: {
+    const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+    if (auto *NestedDir = dyn_cast_or_null<OMPExecutableDirective>(
+            ignoreCompoundStmts(CS.getCapturedStmt())))
+      return NestedDir;
+    else
+      return &D;
+  }
+  default:
+    return &D;
+  }
+
+  return nullptr;
+}
+
+void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setHasTeamsReduction() {
+  const OMPExecutableDirective &TD = *getTeamsDirective(CGM, D);
+  HasTeamsReduction = TD.hasClausesOfKind<OMPReductionClause>();
+}
+
 void CGOpenMPRuntimeNVPTX::WorkerFunctionState::createWorkerFunction(
     CodeGenModule &CGM) {
   // Create an worker function with no arguments.
@@ -1643,6 +1667,18 @@ static void SetPropertyExecutionMode(CodeGenModule &CGM, StringRef Name,
       CGM.getModule(), CGM.Int8Ty, /*isConstant=*/true,
       llvm::GlobalValue::WeakAnyLinkage,
       llvm::ConstantInt::get(CGM.Int8Ty, Mode), Name + Twine("_exec_mode"));
+}
+
+// Create a unique global variable to indicate whether the target teams region
+// has
+// a reduction operation.
+static void SetPropertyReduction(CodeGenModule &CGM, StringRef Name,
+                                 bool HasReduction) {
+  (void)new llvm::GlobalVariable(
+      CGM.getModule(), CGM.Int8Ty, /*isConstant=*/true,
+      llvm::GlobalValue::WeakAnyLinkage,
+      llvm::ConstantInt::get(CGM.Int8Ty, HasReduction),
+      Name + Twine("_reduction"));
 }
 
 void CGOpenMPRuntimeNVPTX::emitSPMDEntryHeader(
@@ -2378,6 +2414,7 @@ void CGOpenMPRuntimeNVPTX::emitTargetOutlinedFunction(
   }
 
   SetPropertyExecutionMode(CGM, OutlinedFn->getName(), Mode);
+  SetPropertyReduction(CGM, OutlinedFn->getName(), TP.hasTeamsReduction());
 
   CGM.getContext().getDiagnostics().Report(
       D.getLocStart(),
