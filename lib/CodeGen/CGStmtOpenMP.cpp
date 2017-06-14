@@ -350,11 +350,13 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
   Args.append(
       std::next(CD->param_begin(), CD->getContextParamPosition() + 1),
       CD->param_end());
+  FunctionArgList TargetArgs(Args);
+  CGM.getOpenMPRuntime().translateOutlinedArgs(TargetArgs);
 
   // Create the function declaration.
   FunctionType::ExtInfo ExtInfo;
   const CGFunctionInfo &FuncInfo =
-      CGM.getTypes().arrangeBuiltinFunctionDeclaration(Ctx.VoidTy, Args);
+      CGM.getTypes().arrangeBuiltinFunctionDeclaration(Ctx.VoidTy, TargetArgs);
   llvm::FunctionType *FuncLLVMTy = CGM.getTypes().GetFunctionType(FuncInfo);
 
   llvm::Function *F = llvm::Function::Create(
@@ -365,7 +367,7 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
     F->addFnAttr(llvm::Attribute::NoUnwind);
 
   // Generate the function.
-  StartFunction(CD, Ctx.VoidTy, F, FuncInfo, Args, CD->getLocation(),
+  StartFunction(CD, Ctx.VoidTy, F, FuncInfo, TargetArgs, CD->getLocation(),
                 CD->getBody()->getLocStart());
   unsigned Cnt = UseCapturedArgumentsOnly ? 0 : ImplicitParamStop;
   I = S.captures().begin();
@@ -386,7 +388,7 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
     // use the value that we get from the arguments.
     if (I->capturesVariableByCopy() && FD->getType()->isAnyPointerType()) {
       const VarDecl *CurVD = I->getCapturedVar();
-      Address LocalAddr = GetAddrOfLocalVar(Args[Cnt]);
+      Address LocalAddr = GetAddrOfLocalVar(TargetArgs[Cnt]);
       // If the variable is a reference we need to materialize it here.
       if (CurVD->getType()->isReferenceType()) {
         Address RefAddr = CreateMemTemp(CurVD->getType(), getPointerAlign(),
@@ -402,8 +404,8 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
     }
 
     LValue ArgLVal =
-        MakeAddrLValue(GetAddrOfLocalVar(Args[Cnt]), Args[Cnt]->getType(),
-                       AlignmentSource::Decl);
+        MakeAddrLValue(GetAddrOfLocalVar(TargetArgs[Cnt]),
+                       Args[Cnt]->getType(), AlignmentSource::Decl);
     if (FD->hasCapturedVLAType()) {
       LValue CastedArgLVal =
           MakeAddrLValue(castValueFromUintptr(*this, FD->getType(),

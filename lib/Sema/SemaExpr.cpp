@@ -13651,9 +13651,13 @@ static bool captureInCapturedRegion(CapturedRegionScopeInfo *RSI,
     ByRef = S.IsOpenMPCapturedByRef(Var, RSI->OpenMPLevel);
   }
 
-  if (ByRef)
-    CaptureType = S.Context.getLValueReferenceType(DeclRefType);
-  else
+  if (ByRef) {
+    CaptureType = S.Context.getLValueReferenceType(
+        (S.getLangOpts().OpenMP && RSI->CapRegionKind == CR_OpenMP &&
+         S.IsOpenMPCapturedDecl(Var))
+            ? S.setOpenMPAddressSpace(Var, DeclRefType, RSI->OpenMPLevel)
+            : DeclRefType);
+  } else
     CaptureType = DeclRefType;
 
   Expr *CopyExpr = nullptr;

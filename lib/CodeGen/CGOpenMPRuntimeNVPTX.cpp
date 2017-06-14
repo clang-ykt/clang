@@ -6086,3 +6086,20 @@ void CGOpenMPRuntimeNVPTX::emitReduction(
   CGF.EmitBlock(DefaultBB, /*IsFinished=*/true);
 }
 
+void CGOpenMPRuntimeNVPTX::translateOutlinedArgs(
+    MutableArrayRef<const VarDecl *> Args) const {
+  for (const auto *&Arg : Args) {
+    if (Arg->getType()->isReferenceType()) {
+      QualType ArgType = Arg->getType();
+      QualifierCollector QC;
+      const Type *NonQualTy = QC.strip(ArgType);
+      ArgType = CGM.getContext().getPointerType(
+          cast<ReferenceType>(NonQualTy)->getPointeeType());
+      ArgType.addRestrict();
+      QC.apply(CGM.getContext(), ArgType);
+      Arg = ImplicitParamDecl::Create(CGM.getContext(), /*DC=*/nullptr,
+                                      Arg->getLocation(), Arg->getIdentifier(),
+                                      ArgType, ImplicitParamDecl::Other);
+    }
+  }
+}
