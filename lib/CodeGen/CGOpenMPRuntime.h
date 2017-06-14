@@ -19,7 +19,6 @@
 #include "clang/AST/Type.h"
 #include "clang/Basic/OpenMPKinds.h"
 #include "clang/Basic/SourceLocation.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringMap.h"
@@ -1458,10 +1457,6 @@ public:
   /// Return true if the current OpenMP implementation supports RTTI. The return
   /// default value is 'true'.
   virtual bool requiresRTTIDescriptor() { return true; }
-
-  /// Translates arguments of outlined function if this is required for target.
-  virtual void
-  translateOutlinedArgs(MutableArrayRef<const VarDecl *> Args) const {}
 };
 
 } // namespace CodeGen

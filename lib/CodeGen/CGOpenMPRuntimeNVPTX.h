@@ -743,10 +743,6 @@ public:
                              ArrayRef<const Expr *> ReductionOps,
                              bool WithNowait, bool SimpleReduction,
                              OpenMPDirectiveKind ReductionKind) override;
-
-  /// Translates arguments of outlined function if this is required for target.
-  void
-  translateOutlinedArgs(MutableArrayRef<const VarDecl *> Args) const override;
 };
 
 } // CodeGen namespace.

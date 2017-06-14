@@ -1294,30 +1294,6 @@ bool Sema::isOpenMPPrivateDecl(ValueDecl *D, unsigned Level) {
       D, [](OpenMPClauseKind K) -> bool { return K == OMPC_private; }, Level);
 }
 
-QualType Sema::setOpenMPAddressSpace(ValueDecl *D, QualType CaptureType,
-                                     unsigned Level) {
-  assert(IsOpenMPCapturedDecl(D));
-  assert(LangOpts.OpenMP && "OpenMP is not allowed");
-  if (!Context.getTargetInfo().useAddressSpaceMapMangling() ||
-      DSAStack->isClauseParsingMode())
-    return CaptureType;
-  D = getCanonicalDecl(D);
-  for (unsigned I = DSAStack->getNestingLevel() + 1; I > Level; --I) {
-    const unsigned NewLevel = I - 1;
-    if (DSAStack->hasExplicitDSA(D, isOpenMPPrivate, NewLevel))
-      return CaptureType;
-    if (DSAStack->checkMappableExprComponentListsForDeclAtLevel(
-            D, NewLevel,
-            [](OMPClauseMappableExprCommon::MappableExprComponentListRef,
-               OpenMPClauseKind) { return true; }))
-      return Context.getAddrSpaceQualType(CaptureType, LangAS::opencl_global);
-    if (DSAStack->hasExplicitDirective(isOpenMPTargetExecutionDirective,
-                                       NewLevel))
-      return CaptureType;
-  }
-  return CaptureType;
-}
-
 bool Sema::isOpenMPTargetCapturedDecl(ValueDecl *D, unsigned Level) {
   assert(LangOpts.OpenMP && "OpenMP is not allowed");
   // Return true if the current level is no longer enclosed in a target region.

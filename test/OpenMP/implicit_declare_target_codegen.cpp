@@ -169,7 +169,7 @@ void fooz()
 
     funky(a, b, n, bar);
 }
-  // CK3:    %class.anon* noalias %plugh
+  // CK3:    %class.anon* dereferenceable(1) %plugh
   // CK3:    %plugh.addr = alloca %class.anon*, align 8
   // CK3:    %bar = alloca %class.anon.0, align 1
   // CK3:    store %class.anon* %plugh, %class.anon** %plugh.addr, align 8

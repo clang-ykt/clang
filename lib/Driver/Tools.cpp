@@ -4953,9 +4953,13 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (DebugInfoKind == codegenoptions::LimitedDebugInfo && NeedFullDebug)
     DebugInfoKind = codegenoptions::FullDebugInfo;
 
-  if (!(IsOpenMPDevice && getToolChain().getTriple().isNVPTX()))
+  if (!(IsOpenMPDevice && getToolChain().getTriple().isNVPTX()) ||
+      (IsOpenMPDevice &&
+       Args.hasFlag(options::OPT_fopenmp_debug, options::OPT_fno_openmp_debug,
+                    /*Default=*/false))) {
     RenderDebugEnablingArgs(Args, CmdArgs, DebugInfoKind, DwarfVersion,
-                          DebuggerTuning);
+                            DebuggerTuning);
+  }
 
   // -ggnu-pubnames turns on gnu style pubnames in the backend.
   if (Args.hasArg(options::OPT_ggnu_pubnames)) {
