@@ -293,12 +293,15 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
 
   // Build the argument list.
   ASTContext &Ctx = CGM.getContext();
-  FunctionArgList Args;
+  FunctionArgList TargetArgs, Args;
   if (ImplicitParamStop == 0)
     ImplicitParamStop = CD->getContextParamPosition();
-  if (!UseCapturedArgumentsOnly)
+  if (!UseCapturedArgumentsOnly) {
     Args.append(CD->param_begin(),
                 std::next(CD->param_begin(), ImplicitParamStop));
+    TargetArgs.append(CD->param_begin(),
+                      std::next(CD->param_begin(), ImplicitParamStop));
+  }
   auto I = S.captures().begin();
   for (auto *FD : RD->fields()) {
     QualType ArgType = FD->getType();
@@ -342,19 +345,24 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
     if (NonAliasedMaps &&
         (ArgType->isAnyPointerType() || ArgType->isReferenceType()))
       ArgType = ArgType.withRestrict();
-    Args.push_back(ImplicitParamDecl::Create(getContext(), /*DC=*/nullptr,
-                                             FD->getLocation(), II, ArgType,
-                                             ImplicitParamDecl::Other));
+    auto *Arg = ImplicitParamDecl::Create(getContext(), /*DC=*/nullptr,
+                                          FD->getLocation(), II, ArgType,
+                                          ImplicitParamDecl::Other);
+    Args.push_back(Arg);
+    TargetArgs.push_back(CGM.getOpenMPRuntime().translateArgument(FD, Arg));
     ++I;
   }
   Args.append(
+      std::next(CD->param_begin(), CD->getContextParamPosition() + 1),
+      CD->param_end());
+  TargetArgs.append(
       std::next(CD->param_begin(), CD->getContextParamPosition() + 1),
       CD->param_end());
 
   // Create the function declaration.
   FunctionType::ExtInfo ExtInfo;
   const CGFunctionInfo &FuncInfo =
-      CGM.getTypes().arrangeBuiltinFunctionDeclaration(Ctx.VoidTy, Args);
+      CGM.getTypes().arrangeBuiltinFunctionDeclaration(Ctx.VoidTy, TargetArgs);
   llvm::FunctionType *FuncLLVMTy = CGM.getTypes().GetFunctionType(FuncInfo);
 
   llvm::Function *F = llvm::Function::Create(
@@ -365,7 +373,7 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
     F->addFnAttr(llvm::Attribute::NoUnwind);
 
   // Generate the function.
-  StartFunction(CD, Ctx.VoidTy, F, FuncInfo, Args, CD->getLocation(),
+  StartFunction(CD, Ctx.VoidTy, F, FuncInfo, TargetArgs, CD->getLocation(),
                 CD->getBody()->getLocStart());
   unsigned Cnt = UseCapturedArgumentsOnly ? 0 : ImplicitParamStop;
   I = S.captures().begin();
@@ -386,7 +394,7 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
     // use the value that we get from the arguments.
     if (I->capturesVariableByCopy() && FD->getType()->isAnyPointerType()) {
       const VarDecl *CurVD = I->getCapturedVar();
-      Address LocalAddr = GetAddrOfLocalVar(Args[Cnt]);
+      Address LocalAddr = GetAddrOfLocalVar(TargetArgs[Cnt]);
       // If the variable is a reference we need to materialize it here.
       if (CurVD->getType()->isReferenceType()) {
         Address RefAddr = CreateMemTemp(CurVD->getType(), getPointerAlign(),
@@ -402,8 +410,8 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
     }
 
     LValue ArgLVal =
-        MakeAddrLValue(GetAddrOfLocalVar(Args[Cnt]), Args[Cnt]->getType(),
-                       AlignmentSource::Decl);
+        MakeAddrLValue(GetAddrOfLocalVar(TargetArgs[Cnt]),
+                       Args[Cnt]->getType(), AlignmentSource::Decl);
     if (FD->hasCapturedVLAType()) {
       LValue CastedArgLVal =
           MakeAddrLValue(castValueFromUintptr(*this, FD->getType(),

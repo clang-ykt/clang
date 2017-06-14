@@ -1457,6 +1457,12 @@ public:
   /// Return true if the current OpenMP implementation supports RTTI. The return
   /// default value is 'true'.
   virtual bool requiresRTTIDescriptor() { return true; }
+
+  /// Translates argument of outlined function if this is required for target.
+  virtual ImplicitParamDecl *translateArgument(const FieldDecl *FD,
+                                               ImplicitParamDecl *Arg) const {
+    return Arg;
+  }
 };
 
 } // namespace CodeGen
