@@ -1898,23 +1898,6 @@ public:
         .Default(false);
   }
 
-  /// \returns If a target requires an address within a target specific address
-  /// space \p AddressSpace to be converted in order to be used, then return the
-  /// corresponding target specific DWARF address space.
-  ///
-  /// \returns Otherwise return None and no conversion will be emitted in the
-  /// DWARF.
-  Optional<unsigned>
-  getDWARFAddressSpace(unsigned AddressSpace) const override {
-    enum { ADDR_global_space = 5 };
-    switch (AddressSpace) {
-    case 1:                     // LLVM Global.
-      return ADDR_global_space; // DWARF Global.
-    default:
-      return None;
-    }
-  }
-
   ArrayRef<const char *> getGCCRegNames() const override;
   ArrayRef<TargetInfo::GCCRegAlias> getGCCRegAliases() const override {
     // No aliases.

@@ -8195,11 +8195,6 @@ public:
   /// is performed.
   bool isOpenMPPrivateDecl(ValueDecl *D, unsigned Level);
 
-  /// Sets target specific address space for \p CaptureType based on DSA for the
-  /// provided corresponding captured declaration \p D.
-  QualType setOpenMPAddressSpace(ValueDecl *D, QualType CaptureType,
-                                 unsigned Level);
-
   /// \brief Check if the specified variable is captured  by 'target' directive.
   /// \param Level Relative level of nested OpenMP construct for that the check
   /// is performed.
