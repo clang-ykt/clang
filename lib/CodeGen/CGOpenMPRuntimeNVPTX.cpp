@@ -4992,7 +4992,10 @@ StringRef CGOpenMPRuntimeNVPTX::RenameStandardFunction(StringRef name) {
 
     // temporary solution for Znam: this is how the cuda toolkit defines
     // _Znam but the header file is not properly picked up
+    // same for new and delete
     stdFuncs.insert(std::make_pair("_Znam", "malloc"));
+    stdFuncs.insert(std::make_pair("_Znwm", "malloc"));
+    stdFuncs.insert(std::make_pair("_ZdlPv", "free"));
   }
 
   // If callee is standard function, change its name
