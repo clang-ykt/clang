@@ -3959,6 +3959,16 @@ static void emitCommonOMPTargetDirective(CodeGenFunction &CGF,
   CodeGenModule &CGM = CGF.CGM;
   const CapturedStmt &CS = *cast<CapturedStmt>(S.getAssociatedStmt());
 
+  // On device emit this construct as inlined code.
+  if (CGM.getLangOpts().OpenMPIsDevice) {
+    OMPLexicalScope Scope(CGF, S);
+    CGM.getOpenMPRuntime().emitInlinedDirective(
+        CGF, OMPD_target, [&CS](CodeGenFunction &CGF, PrePostActionTy &) {
+          CGF.EmitStmt(CS.getCapturedStmt());
+        });
+    return;
+  }
+
   llvm::Function *Fn = nullptr;
   llvm::Constant *FnID = nullptr;
 

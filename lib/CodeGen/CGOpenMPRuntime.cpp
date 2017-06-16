@@ -7010,10 +7010,10 @@ bool CGOpenMPRuntime::emitTargetFunctions(GlobalDecl GD) {
   if (!CGM.getLangOpts().OpenMPIsDevice)
     return false;
 
-  // Emit this function normally if it is a device function.
-  if (OffloadEntriesInfoManager.hasDeviceFunctionEntryInfo(
-          CGM.getMangledName(GD)))
-    return false;
+  // Emit this function normally if it is a device function, but still scan the
+  // function in case if it is marked as 'declare target'.
+  bool EmitNormally = !OffloadEntriesInfoManager.hasDeviceFunctionEntryInfo(
+      CGM.getMangledName(GD));
 
   // Try to detect target regions in the function.
   scanForTargetRegionsFunctions(FD.getBody(), CGM.getMangledName(GD));
@@ -7021,7 +7021,7 @@ bool CGOpenMPRuntime::emitTargetFunctions(GlobalDecl GD) {
   // We should not emit any function other that the ones created during the
   // scanning. Therefore, we signal that this function is completely dealt
   // with.
-  return true;
+  return EmitNormally;
 }
 
 bool CGOpenMPRuntime::emitTargetGlobalVariable(GlobalDecl GD) {
