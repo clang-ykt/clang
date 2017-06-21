@@ -1603,6 +1603,26 @@ public:
   /// Return true if the current OpenMP implementation supports RTTI. The return
   /// default value is 'true'.
   virtual bool requiresRTTIDescriptor() { return true; }
+
+  /// Translates argument of outlined function if this is required for target.
+  virtual const VarDecl *translateParameter(const FieldDecl *FD,
+                                            const VarDecl *NativeParam) const {
+    return NativeParam;
+  }
+  /// Maps the native argument to the address of the target-specific argument.
+  typedef llvm::function_ref<void(CodeGenFunction &, const VarDecl *, Address)>
+      MappingFnType;
+  virtual void mapParameterAddress(CodeGenFunction &CGF, const FieldDecl *FD,
+                                   const VarDecl *NativeParam,
+                                   const VarDecl *TargetParam,
+                                   const MappingFnType) const {
+    assert(NativeParam == TargetParam &&
+           "native and target args must be the same");
+  }
+  /// Emits call of the outlined function with the provided arguments.
+  virtual void
+  emitOutlinedFunctionCall(CodeGenFunction &CGF, llvm::Value *OutlinedFn,
+                           ArrayRef<llvm::Value *> Args = llvm::None) const;
 };
 
 } // namespace CodeGen
