@@ -6089,28 +6089,3 @@ void CGOpenMPRuntimeNVPTX::emitReduction(
   CGF.EmitBlock(DefaultBB, /*IsFinished=*/true);
 }
 
-ImplicitParamDecl *
-CGOpenMPRuntimeNVPTX::translateArgument(const FieldDecl *FD,
-                                        ImplicitParamDecl *Arg) const {
-  if (Arg->getType()->isReferenceType()) {
-    QualType ArgType = Arg->getType();
-    QualifierCollector QC;
-    const Type *NonQualTy = QC.strip(ArgType);
-    QualType PointeeTy = cast<ReferenceType>(NonQualTy)->getPointeeType();
-    if (const auto *Attr = FD->getAttr<OMPCaptureKindAttr>()) {
-      if (Attr->getCaptureKind() == OMPC_map) {
-        PointeeTy = CGM.getContext().getAddrSpaceQualType(
-            PointeeTy, LangAS::opencl_global);
-      }
-    }
-    ArgType = CGM.getContext().getPointerType(PointeeTy);
-    QC.addRestrict();
-    enum { NVPTX_local_addr = 5 };
-    QC.addAddressSpace(NVPTX_local_addr);
-    ArgType = QC.apply(CGM.getContext(), ArgType);
-    Arg = ImplicitParamDecl::Create(CGM.getContext(), /*DC=*/nullptr,
-                                    Arg->getLocation(), Arg->getIdentifier(),
-                                    ArgType, ImplicitParamDecl::Other);
-  }
-  return Arg;
-}

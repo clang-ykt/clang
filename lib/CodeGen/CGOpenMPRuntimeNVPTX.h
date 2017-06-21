@@ -743,10 +743,6 @@ public:
                              ArrayRef<const Expr *> ReductionOps,
                              bool WithNowait, bool SimpleReduction,
                              OpenMPDirectiveKind ReductionKind) override;
-
-  /// Translates argument of outlined function if this is required for target.
-  ImplicitParamDecl *translateArgument(const FieldDecl *FD,
-                                       ImplicitParamDecl *Arg) const override;
 };
 
 } // CodeGen namespace.
