@@ -972,7 +972,7 @@ void OMPClausePrinter::VisitOMPIsDevicePtrClause(OMPIsDevicePtrClause *Node) {
 void OMPClausePrinter::VisitOMPTaskReductionClause(
     OMPTaskReductionClause *Node) {
   if (!Node->varlist_empty()) {
-    OS << "reduction(";
+    OS << "task_reduction(";
     NestedNameSpecifier *QualifierLoc =
         Node->getQualifierLoc().getNestedNameSpecifier();
     OverloadedOperatorKind OOK =
