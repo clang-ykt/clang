@@ -2730,6 +2730,8 @@ void ASTStmtReader::VisitOMPBarrierDirective(OMPBarrierDirective *D) {
 
 void ASTStmtReader::VisitOMPTaskwaitDirective(OMPTaskwaitDirective *D) {
   VisitStmt(D);
+  // The NumClauses field was read in ReadStmtFromStream.
+  Record.skipInts(1);
   VisitOMPExecutableDirective(D);
 }
 
@@ -3501,9 +3503,12 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       S = OMPBarrierDirective::CreateEmpty(Context, Empty);
       break;
 
-    case STMT_OMP_TASKWAIT_DIRECTIVE:
-      S = OMPTaskwaitDirective::CreateEmpty(Context, Empty);
+    case STMT_OMP_TASKWAIT_DIRECTIVE: {
+      unsigned NumClauses = Record[ASTStmtReader::NumStmtFields];
+      S = OMPTaskwaitDirective::CreateEmpty(Context, NumClauses,
+                                            Empty);
       break;
+    }
 
     case STMT_OMP_TASKGROUP_DIRECTIVE:
       S = OMPTaskgroupDirective::CreateEmpty(

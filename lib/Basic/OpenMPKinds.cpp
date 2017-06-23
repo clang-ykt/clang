@@ -712,6 +712,16 @@ bool clang::isAllowedClauseForDirective(OpenMPDirectiveKind DKind,
       break;
     }
     break;
+  case OMPD_taskwait:
+    switch (CKind) {
+#define OPENMP_TASKWAIT_CLAUSE(Name)                                           \
+    case OMPC_##Name:                                                          \
+      return true;
+#include "clang/Basic/OpenMPKinds.def"
+    default:
+      break;
+    }
+    break;
   case OMPD_taskgroup:
     switch (CKind) {
 #define OPENMP_TASKGROUP_CLAUSE(Name)                                          \
@@ -730,7 +740,6 @@ bool clang::isAllowedClauseForDirective(OpenMPDirectiveKind DKind,
   case OMPD_master:
   case OMPD_taskyield:
   case OMPD_barrier:
-  case OMPD_taskwait:
   case OMPD_cancellation_point:
   case OMPD_declare_reduction:
     break;
