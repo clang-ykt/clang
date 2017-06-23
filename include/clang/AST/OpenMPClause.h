@@ -2576,7 +2576,7 @@ public:
 };
 
 /// \brief This represents implicit clause 'depend' for the '#pragma omp task'
-/// directive.
+/// and '#pragma omp taskwait' directives.
 ///
 /// \code
 /// #pragma omp task depend(in:a,b)
