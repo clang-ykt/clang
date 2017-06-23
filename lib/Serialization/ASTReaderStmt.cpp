@@ -2693,6 +2693,8 @@ void ASTStmtReader::VisitOMPBarrierDirective(OMPBarrierDirective *D) {
 
 void ASTStmtReader::VisitOMPTaskwaitDirective(OMPTaskwaitDirective *D) {
   VisitStmt(D);
+  // The NumClauses field was read in ReadStmtFromStream.
+  Record.skipInts(1);
   VisitOMPExecutableDirective(D);
 }
 
