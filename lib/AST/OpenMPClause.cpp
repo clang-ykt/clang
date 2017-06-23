@@ -956,7 +956,7 @@ OMPInReductionClause *OMPInReductionClause::Create(
 }
 
 OMPInReductionClause *OMPInReductionClause::CreateEmpty(const ASTContext &C,
-                                                            unsigned N) {
+                                                        unsigned N) {
   void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(5 * N));
   return new (Mem) OMPInReductionClause(N);
 }

@@ -7858,9 +7858,9 @@ OMPClause *Sema::ActOnOpenMPVarListClause(
                                          ReductionId);
     break;
   case OMPC_in_reduction:
-    Res = ActOnOpenMPInReductionClause(VarList, StartLoc, LParenLoc, ColonLoc,
-                                         EndLoc, ReductionIdScopeSpec,
-                                         ReductionId);
+    Res =
+        ActOnOpenMPInReductionClause(VarList, StartLoc, LParenLoc, ColonLoc,
+                                     EndLoc, ReductionIdScopeSpec, ReductionId);
     break;
   case OMPC_if:
   case OMPC_final:

@@ -992,8 +992,7 @@ void OMPClausePrinter::VisitOMPTaskReductionClause(
   }
 }
 
-void OMPClausePrinter::VisitOMPInReductionClause(
-    OMPInReductionClause *Node) {
+void OMPClausePrinter::VisitOMPInReductionClause(OMPInReductionClause *Node) {
   if (!Node->varlist_empty()) {
     OS << "in_reduction(";
     NestedNameSpecifier *QualifierLoc =
