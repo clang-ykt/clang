@@ -166,6 +166,7 @@ unsigned clang::getOpenMPSimpleClauseType(OpenMPClauseKind Kind,
   case OMPC_from:
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
+  case OMPC_task_reduction:
     break;
   }
   llvm_unreachable("Invalid OpenMP simple clause kind");
@@ -305,6 +306,7 @@ const char *clang::getOpenMPSimpleClauseTypeName(OpenMPClauseKind Kind,
   case OMPC_from:
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
+  case OMPC_task_reduction:
     break;
   }
   llvm_unreachable("Invalid OpenMP simple clause kind");
@@ -710,6 +712,16 @@ bool clang::isAllowedClauseForDirective(OpenMPDirectiveKind DKind,
       break;
     }
     break;
+  case OMPD_taskgroup:
+    switch (CKind) {
+#define OPENMP_TASKGROUP_CLAUSE(Name)                                          \
+    case OMPC_##Name:                                                          \
+      return true;
+#include "clang/Basic/OpenMPKinds.def"
+    default:
+      break;
+    }
+    break;
   case OMPD_declare_target:
   case OMPD_end_declare_target:
   case OMPD_unknown:
@@ -719,7 +731,6 @@ bool clang::isAllowedClauseForDirective(OpenMPDirectiveKind DKind,
   case OMPD_taskyield:
   case OMPD_barrier:
   case OMPD_taskwait:
-  case OMPD_taskgroup:
   case OMPD_cancellation_point:
   case OMPD_declare_reduction:
     break;
@@ -842,7 +853,7 @@ bool clang::isOpenMPDistributeDirective(OpenMPDirectiveKind Kind) {
 bool clang::isOpenMPPrivate(OpenMPClauseKind Kind) {
   return Kind == OMPC_private || Kind == OMPC_firstprivate ||
          Kind == OMPC_lastprivate || Kind == OMPC_linear ||
-         Kind == OMPC_reduction; // TODO add next clauses like 'reduction'.
+         Kind == OMPC_reduction || Kind == OMPC_task_reduction; // TODO add next clauses like 'reduction'.
 }
 
 bool clang::isOpenMPThreadPrivate(OpenMPClauseKind Kind) {
