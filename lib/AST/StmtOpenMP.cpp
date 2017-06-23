@@ -544,16 +544,25 @@ OMPBarrierDirective *OMPBarrierDirective::CreateEmpty(const ASTContext &C,
 
 OMPTaskwaitDirective *OMPTaskwaitDirective::Create(const ASTContext &C,
                                                    SourceLocation StartLoc,
-                                                   SourceLocation EndLoc) {
-  void *Mem = C.Allocate(sizeof(OMPTaskwaitDirective));
-  OMPTaskwaitDirective *Dir = new (Mem) OMPTaskwaitDirective(StartLoc, EndLoc);
+                                                   SourceLocation EndLoc,
+                                                   ArrayRef<OMPClause *> Clauses) {
+  unsigned DirSize = llvm::alignTo(sizeof(OMPTaskwaitDirective),
+                                   alignof(OMPClause *));
+  unsigned ClausesSize = sizeof(OMPClause *) * Clauses.size();
+  void *Mem = C.Allocate(DirSize + ClausesSize);
+  OMPTaskwaitDirective *Dir = new (Mem) OMPTaskwaitDirective(StartLoc, EndLoc,
+                                                             Clauses.size());
   return Dir;
 }
 
 OMPTaskwaitDirective *OMPTaskwaitDirective::CreateEmpty(const ASTContext &C,
+                                                        unsigned NumClauses,
                                                         EmptyShell) {
-  void *Mem = C.Allocate(sizeof(OMPTaskwaitDirective));
-  return new (Mem) OMPTaskwaitDirective();
+  unsigned DirSize = llvm::alignTo(sizeof(OMPTaskwaitDirective),
+                                   alignof(OMPClause *));
+  unsigned ClausesSize = sizeof(OMPClause *) * NumClauses;
+  void *Mem = C.Allocate(DirSize + ClausesSize);
+  return new (Mem) OMPTaskwaitDirective(NumClauses);
 }
 
 OMPTaskgroupDirective *OMPTaskgroupDirective::Create(const ASTContext &C,
