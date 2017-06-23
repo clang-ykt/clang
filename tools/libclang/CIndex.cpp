@@ -2347,6 +2347,22 @@ void OMPClauseEnqueue::VisitOMPTaskReductionClause(const OMPTaskReductionClause 
     Visitor->AddStmt(E);
   }
 }
+void OMPClauseEnqueue::VisitOMPInReductionClause(const OMPInReductionClause *C) {
+  VisitOMPClauseList(C);
+  VisitOMPClauseWithPostUpdate(C);
+  for (auto *E : C->privates()) {
+    Visitor->AddStmt(E);
+  }
+  for (auto *E : C->lhs_exprs()) {
+    Visitor->AddStmt(E);
+  }
+  for (auto *E : C->rhs_exprs()) {
+    Visitor->AddStmt(E);
+  }
+  for (auto *E : C->reduction_ops()) {
+    Visitor->AddStmt(E);
+  }
+}
 }
 
 void EnqueueVisitor::EnqueueChildren(const OMPClause *S) {

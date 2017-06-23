@@ -7033,6 +7033,7 @@ OMPClause *Sema::ActOnOpenMPSingleExprClause(OpenMPClauseKind Kind, Expr *Expr,
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
   case OMPC_task_reduction:
+  case OMPC_in_reduction:
     llvm_unreachable("Clause is not allowed.");
   }
   return Res;
@@ -7375,6 +7376,7 @@ OMPClause *Sema::ActOnOpenMPSimpleClause(
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
   case OMPC_task_reduction:
+  case OMPC_in_reduction:
     llvm_unreachable("Clause is not allowed.");
   }
   return Res;
@@ -7531,6 +7533,7 @@ OMPClause *Sema::ActOnOpenMPSingleExprWithArgClause(
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
   case OMPC_task_reduction:
+  case OMPC_in_reduction:
     llvm_unreachable("Clause is not allowed.");
   }
   return Res;
@@ -7723,6 +7726,7 @@ OMPClause *Sema::ActOnOpenMPClause(OpenMPClauseKind Kind,
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
   case OMPC_task_reduction:
+  case OMPC_in_reduction:
     llvm_unreachable("Clause is not allowed.");
   }
   return Res;
@@ -7850,6 +7854,11 @@ OMPClause *Sema::ActOnOpenMPVarListClause(
     break;
   case OMPC_task_reduction:
     Res = ActOnOpenMPTaskReductionClause(VarList, StartLoc, LParenLoc, ColonLoc,
+                                         EndLoc, ReductionIdScopeSpec,
+                                         ReductionId);
+    break;
+  case OMPC_in_reduction:
+    Res = ActOnOpenMPInReductionClause(VarList, StartLoc, LParenLoc, ColonLoc,
                                          EndLoc, ReductionIdScopeSpec,
                                          ReductionId);
     break;
@@ -11349,6 +11358,37 @@ OMPClause *Sema::ActOnOpenMPTaskReductionClause(
     return nullptr;
 
   return OMPTaskReductionClause::Create(
+      Context, StartLoc, LParenLoc, ColonLoc, EndLoc, Vars,
+      ReductionIdScopeSpec.getWithLocInContext(Context), ReductionId, Privates,
+      LHSs, RHSs, ReductionOps, buildPreInits(Context, ExprCaptures),
+      buildPostUpdate(*this, ExprPostUpdates));
+}
+
+OMPClause *Sema::ActOnOpenMPInReductionClause(
+    ArrayRef<Expr *> VarList, SourceLocation StartLoc, SourceLocation LParenLoc,
+    SourceLocation ColonLoc, SourceLocation EndLoc,
+    CXXScopeSpec &ReductionIdScopeSpec, const DeclarationNameInfo &ReductionId,
+    ArrayRef<Expr *> UnresolvedReductions) {
+
+  SmallVector<Expr *, 8> Vars;
+  SmallVector<Expr *, 8> Privates;
+  SmallVector<Expr *, 8> LHSs;
+  SmallVector<Expr *, 8> RHSs;
+  SmallVector<Expr *, 8> ReductionOps;
+  SmallVector<Decl *, 4> ExprCaptures;
+  SmallVector<Expr *, 4> ExprPostUpdates;
+
+  CheckOMPReductionTypeClause(
+      *this, Context, CurContext, getLangOpts(), DSAStack, VarList,
+      ReductionIdScopeSpec, ReductionId, UnresolvedReductions, Vars, Privates,
+      LHSs, RHSs, ReductionOps, ExprCaptures, ExprPostUpdates);
+
+  // TODO: add restriction specific to InReduction and not other reduction types
+
+  if (Vars.empty())
+    return nullptr;
+
+  return OMPInReductionClause::Create(
       Context, StartLoc, LParenLoc, ColonLoc, EndLoc, Vars,
       ReductionIdScopeSpec.getWithLocInContext(Context), ReductionId, Privates,
       LHSs, RHSs, ReductionOps, buildPreInits(Context, ExprCaptures),

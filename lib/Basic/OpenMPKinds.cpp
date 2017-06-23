@@ -167,6 +167,7 @@ unsigned clang::getOpenMPSimpleClauseType(OpenMPClauseKind Kind,
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
   case OMPC_task_reduction:
+  case OMPC_in_reduction:
     break;
   }
   llvm_unreachable("Invalid OpenMP simple clause kind");
@@ -307,6 +308,7 @@ const char *clang::getOpenMPSimpleClauseTypeName(OpenMPClauseKind Kind,
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
   case OMPC_task_reduction:
+  case OMPC_in_reduction:
     break;
   }
   llvm_unreachable("Invalid OpenMP simple clause kind");
@@ -854,7 +856,8 @@ bool clang::isOpenMPPrivate(OpenMPClauseKind Kind) {
   return Kind == OMPC_private || Kind == OMPC_firstprivate ||
          Kind == OMPC_lastprivate || Kind == OMPC_linear ||
          Kind == OMPC_reduction ||
-         Kind == OMPC_task_reduction; // TODO add next clauses like 'reduction'.
+         Kind == OMPC_task_reduction ||
+         Kind == OMPC_in_reduction; // TODO add next clauses like 'reduction'.
 }
 
 bool clang::isOpenMPThreadPrivate(OpenMPClauseKind Kind) {
