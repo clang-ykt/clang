@@ -536,7 +536,7 @@ void OMPClauseProfiler::VisitOMPIsDevicePtrClause(
   VisitOMPClauseList(C);
 }
 void OMPClauseProfiler::VisitOMPTaskReductionClause(
-                                         const OMPTaskReductionClause *C) {
+    const OMPTaskReductionClause *C) {
   Profiler->VisitNestedNameSpecifier(
       C->getQualifierLoc().getNestedNameSpecifier());
   Profiler->VisitName(C->getNameInfo().getName());

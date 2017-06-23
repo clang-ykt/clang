@@ -898,7 +898,7 @@ OMPTaskReductionClause *OMPTaskReductionClause::Create(
 }
 
 OMPTaskReductionClause *OMPTaskReductionClause::CreateEmpty(const ASTContext &C,
-                                                    unsigned N) {
+                                                            unsigned N) {
   void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(5 * N));
   return new (Mem) OMPTaskReductionClause(N);
 }

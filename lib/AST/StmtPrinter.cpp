@@ -969,7 +969,8 @@ void OMPClausePrinter::VisitOMPIsDevicePtrClause(OMPIsDevicePtrClause *Node) {
   }
 }
 
-void OMPClausePrinter::VisitOMPTaskReductionClause(OMPTaskReductionClause *Node) {
+void OMPClausePrinter::VisitOMPTaskReductionClause(
+    OMPTaskReductionClause *Node) {
   if (!Node->varlist_empty()) {
     OS << "reduction(";
     NestedNameSpecifier *QualifierLoc =

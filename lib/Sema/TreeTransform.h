@@ -1818,14 +1818,12 @@ public:
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  OMPClause *RebuildOMPTaskReductionClause(ArrayRef<Expr *> VarList,
-                                       SourceLocation StartLoc,
-                                       SourceLocation LParenLoc,
-                                       SourceLocation ColonLoc,
-                                       SourceLocation EndLoc,
-                                       CXXScopeSpec &ReductionIdScopeSpec,
-                                       const DeclarationNameInfo &ReductionId,
-                                       ArrayRef<Expr *> UnresolvedReductions) {
+  OMPClause *RebuildOMPTaskReductionClause(
+      ArrayRef<Expr *> VarList, SourceLocation StartLoc,
+      SourceLocation LParenLoc, SourceLocation ColonLoc, SourceLocation EndLoc,
+      CXXScopeSpec &ReductionIdScopeSpec,
+      const DeclarationNameInfo &ReductionId,
+      ArrayRef<Expr *> UnresolvedReductions) {
     return getSema().ActOnOpenMPTaskReductionClause(
         VarList, StartLoc, LParenLoc, ColonLoc, EndLoc, ReductionIdScopeSpec,
         ReductionId, UnresolvedReductions);
@@ -8352,8 +8350,8 @@ TreeTransform<Derived>::TransformOMPIsDevicePtrClause(OMPIsDevicePtrClause *C) {
 }
 
 template <typename Derived>
-OMPClause *
-TreeTransform<Derived>::TransformOMPTaskReductionClause(OMPTaskReductionClause *C) {
+OMPClause *TreeTransform<Derived>::TransformOMPTaskReductionClause(
+    OMPTaskReductionClause *C) {
   llvm::SmallVector<Expr *, 16> Vars;
   Vars.reserve(C->varlist_size());
   for (auto *VE : C->varlists()) {
@@ -8384,12 +8382,10 @@ TreeTransform<Derived>::TransformOMPTaskReductionClause(OMPTaskReductionClause *
             cast<NamedDecl>(getDerived().TransformDecl(E->getExprLoc(), D));
         Decls.addDecl(InstD, InstD->getAccess());
       }
-      UnresolvedReductions.push_back(
-       UnresolvedLookupExpr::Create(
+      UnresolvedReductions.push_back(UnresolvedLookupExpr::Create(
           SemaRef.Context, /*NamingClass=*/nullptr,
-          ReductionIdScopeSpec.getWithLocInContext(SemaRef.Context),
-          NameInfo, /*ADL=*/true, ULE->isOverloaded(),
-          Decls.begin(), Decls.end()));
+          ReductionIdScopeSpec.getWithLocInContext(SemaRef.Context), NameInfo,
+          /*ADL=*/true, ULE->isOverloaded(), Decls.begin(), Decls.end()));
     } else
       UnresolvedReductions.push_back(nullptr);
   }

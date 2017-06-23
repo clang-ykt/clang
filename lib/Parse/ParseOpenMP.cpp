@@ -1735,7 +1735,8 @@ bool Parser::ParseOpenMPVarList(OpenMPDirectiveKind DKind,
 
   bool IsComma =
       (Kind != OMPC_reduction && Kind != OMPC_depend && Kind != OMPC_map) ||
-      (Kind == OMPC_reduction && Kind != OMPC_task_reduction && !InvalidReductionId) ||
+      (Kind == OMPC_reduction && Kind != OMPC_task_reduction &&
+       !InvalidReductionId) ||
       (Kind == OMPC_map && Data.MapType != OMPC_MAP_unknown &&
        (!MapTypeModifierSpecified ||
         Data.MapTypeModifier == OMPC_MAP_always)) ||

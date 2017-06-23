@@ -3506,7 +3506,8 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       break;
 
     case STMT_OMP_TASKGROUP_DIRECTIVE:
-      S = OMPTaskgroupDirective::CreateEmpty(Context, Record[ASTStmtReader::NumStmtFields], Empty);
+      S = OMPTaskgroupDirective::CreateEmpty(
+          Context, Record[ASTStmtReader::NumStmtFields], Empty);
       break;
 
     case STMT_OMP_FLUSH_DIRECTIVE:
