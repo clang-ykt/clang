@@ -1790,12 +1790,14 @@ class OMPTaskwaitDirective : public OMPExecutableDirective {
   ///
   /// \param StartLoc Starting location of the directive kind.
   /// \param EndLoc Ending location of the directive.
+  /// \param NumClauses Number of clauses.
   ///
   OMPTaskwaitDirective(SourceLocation StartLoc, SourceLocation EndLoc, unsigned NumClauses)
       : OMPExecutableDirective(this, OMPTaskwaitDirectiveClass, OMPD_taskwait,
                                StartLoc, EndLoc, NumClauses, 0) {}
 
   /// \brief Build an empty directive.
+  /// \brief NumClauses Number of clauses
   ///
   explicit OMPTaskwaitDirective(unsigned NumClauses)
       : OMPExecutableDirective(this, OMPTaskwaitDirectiveClass, OMPD_taskwait,
@@ -1807,6 +1809,7 @@ public:
   /// \param C AST context.
   /// \param StartLoc Starting location of the directive kind.
   /// \param EndLoc Ending Location of the directive.
+  /// \param Clauses List of clauses.
   ///
   static OMPTaskwaitDirective *
   Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation EndLoc,
@@ -1815,6 +1818,7 @@ public:
   /// \brief Creates an empty directive.
   ///
   /// \param C AST context.
+  /// \param NumClauses Number of clauses.
   ///
   static OMPTaskwaitDirective *CreateEmpty(const ASTContext &C, unsigned NumClauses,
                                            EmptyShell);
