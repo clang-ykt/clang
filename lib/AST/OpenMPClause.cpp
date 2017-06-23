@@ -854,6 +854,7 @@ OMPIsDevicePtrClause *OMPIsDevicePtrClause::CreateEmpty(
   return new (Mem) OMPIsDevicePtrClause(NumVars, NumUniqueDeclarations,
                                         NumComponentLists, NumComponents);
 }
+
 void OMPTaskReductionClause::setPrivates(ArrayRef<Expr *> Privates) {
   assert(Privates.size() == varlist_size() &&
          "Number of private copies is not the same as the preallocated buffer");
