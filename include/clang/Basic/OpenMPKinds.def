@@ -565,6 +565,8 @@ OPENMP_TASKLOOP_CLAUSE(priority)
 OPENMP_TASKLOOP_CLAUSE(grainsize)
 OPENMP_TASKLOOP_CLAUSE(nogroup)
 OPENMP_TASKLOOP_CLAUSE(num_tasks)
+OPENMP_TASKLOOP_CLAUSE(reduction)
+OPENMP_TASKLOOP_CLAUSE(in_reduction)
 
 // Clauses allowed for OpenMP directive 'taskloop simd'.
 OPENMP_TASKLOOP_SIMD_CLAUSE(if)
@@ -585,6 +587,8 @@ OPENMP_TASKLOOP_SIMD_CLAUSE(simdlen)
 OPENMP_TASKLOOP_SIMD_CLAUSE(grainsize)
 OPENMP_TASKLOOP_SIMD_CLAUSE(nogroup)
 OPENMP_TASKLOOP_SIMD_CLAUSE(num_tasks)
+OPENMP_TASKLOOP_SIMD_CLAUSE(reduction)
+OPENMP_TASKLOOP_SIMD_CLAUSE(in_reduction)
 
 // Clauses allowed for OpenMP directive 'critical'.
 OPENMP_CRITICAL_CLAUSE(hint)
