@@ -8444,6 +8444,13 @@ OMPClause *Sema::ActOnOpenMPLastprivateClause(ArrayRef<Expr *> VarList,
     QualType Type = D->getType();
     auto *VD = dyn_cast<VarDecl>(D);
 
+    // OpenMP [2.15.3.5, Restrictions, p.3]
+    //  A list item that appears in a lastprivate clause with the
+    //  conditional modifier must be a scalar variable.
+    if (LpKind == OMPC_LASTPRIVATE_conditional &&
+        !Type->isScalarType())
+      Diag(ELoc, diag::err_omp_lastprivate_cond_wrong_type) << Type;
+
     // OpenMP [2.14.3.5, Restrictions, C/C++, p.2]
     //  A variable that appears in a lastprivate clause must not have an
     //  incomplete type or a reference type.

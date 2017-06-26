@@ -800,13 +800,15 @@ void OMPClausePrinter::VisitOMPFirstprivateClause(OMPFirstprivateClause *Node) {
 
 void OMPClausePrinter::VisitOMPLastprivateClause(OMPLastprivateClause *Node) {
   if (!Node->varlist_empty()) {
-    OS << "lastprivate(";
+    OS << "lastprivate";
     if (Node->getModifier() != OMPC_LASTPRIVATE_unknown) {
+      OS << '(';
       OS << getOpenMPSimpleClauseTypeName(OMPC_lastprivate,
                                           Node->getModifier());
       OS << ':';
-    }
-    VisitOMPClauseList(Node, ' ');
+      VisitOMPClauseList(Node, ' ');
+    } else
+      VisitOMPClauseList(Node, '(');
     OS << ")";
   }
 }

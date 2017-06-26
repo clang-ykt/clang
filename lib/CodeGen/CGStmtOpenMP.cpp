@@ -989,6 +989,11 @@ void CodeGenFunction::EmitOMPLastprivateClauseFinal(
     auto IRef = C->varlist_begin();
     auto ISrcRef = C->source_exprs().begin();
     auto IDestRef = C->destination_exprs().begin();
+    // Arpith
+    // if (C->getModifier() == OMPC_LASTPRIVATE_conditional)
+    //   printf(" ---------> This is a conditional lastprivate!\n");
+    // else
+    //   printf(" ---------> This is a lastprivate!\n");
     for (auto *AssignOp : C->assignment_ops()) {
       auto *PrivateVD = cast<VarDecl>(cast<DeclRefExpr>(*IRef)->getDecl());
       QualType Type = PrivateVD->getType();
