@@ -254,12 +254,16 @@ void OMPLastprivateClause::setAssignmentOps(ArrayRef<Expr *> AssignmentOps) {
 
 OMPLastprivateClause *OMPLastprivateClause::Create(
     const ASTContext &C, SourceLocation StartLoc, SourceLocation LParenLoc,
-    SourceLocation EndLoc, ArrayRef<Expr *> VL, ArrayRef<Expr *> SrcExprs,
-    ArrayRef<Expr *> DstExprs, ArrayRef<Expr *> AssignmentOps, Stmt *PreInit,
+    OpenMPLastprivateClauseKind Modifier, SourceLocation ModifierLoc,
+    SourceLocation ColonLoc, SourceLocation EndLoc, ArrayRef<Expr *> VL,
+    ArrayRef<Expr *> SrcExprs, ArrayRef<Expr *> DstExprs,
+    ArrayRef<Expr *> AssignmentOps, Stmt *PreInit,
     Expr *PostUpdate) {
   void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(5 * VL.size()));
   OMPLastprivateClause *Clause =
-      new (Mem) OMPLastprivateClause(StartLoc, LParenLoc, EndLoc, VL.size());
+      new (Mem) OMPLastprivateClause(StartLoc, LParenLoc, Modifier,
+                                     ModifierLoc, ColonLoc, EndLoc,
+                                     VL.size());
   Clause->setVarRefs(VL);
   Clause->setSourceExprs(SrcExprs);
   Clause->setDestinationExprs(DstExprs);

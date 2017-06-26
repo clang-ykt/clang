@@ -2604,6 +2604,7 @@ public:
     DeclarationNameInfo ReductionId;
     OpenMPDependClauseKind DepKind = OMPC_DEPEND_unknown;
     OpenMPLinearClauseKind LinKind = OMPC_LINEAR_val;
+    OpenMPLastprivateClauseKind LastprivateKind = OMPC_LASTPRIVATE_unknown;
     OpenMPMapClauseKind MapTypeModifier = OMPC_MAP_unknown;
     OpenMPMapClauseKind MapType = OMPC_MAP_unknown;
     bool IsMapTypeImplicit = false;

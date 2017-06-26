@@ -1550,8 +1550,12 @@ public:
   OMPClause *RebuildOMPLastprivateClause(ArrayRef<Expr *> VarList,
                                          SourceLocation StartLoc,
                                          SourceLocation LParenLoc,
+                                         OpenMPLastprivateClauseKind Modifier,
+                                         SourceLocation ModifierLoc,
+                                         SourceLocation ColonLoc,
                                          SourceLocation EndLoc) {
     return getSema().ActOnOpenMPLastprivateClause(VarList, StartLoc, LParenLoc,
+                                                  Modifier, ModifierLoc, ColonLoc,
                                                   EndLoc);
   }
 
@@ -8011,7 +8015,8 @@ TreeTransform<Derived>::TransformOMPLastprivateClause(OMPLastprivateClause *C) {
     Vars.push_back(EVar.get());
   }
   return getDerived().RebuildOMPLastprivateClause(
-      Vars, C->getLocStart(), C->getLParenLoc(), C->getLocEnd());
+      Vars, C->getLocStart(), C->getLParenLoc(), C->getModifier(),
+      C->getModifierLoc(), C->getColonLoc(), C->getLocEnd());
 }
 
 template <typename Derived>

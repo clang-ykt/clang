@@ -1655,6 +1655,21 @@ bool Parser::ParseOpenMPVarList(OpenMPDirectiveKind DKind,
       LinearT.consumeOpen();
       NeedRParenForLinear = true;
     }
+  } else if (Kind == OMPC_lastprivate) {
+    // Try to parse modifier if any.
+    if (Tok.is(tok::identifier)) {
+      Data.LastprivateKind = static_cast<OpenMPLastprivateClauseKind>(
+          getOpenMPSimpleClauseType(Kind, PP.getSpelling(Tok)));
+      if (Data.LastprivateKind == OMPC_LASTPRIVATE_conditional) {
+        Data.DepLinMapLoc = ConsumeToken();
+        if (!Tok.is(tok::colon))
+          Diag(Tok, diag::warn_pragma_expected_colon) << "lastprivate type";
+        else
+          Data.ColonLoc = ConsumeToken();
+      } else if (Data.LastprivateKind == OMPC_LASTPRIVATE_unknown &&
+                 PP.LookAhead(0).is(tok::colon))
+          Diag(Tok, diag::err_omp_unknown_lastprivate_type);
+    }
   } else if (Kind == OMPC_map) {
     // Handle map type for map clause.
     ColonProtectionRAIIObject ColonRAII(*this);
@@ -1801,7 +1816,7 @@ bool Parser::ParseOpenMPVarList(OpenMPDirectiveKind DKind,
 ///    firstprivate-clause:
 ///       'firstprivate' '(' list ')'
 ///    lastprivate-clause:
-///       'lastprivate' '(' list ')'
+///       'lastprivate' '(' [ conditional ':' ] list ')'
 ///    shared-clause:
 ///       'shared' '(' list ')'
 ///    linear-clause:
@@ -1845,7 +1860,7 @@ OMPClause *Parser::ParseOpenMPVarListClause(OpenMPDirectiveKind DKind,
   return Actions.ActOnOpenMPVarListClause(
       Kind, Vars, Data.TailExpr, Loc, LOpen, Data.ColonLoc, Tok.getLocation(),
       Data.ReductionIdScopeSpec, Data.ReductionId, Data.DepKind, Data.LinKind,
-      Data.MapTypeModifier, Data.MapType, Data.IsMapTypeImplicit,
-      Data.DepLinMapLoc);
+      Data.LastprivateKind, Data.MapTypeModifier, Data.MapType,
+      Data.IsMapTypeImplicit, Data.DepLinMapLoc);
 }
 

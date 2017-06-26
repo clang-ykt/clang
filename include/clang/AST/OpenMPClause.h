@@ -1437,6 +1437,13 @@ class OMPLastprivateClause final
   friend OMPVarListClause;
   friend class OMPClauseReader;
 
+  /// \brief Modifier of 'lastprivate' clause.
+  OpenMPLastprivateClauseKind Modifier;
+  /// \brief Location of lastprivate modifier if any.
+  SourceLocation ModifierLoc;
+  /// \brief Location of ':'.
+  SourceLocation ColonLoc;
+
   /// \brief Build clause with number of variables \a N.
   ///
   /// \param StartLoc Starting location of the clause.
@@ -1445,10 +1452,13 @@ class OMPLastprivateClause final
   /// \param N Number of the variables in the clause.
   ///
   OMPLastprivateClause(SourceLocation StartLoc, SourceLocation LParenLoc,
+                       OpenMPLastprivateClauseKind Modifier,
+                       SourceLocation ModifierLoc, SourceLocation ColonLoc,
                        SourceLocation EndLoc, unsigned N)
       : OMPVarListClause<OMPLastprivateClause>(OMPC_lastprivate, StartLoc,
                                                LParenLoc, EndLoc, N),
-        OMPClauseWithPostUpdate(this) {}
+        OMPClauseWithPostUpdate(this), Modifier(Modifier),
+        ModifierLoc(ModifierLoc), ColonLoc(ColonLoc) {}
 
   /// \brief Build an empty clause.
   ///
@@ -1458,7 +1468,8 @@ class OMPLastprivateClause final
       : OMPVarListClause<OMPLastprivateClause>(
             OMPC_lastprivate, SourceLocation(), SourceLocation(),
             SourceLocation(), N),
-        OMPClauseWithPostUpdate(this) {}
+        OMPClauseWithPostUpdate(this), Modifier(OMPC_LASTPRIVATE_unknown),
+        ModifierLoc(), ColonLoc() {}
 
   /// \brief Get the list of helper expressions for initialization of private
   /// copies for lastprivate variables.
@@ -1538,15 +1549,32 @@ public:
   ///
   static OMPLastprivateClause *
   Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation LParenLoc,
-         SourceLocation EndLoc, ArrayRef<Expr *> VL, ArrayRef<Expr *> SrcExprs,
-         ArrayRef<Expr *> DstExprs, ArrayRef<Expr *> AssignmentOps,
-         Stmt *PreInit, Expr *PostUpdate);
+         OpenMPLastprivateClauseKind Modifier, SourceLocation ModifierLoc,
+         SourceLocation ColonLoc, SourceLocation EndLoc, ArrayRef<Expr *> VL,
+         ArrayRef<Expr *> SrcExprs, ArrayRef<Expr *> DstExprs,
+         ArrayRef<Expr *> AssignmentOps, Stmt *PreInit, Expr *PostUpdate);
+
   /// \brief Creates an empty clause with the place for \a N variables.
   ///
   /// \param C AST context.
   /// \param N The number of variables.
   ///
   static OMPLastprivateClause *CreateEmpty(const ASTContext &C, unsigned N);
+
+  /// \brief Set modifier.
+  void setModifier(OpenMPLastprivateClauseKind Kind) { Modifier = Kind; }
+  /// \brief Return modifier.
+  OpenMPLastprivateClauseKind getModifier() const { return Modifier; }
+
+  /// \brief Set modifier location.
+  void setModifierLoc(SourceLocation Loc) { ModifierLoc = Loc; }
+  /// \brief Return modifier location.
+  SourceLocation getModifierLoc() const { return ModifierLoc; }
+
+  /// \brief Sets the location of ':'.
+  void setColonLoc(SourceLocation Loc) { ColonLoc = Loc; }
+  /// \brief Returns the location of ':'.
+  SourceLocation getColonLoc() const { return ColonLoc; }
 
   typedef MutableArrayRef<Expr *>::iterator helper_expr_iterator;
   typedef ArrayRef<const Expr *>::iterator helper_expr_const_iterator;
