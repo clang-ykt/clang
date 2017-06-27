@@ -5528,6 +5528,8 @@ public:
   /// \brief Values for bit flags used to specify the mapping type for
   /// offloading.
   enum OpenMPOffloadMappingFlags {
+    /// \brief No flags
+    OMP_MAP_NONE = 0x0,
     /// \brief Allocate memory on the device and move data from host to device.
     OMP_MAP_TO = 0x01,
     /// \brief Allocate memory on the device and move data from device to host.
@@ -5579,6 +5581,27 @@ public:
   typedef SmallVector<BasePointerInfo, 16> MapBaseValuesArrayTy;
   typedef SmallVector<llvm::Value *, 16> MapValuesArrayTy;
   typedef SmallVector<uint64_t, 16> MapFlagsArrayTy;
+
+  /// Map between a struct and the its lowest & highest elements which have been
+  /// mapped.
+  /// [ValueDecl *] --> {LE(FieldIndex, Pointer, Size),
+  ///                    HE(FieldIndex, Pointer, Size)}
+  typedef struct {
+    unsigned FieldIndex;
+    llvm::Value *Pointer;
+    llvm::Value *Size;
+  } StructMemberInfoTy;
+  typedef struct {
+    StructMemberInfoTy LowestElem;
+    StructMemberInfoTy HighestElem;
+  } StructRangeInfoTy;
+  typedef llvm::DenseMap<const ValueDecl *, StructRangeInfoTy>
+      StructRangeMapTy;
+
+  static uint64_t getMemberOfFlag(unsigned Position) {
+    // Member of is given by the 16 MSB of the flag, so rotate by 48 bits.
+    return ((uint64_t)Position+1) << 48;
+  }
 
 private:
   /// \brief Directive from where the map clauses were extracted.
@@ -5727,7 +5750,7 @@ private:
       OMPClauseMappableExprCommon::MappableExprComponentListRef Components,
       MapBaseValuesArrayTy &BasePointers, MapValuesArrayTy &Pointers,
       MapValuesArrayTy &Sizes, MapFlagsArrayTy &Types,
-      bool IsFirstComponentList) const {
+      StructRangeMapTy &PartialStructs, bool IsFirstComponentList) const {
 
     // The following summarizes what has to be generated for each map and the
     // types bellow. The generated information is expressed in this order:
@@ -5882,6 +5905,15 @@ private:
       }
     }
 
+    // Variable keeping track of whether or not we have encountered a component
+    // in the component list which is a member expression. Useful when we have a
+    // pointer or a final array section, in which case it is the previous
+    // component in the list which tells us whether we have a member expression.
+    // E.g. X.f[:]
+    // While processing the final array section "[:]" it is "f" which tells us
+    // whether we are dealing with a member of a declared struct.
+    MemberExpr *EncounteredMemberExpr = nullptr;
+
     for (; I != CE; ++I) {
       auto Next = std::next(I);
 
@@ -5907,7 +5939,6 @@ private:
           I->getAssociatedExpression()->getType()->isAnyPointerType();
 
       if (Next == CE || IsPointer || IsFinalArraySection) {
-
         // If this is not the last component, we expect the pointer to be
         // associated with an array expression or member expression.
         assert((Next == CE ||
@@ -5940,17 +5971,56 @@ private:
           BP = RefAddr;
         }
 
-        BasePointers.push_back(BP);
-        Pointers.push_back(LB);
-        Sizes.push_back(Size);
+        // If this component is a pointer inside a struct, then we don't need
+        // to create any entry for it - if we did, it would just be an entry
+        // with 0 flags. This is an optimization.
+        bool IsMemberPointer = IsPointer &&
+            dyn_cast<MemberExpr>(I->getAssociatedExpression());
+        if (!IsMemberPointer) {
+          BasePointers.push_back(BP);
+          Pointers.push_back(LB);
+          Sizes.push_back(Size);
 
-        // We need to add a pointer flag for each map that comes from the
-        // same expression except for the first one. We also need to signal
-        // this map is the first one that relates with the current capture
-        // (there is a set of entries for each capture).
-        Types.push_back(getMapTypeBits(MapType, MapTypeModifier,
-                                       !IsExpressionFirstInfo,
-                                       IsCaptureFirstInfo));
+          // We need to add a pointer flag for each map that comes from the
+          // same expression except for the first one. We also need to signal
+          // this map is the first one that relates with the current capture
+          // (there is a set of entries for each capture).
+          Types.push_back(getMapTypeBits(MapType, MapTypeModifier,
+                                         !IsExpressionFirstInfo,
+                                         IsCaptureFirstInfo));
+        }
+
+        // If the current component is member of a struct (parent struct)
+        auto *ME = dyn_cast<MemberExpr>(I->getAssociatedExpression());
+        if (!ME) {
+          // Check whether we have encounterd a member expression previously
+          // in the component list.
+          if (EncounteredMemberExpr)
+            ME = EncounteredMemberExpr;
+        }
+        if (ME) {
+          // If the parent struct is a declared variable, i.e. it doesn't have
+          // any parents itself, then keep track of the mapped member
+          auto *DRE = dyn_cast<DeclRefExpr>(ME->getBase());
+          if (DRE) {
+            auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl());
+            unsigned FieldIndex = FD->getFieldIndex();
+            const ValueDecl *VDecl = DRE->getDecl();
+
+            // Update info about the lowest and highest elements for this struct
+            if (PartialStructs.find(VDecl) == PartialStructs.end()) {
+              PartialStructs[VDecl].LowestElem = {FieldIndex, LB, Size};
+              PartialStructs[VDecl].HighestElem = {FieldIndex, LB, Size};
+            } else {
+              if (FieldIndex < PartialStructs[VDecl].LowestElem.FieldIndex) {
+                PartialStructs[VDecl].LowestElem = {FieldIndex, LB, Size};
+              }
+              if (FieldIndex > PartialStructs[VDecl].HighestElem.FieldIndex) {
+                PartialStructs[VDecl].HighestElem = {FieldIndex, LB, Size};
+              }
+            }
+          }
+        }
 
         // If we have a final array section, we are done with this expression.
         if (IsFinalArraySection)
@@ -6005,7 +6075,8 @@ public:
   /// index where it occurs is appended to the device pointers info array.
   void generateAllInfo(MapBaseValuesArrayTy &BasePointers,
                        MapValuesArrayTy &Pointers, MapValuesArrayTy &Sizes,
-                       MapFlagsArrayTy &Types) const {
+                       MapFlagsArrayTy &Types,
+                       StructRangeMapTy &PartialStructs) const {
     BasePointers.clear();
     Pointers.clear();
     Sizes.clear();
@@ -6132,7 +6203,8 @@ public:
         // FIXME: MSVC 2013 seems to require this-> to find the member method.
         this->generateInfoForComponentList(L.MapType, L.MapTypeModifier,
                                            L.Components, BasePointers, Pointers,
-                                           Sizes, Types, IsFirstComponentList);
+                                           Sizes, Types, PartialStructs,
+                                           IsFirstComponentList);
 
         // If this entry relates with a device pointer, set the relevant
         // declaration and add the 'return pointer' flag.
@@ -6168,7 +6240,8 @@ public:
                               MapBaseValuesArrayTy &BasePointers,
                               MapValuesArrayTy &Pointers,
                               MapValuesArrayTy &Sizes,
-                              MapFlagsArrayTy &Types) const {
+                              MapFlagsArrayTy &Types,
+                              StructRangeMapTy &PartialStructs) const {
     assert(!Cap->capturesVariableArrayType() &&
            "Not expecting to generate map info for a variable array type!");
 
@@ -6196,7 +6269,8 @@ public:
         for (auto L : It->second) {
           generateInfoForComponentList(
               /*MapType=*/OMPC_MAP_to, /*MapTypeModifier=*/OMPC_MAP_unknown, L,
-              BasePointers, Pointers, Sizes, Types, IsFirstComponentList);
+              BasePointers, Pointers, Sizes, Types, PartialStructs,
+              IsFirstComponentList);
           IsFirstComponentList = false;
         }
         return;
@@ -6218,7 +6292,8 @@ public:
                "Not expecting declaration with no component lists.");
         generateInfoForComponentList(C->getMapType(), C->getMapTypeModifier(),
                                      L.second, BasePointers, Pointers, Sizes,
-                                     Types, IsFirstComponentList);
+                                     Types, PartialStructs,
+                                     IsFirstComponentList);
         IsFirstComponentList = false;
       }
 
@@ -6621,6 +6696,8 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
   MappableExprsHandler::MapValuesArrayTy CurSizes;
   MappableExprsHandler::MapFlagsArrayTy CurMapTypes;
 
+  MappableExprsHandler::StructRangeMapTy PartialStructs;
+
   // Get mappable expression information.
   MappableExprsHandler MEHandler(D, CGF);
 
@@ -6637,6 +6714,7 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
     CurPointers.clear();
     CurSizes.clear();
     CurMapTypes.clear();
+    PartialStructs.clear();
 
     // VLA sizes are passed to the outlined region by copy and do not have map
     // information associated.
@@ -6651,7 +6729,7 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
       // If we have any information in the map clause, we use it, otherwise we
       // just do a default mapping.
       MEHandler.generateInfoForCapture(CI, *CV, CurBasePointers, CurPointers,
-                                       CurSizes, CurMapTypes);
+                                       CurSizes, CurMapTypes, PartialStructs);
       if (CurBasePointers.empty())
         MEHandler.generateDefaultMapInfo(*CI, **RI, *CV, CurBasePointers,
                                          CurPointers, CurSizes, CurMapTypes);
@@ -6662,6 +6740,36 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
            CurBasePointers.size() == CurSizes.size() &&
            CurBasePointers.size() == CurMapTypes.size() &&
            "Inconsistent map information sizes!");
+
+    // If more than 1 entries were generated, it means we have a struct with
+    // multiple members mapped. Emit an extra combined entry.
+    if (CurBasePointers.size() > 1) {
+      // Base is the base of the struct
+      BasePointers.push_back(*CurBasePointers.front());
+      // Pointer is the address of the lowest element
+      auto *LB = PartialStructs.begin()->getSecond().LowestElem.Pointer;
+      Pointers.push_back(LB);
+      // Size is (address of highest element) - (address of lowest element) +
+      // sizeof(highest element)
+      auto *HB = PartialStructs.begin()->getSecond().HighestElem.Pointer;
+      auto *HS = PartialStructs.begin()->getSecond().HighestElem.Size;
+      llvm::Value *LBVal = CGF.Builder.CreatePtrToInt(LB, CGM.SizeTy);
+      llvm::Value *HBVal = CGF.Builder.CreatePtrToInt(HB, CGM.SizeTy);
+      llvm::Value *HAddr = CGF.Builder.CreateAdd(HBVal, HS, "", true, false);
+      llvm::Value *Diff = CGF.Builder.CreateSub(HAddr, LBVal, "", true, false);
+      Sizes.push_back(Diff);
+      // Map type is always TARGET_PARAM
+      MapTypes.push_back(MappableExprsHandler::OMP_MAP_TARGET_PARAM);
+      // Remove TARGET_PARAM flag from the first element
+      (*CurMapTypes.begin()) &= ~MappableExprsHandler::OMP_MAP_TARGET_PARAM;
+
+      // All other current entries will be MEMBER_OF the combined entry
+      uint64_t MemberOfFlag =
+          MappableExprsHandler::getMemberOfFlag(BasePointers.size() - 1);
+      for (unsigned i = 0; i < CurMapTypes.size(); ++i) {
+        CurMapTypes[i] |= MemberOfFlag;
+      }
+    }
 
     // The kernel args are always the first elements of the base pointers
     // associated with a capture.
@@ -7341,10 +7449,12 @@ void CGOpenMPRuntime::emitTargetDataCalls(
     MappableExprsHandler::MapValuesArrayTy Pointers;
     MappableExprsHandler::MapValuesArrayTy Sizes;
     MappableExprsHandler::MapFlagsArrayTy MapTypes;
+    MappableExprsHandler::StructRangeMapTy PartialStructs;
 
     // Get map clause information.
     MappableExprsHandler MCHandler(D, CGF);
-    MCHandler.generateAllInfo(BasePointers, Pointers, Sizes, MapTypes);
+    MCHandler.generateAllInfo(BasePointers, Pointers, Sizes, MapTypes,
+        PartialStructs);
 
     // Fill up the arrays and create the arguments.
     emitOffloadingArrays(CGF, BasePointers, Pointers, Sizes, MapTypes, Info);
@@ -7466,10 +7576,12 @@ void CGOpenMPRuntime::emitTargetDataStandAloneCall(
     MappableExprsHandler::MapValuesArrayTy Pointers;
     MappableExprsHandler::MapValuesArrayTy Sizes;
     MappableExprsHandler::MapFlagsArrayTy MapTypes;
+    MappableExprsHandler::StructRangeMapTy PartialStructs;
 
     // Get map clause information.
     MappableExprsHandler MEHandler(D, CGF);
-    MEHandler.generateAllInfo(BasePointers, Pointers, Sizes, MapTypes);
+    MEHandler.generateAllInfo(BasePointers, Pointers, Sizes, MapTypes,
+        PartialStructs);
 
     // Fill up the arrays and create the arguments.
     TargetDataInfo Info;
