@@ -29,7 +29,6 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
-#include <iostream>
 
 using namespace clang;
 using namespace CodeGen;
@@ -5596,6 +5595,7 @@ public:
   typedef struct {
     StructMemberInfoTy LowestElem;
     StructMemberInfoTy HighestElem;
+    llvm::Value *Base;
   } StructRangeInfoTy;
 
   typedef llvm::MapVector<const ValueDecl *, StructRangeInfoTy>
@@ -5901,7 +5901,6 @@ private:
       // The base is the 'this' pointer. The content of the pointer is going
       // to be the base of the field being mapped.
       BP = CGF.EmitScalarExpr(ME->getBase());
-      EncounteredME = ME;
     } else {
       // The base is the reference to the variable.
       // BP = &Var.
@@ -5992,8 +5991,7 @@ private:
         // entry for it - if we did, it would just be an entry with 0 flags.
         // This is an optimization.
         bool IsMemberPointer = IsPointer &&
-            (dyn_cast<MemberExpr>(I->getAssociatedExpression()) ||
-                /*EncounteredME*/ false);
+            (dyn_cast<MemberExpr>(I->getAssociatedExpression()));
         if (!IsMemberPointer) {
           BasePointers.push_back(BP);
           Pointers.push_back(LB);
@@ -6008,27 +6006,26 @@ private:
                                          IsCaptureFirstInfo));
         }
 
-        // If we have encountered a member expression so far
+        // If we have encountered a member expression so far, keep track of the
+        // mapped member. If the parent is "*this", then the value declaration
+        // is nullptr.
         if (EncounteredME) {
-          // If the parent struct is a declared variable, i.e. it doesn't have
-          // any parents itself, then keep track of the mapped member.
+          auto *FD = dyn_cast<FieldDecl>(EncounteredME->getMemberDecl());
+          unsigned FieldIndex = FD->getFieldIndex();
           auto *DRE = dyn_cast<DeclRefExpr>(EncounteredME->getBase());
-          if (DRE) {
-            auto *FD = dyn_cast<FieldDecl>(EncounteredME->getMemberDecl());
-            unsigned FieldIndex = FD->getFieldIndex();
-            const ValueDecl *VDecl = DRE->getDecl();
+          const ValueDecl *VDecl = (DRE ? DRE->getDecl() : nullptr);
 
-            // Update info about the lowest and highest elements for this struct
-            if (PartialStructs.find(VDecl) == PartialStructs.end()) {
+          // Update info about the lowest and highest elements for this struct
+          if (PartialStructs.find(VDecl) == PartialStructs.end()) {
+            PartialStructs[VDecl].LowestElem = {FieldIndex, LB, Size};
+            PartialStructs[VDecl].HighestElem = {FieldIndex, LB, Size};
+            PartialStructs[VDecl].Base = BP;
+          } else {
+            if (FieldIndex < PartialStructs[VDecl].LowestElem.FieldIndex) {
               PartialStructs[VDecl].LowestElem = {FieldIndex, LB, Size};
+            }
+            if (FieldIndex > PartialStructs[VDecl].HighestElem.FieldIndex) {
               PartialStructs[VDecl].HighestElem = {FieldIndex, LB, Size};
-            } else {
-              if (FieldIndex < PartialStructs[VDecl].LowestElem.FieldIndex) {
-                PartialStructs[VDecl].LowestElem = {FieldIndex, LB, Size};
-              }
-              if (FieldIndex > PartialStructs[VDecl].HighestElem.FieldIndex) {
-                PartialStructs[VDecl].HighestElem = {FieldIndex, LB, Size};
-              }
             }
           }
         }
@@ -6768,7 +6765,8 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
     // extra combined entry.
     if (PartialStructs.size() > 0 && CurBasePointers.size() > 1) {
       // Base is the base of the struct
-      BasePointers.push_back(*CurBasePointers.front());
+      KernelArgs.push_back(PartialStructs.begin()->second.Base);
+      BasePointers.push_back(PartialStructs.begin()->second.Base);
       // Pointer is the address of the lowest element
       auto *LB = PartialStructs.begin()->second.LowestElem.Pointer;
       Pointers.push_back(LB);
@@ -6792,11 +6790,12 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
       for (unsigned i = 0; i < CurMapTypes.size(); ++i) {
         CurMapTypes[i] |= MemberOfFlag;
       }
+    } else {
+      // If we don't have a partial struct, the kernel args are always the first
+      // elements of the base pointers associated with a capture.
+      KernelArgs.push_back(*CurBasePointers.front());
     }
 
-    // The kernel args are always the first elements of the base pointers
-    // associated with a capture.
-    KernelArgs.push_back(*CurBasePointers.front());
     // We need to append the results of this capture to what we already have.
     BasePointers.append(CurBasePointers.begin(), CurBasePointers.end());
     Pointers.append(CurPointers.begin(), CurPointers.end());
