@@ -5676,10 +5676,10 @@ private:
   /// a flag marking the map as a pointer if requested. Add a flag marking the
   /// map as the first one of a series of maps that relate to the same map
   /// expression.
-  unsigned getMapTypeBits(OpenMPMapClauseKind MapType,
+  uint64_t getMapTypeBits(OpenMPMapClauseKind MapType,
                           OpenMPMapClauseKind MapTypeModifier, bool AddPtrFlag,
                           bool AddIsTargetParamFlag) const {
-    unsigned Bits = 0u;
+    uint64_t Bits = 0u;
     switch (MapType) {
     case OMPC_MAP_alloc:
     case OMPC_MAP_release:
@@ -5974,36 +5974,35 @@ private:
           auto *LI = cast<llvm::LoadInst>(LB);
           auto *RefAddr = LI->getPointerOperand();
 
-          //BasePointers.push_back(BP);
-          //Pointers.push_back(RefAddr);
-          //Sizes.push_back(CGF.getTypeSize(CGF.getContext().VoidPtrTy));
-          //Types.push_back(getMapTypeBits(
-          //    /*MapType*/ OMPC_MAP_alloc, /*MapTypeModifier=*/OMPC_MAP_unknown,
-          //    !IsExpressionFirstInfo, IsCaptureFirstInfo));
           IsExpressionFirstInfo = false;
           IsCaptureFirstInfo = false;
           // The reference will be the next base address.
           BP = RefAddr;
         }
 
-        // If this component is a pointer inside a struct or a pointer pointed
-        // to by a pointer inside a struct, then we don't need to create any
-        // entry for it - if we did, it would just be an entry with 0 flags.
-        // This is an optimization.
+        // If this component is a pointer inside a struct (not a pointer of
+        // another struct pointed to by a pointer inside the base struct, then
+        // we don't need to create any entry for it - if we did, it would just
+        // be an entry with 0 flags. This is an optimization.
         bool IsMemberPointer = IsPointer &&
-            (dyn_cast<MemberExpr>(I->getAssociatedExpression()));
+            (dyn_cast<MemberExpr>(I->getAssociatedExpression()) ==
+                EncounteredME);
         if (!IsMemberPointer) {
           BasePointers.push_back(BP);
           Pointers.push_back(LB);
           Sizes.push_back(Size);
 
           // We need to add a pointer flag for each map that comes from the
-          // same expression except for the first one. We also need to signal
+          // same expression except for the first one. Such pointers must have
+          // their TO/FROM/ALWAYS/DELETE flags reset. We also need to signal
           // this map is the first one that relates with the current capture
           // (there is a set of entries for each capture).
-          Types.push_back(getMapTypeBits(MapType, MapTypeModifier,
-                                         !IsExpressionFirstInfo,
-                                         IsCaptureFirstInfo));
+          uint64_t flags = getMapTypeBits(MapType, MapTypeModifier,
+              !IsExpressionFirstInfo, IsCaptureFirstInfo);
+          if (IsPointer)
+            flags &=
+                ~(OMP_MAP_TO | OMP_MAP_FROM | OMP_MAP_ALWAYS | OMP_MAP_DELETE);
+          Types.push_back(flags);
         }
 
         // If we have encountered a member expression so far, keep track of the
