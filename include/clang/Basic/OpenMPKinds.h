@@ -80,6 +80,14 @@ enum OpenMPDependClauseKind {
   OMPC_DEPEND_unknown
 };
 
+/// \brief OpenMP attributes for 'lastprivate' clause.
+enum OpenMPLastprivateClauseKind {
+#define OPENMP_LASTPRIVATE_MODIFIER(Name) \
+  OMPC_LASTPRIVATE_##Name,
+#include "clang/Basic/OpenMPKinds.def"
+  OMPC_LASTPRIVATE_unknown
+};
+
 /// \brief OpenMP attributes for 'linear' clause.
 enum OpenMPLinearClauseKind {
 #define OPENMP_LINEAR_KIND(Name) \

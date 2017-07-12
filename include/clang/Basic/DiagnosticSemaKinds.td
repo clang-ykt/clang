@@ -8240,7 +8240,7 @@ def err_omp_global_var_arg : Error<
 def err_omp_ref_type_arg : Error<
   "arguments of '#pragma omp %0' cannot be of reference type %1">;
 def err_omp_region_not_file_context : Error<
-  "directive must be at file or namespace scope">;
+  "directive must be at file, namespace, or class scope">;
 def err_omp_var_scope : Error<
   "'#pragma omp %0' must appear in the scope of the %q1 variable declaration">;
 def err_omp_var_used : Error<
@@ -8253,6 +8253,8 @@ def err_omp_firstprivate_incomplete_type : Error<
   "a firstprivate variable with incomplete type %0">;
 def err_omp_lastprivate_incomplete_type : Error<
   "a lastprivate variable with incomplete type %0">;
+def err_omp_lastprivate_cond_wrong_type : Error<
+  "a lastprivate variable with conditional is of non-scalar type %0">;
 def err_omp_reduction_incomplete_type : Error<
   "a reduction list item with incomplete type %0">;
 def err_omp_unexpected_clause_value : Error<

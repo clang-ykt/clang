@@ -1119,7 +1119,8 @@ bool Parser::ParseOpenMPSimpleVarList(
 ///       simdlen-clause | threads-clause | simd-clause | num_teams-clause |
 ///       thread_limit-clause | priority-clause | grainsize-clause |
 ///       nogroup-clause | num_tasks-clause | hint-clause | to-clause |
-///       from-clause | is_device_ptr-clause
+///       from-clause | is_device_ptr-clause | task_reduction-clause |
+///       in_reduction-clause
 ///
 OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
                                      OpenMPClauseKind CKind, bool FirstClause) {
@@ -1247,6 +1248,8 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
   case OMPC_from:
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
+  case OMPC_task_reduction:
+  case OMPC_in_reduction:
     Clause = ParseOpenMPVarListClause(DKind, CKind);
     break;
   case OMPC_unknown:
@@ -1600,7 +1603,8 @@ bool Parser::ParseOpenMPVarList(OpenMPDirectiveKind DKind,
   BalancedDelimiterTracker LinearT(*this, tok::l_paren,
                                   tok::annot_pragma_openmp_end);
   // Handle reduction-identifier for reduction clause.
-  if (Kind == OMPC_reduction) {
+  if (Kind == OMPC_reduction || Kind == OMPC_task_reduction ||
+      Kind == OMPC_in_reduction) {
     ColonProtectionRAIIObject ColonRAII(*this);
     if (getLangOpts().CPlusPlus)
       ParseOptionalCXXScopeSpecifier(Data.ReductionIdScopeSpec,
@@ -1654,6 +1658,21 @@ bool Parser::ParseOpenMPVarList(OpenMPDirectiveKind DKind,
       Data.DepLinMapLoc = ConsumeToken();
       LinearT.consumeOpen();
       NeedRParenForLinear = true;
+    }
+  } else if (Kind == OMPC_lastprivate) {
+    // Try to parse modifier if any.
+    if (Tok.is(tok::identifier)) {
+      Data.LastprivateKind = static_cast<OpenMPLastprivateClauseKind>(
+          getOpenMPSimpleClauseType(Kind, PP.getSpelling(Tok)));
+      if (Data.LastprivateKind == OMPC_LASTPRIVATE_conditional) {
+        Data.DepLinMapLoc = ConsumeToken();
+        if (!Tok.is(tok::colon))
+          Diag(Tok, diag::warn_pragma_expected_colon) << "lastprivate type";
+        else
+          Data.ColonLoc = ConsumeToken();
+      } else if (Data.LastprivateKind == OMPC_LASTPRIVATE_unknown &&
+                 PP.LookAhead(0).is(tok::colon))
+          Diag(Tok, diag::err_omp_unknown_lastprivate_type);
     }
   } else if (Kind == OMPC_map) {
     // Handle map type for map clause.
@@ -1734,7 +1753,8 @@ bool Parser::ParseOpenMPVarList(OpenMPDirectiveKind DKind,
 
   bool IsComma =
       (Kind != OMPC_reduction && Kind != OMPC_depend && Kind != OMPC_map) ||
-      (Kind == OMPC_reduction && !InvalidReductionId) ||
+      (Kind == OMPC_reduction && Kind != OMPC_task_reduction &&
+       Kind != OMPC_in_reduction && !InvalidReductionId) ||
       (Kind == OMPC_map && Data.MapType != OMPC_MAP_unknown &&
        (!MapTypeModifierSpecified ||
         Data.MapTypeModifier == OMPC_MAP_always)) ||
@@ -1801,7 +1821,7 @@ bool Parser::ParseOpenMPVarList(OpenMPDirectiveKind DKind,
 ///    firstprivate-clause:
 ///       'firstprivate' '(' list ')'
 ///    lastprivate-clause:
-///       'lastprivate' '(' list ')'
+///       'lastprivate' '(' [ conditional ':' ] list ')'
 ///    shared-clause:
 ///       'shared' '(' list ')'
 ///    linear-clause:
@@ -1827,6 +1847,10 @@ bool Parser::ParseOpenMPVarList(OpenMPDirectiveKind DKind,
 ///       'use_device_ptr' '(' list ')'
 ///    is_device_ptr-clause:
 ///       'is_device_ptr' '(' list ')'
+///    task_reduction-clause:
+///       'task_reduction' '(' reduction-identifier ':' list ')'
+///    in_reduction-clause:
+///       'in_reduction' '(' reduction-identifier ':' list ')'
 ///
 /// For 'linear' clause linear-list may have the following forms:
 ///  list
@@ -1845,7 +1869,7 @@ OMPClause *Parser::ParseOpenMPVarListClause(OpenMPDirectiveKind DKind,
   return Actions.ActOnOpenMPVarListClause(
       Kind, Vars, Data.TailExpr, Loc, LOpen, Data.ColonLoc, Tok.getLocation(),
       Data.ReductionIdScopeSpec, Data.ReductionId, Data.DepKind, Data.LinKind,
-      Data.MapTypeModifier, Data.MapType, Data.IsMapTypeImplicit,
-      Data.DepLinMapLoc);
+      Data.LastprivateKind, Data.MapTypeModifier, Data.MapType,
+      Data.IsMapTypeImplicit, Data.DepLinMapLoc);
 }
 

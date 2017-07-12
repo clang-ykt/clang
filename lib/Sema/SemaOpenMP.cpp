@@ -2562,16 +2562,13 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
     Res = ActOnOpenMPBarrierDirective(StartLoc, EndLoc);
     break;
   case OMPD_taskwait:
-    assert(ClausesWithImplicit.empty() &&
-           "No clauses are allowed for 'omp taskwait' directive");
     assert(AStmt == nullptr &&
            "No associated statement allowed for 'omp taskwait' directive");
-    Res = ActOnOpenMPTaskwaitDirective(StartLoc, EndLoc);
+    Res = ActOnOpenMPTaskwaitDirective(ClausesWithImplicit, StartLoc, EndLoc);
     break;
   case OMPD_taskgroup:
-    assert(ClausesWithImplicit.empty() &&
-           "No clauses are allowed for 'omp taskgroup' directive");
-    Res = ActOnOpenMPTaskgroupDirective(AStmt, StartLoc, EndLoc);
+    Res = ActOnOpenMPTaskgroupDirective(ClausesWithImplicit, AStmt, StartLoc,
+                                        EndLoc);
     break;
   case OMPD_flush:
     assert(AStmt == nullptr &&
@@ -4316,9 +4313,12 @@ static unsigned CheckOpenMPLoop(
   }
 
   // Build iteration variable initializer for simd loop on nvptx.
+#if 0
   bool OutlinedSimd = DKind == OMPD_simd &&
                       SemaRef.getLangOpts().OpenMPIsDevice &&
                       SemaRef.Context.getTargetInfo().getTriple().isNVPTX();
+#endif
+  bool OutlinedSimd = false;
   ExprResult LaneInit;
   ExprResult NumLanes;
   if (OutlinedSimd) {
@@ -5168,12 +5168,14 @@ StmtResult Sema::ActOnOpenMPBarrierDirective(SourceLocation StartLoc,
   return OMPBarrierDirective::Create(Context, StartLoc, EndLoc);
 }
 
-StmtResult Sema::ActOnOpenMPTaskwaitDirective(SourceLocation StartLoc,
+StmtResult Sema::ActOnOpenMPTaskwaitDirective(ArrayRef<OMPClause *> Clauses,
+                                              SourceLocation StartLoc,
                                               SourceLocation EndLoc) {
-  return OMPTaskwaitDirective::Create(Context, StartLoc, EndLoc);
+  return OMPTaskwaitDirective::Create(Context, StartLoc, EndLoc, Clauses);
 }
 
-StmtResult Sema::ActOnOpenMPTaskgroupDirective(Stmt *AStmt,
+StmtResult Sema::ActOnOpenMPTaskgroupDirective(ArrayRef<OMPClause *> Clauses,
+                                               Stmt *AStmt,
                                                SourceLocation StartLoc,
                                                SourceLocation EndLoc) {
   if (!AStmt)
@@ -5183,7 +5185,8 @@ StmtResult Sema::ActOnOpenMPTaskgroupDirective(Stmt *AStmt,
 
   getCurFunction()->setHasBranchProtectedScope();
 
-  return OMPTaskgroupDirective::Create(Context, StartLoc, EndLoc, AStmt);
+  return OMPTaskgroupDirective::Create(Context, StartLoc, EndLoc, Clauses,
+                                       AStmt);
 }
 
 StmtResult Sema::ActOnOpenMPFlushDirective(ArrayRef<OMPClause *> Clauses,
@@ -7028,6 +7031,8 @@ OMPClause *Sema::ActOnOpenMPSingleExprClause(OpenMPClauseKind Kind, Expr *Expr,
   case OMPC_from:
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
+  case OMPC_task_reduction:
+  case OMPC_in_reduction:
     llvm_unreachable("Clause is not allowed.");
   }
   return Res;
@@ -7369,6 +7374,8 @@ OMPClause *Sema::ActOnOpenMPSimpleClause(
   case OMPC_from:
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
+  case OMPC_task_reduction:
+  case OMPC_in_reduction:
     llvm_unreachable("Clause is not allowed.");
   }
   return Res;
@@ -7524,6 +7531,8 @@ OMPClause *Sema::ActOnOpenMPSingleExprWithArgClause(
   case OMPC_from:
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
+  case OMPC_task_reduction:
+  case OMPC_in_reduction:
     llvm_unreachable("Clause is not allowed.");
   }
   return Res;
@@ -7715,6 +7724,8 @@ OMPClause *Sema::ActOnOpenMPClause(OpenMPClauseKind Kind,
   case OMPC_from:
   case OMPC_use_device_ptr:
   case OMPC_is_device_ptr:
+  case OMPC_task_reduction:
+  case OMPC_in_reduction:
     llvm_unreachable("Clause is not allowed.");
   }
   return Res;
@@ -7781,9 +7792,9 @@ OMPClause *Sema::ActOnOpenMPVarListClause(
     SourceLocation StartLoc, SourceLocation LParenLoc, SourceLocation ColonLoc,
     SourceLocation EndLoc, CXXScopeSpec &ReductionIdScopeSpec,
     const DeclarationNameInfo &ReductionId, OpenMPDependClauseKind DepKind,
-    OpenMPLinearClauseKind LinKind, OpenMPMapClauseKind MapTypeModifier,
-    OpenMPMapClauseKind MapType, bool IsMapTypeImplicit,
-    SourceLocation DepLinMapLoc) {
+    OpenMPLinearClauseKind LinKind, OpenMPLastprivateClauseKind LpKind,
+    OpenMPMapClauseKind MapTypeModifier, OpenMPMapClauseKind MapType,
+    bool IsMapTypeImplicit, SourceLocation DepLinMapLoc) {
   OMPClause *Res = nullptr;
   switch (Kind) {
   case OMPC_private:
@@ -7793,7 +7804,8 @@ OMPClause *Sema::ActOnOpenMPVarListClause(
     Res = ActOnOpenMPFirstprivateClause(VarList, StartLoc, LParenLoc, EndLoc);
     break;
   case OMPC_lastprivate:
-    Res = ActOnOpenMPLastprivateClause(VarList, StartLoc, LParenLoc, EndLoc);
+    Res = ActOnOpenMPLastprivateClause(VarList, StartLoc, LParenLoc,
+                                       LpKind, DepLinMapLoc, ColonLoc, EndLoc);
     break;
   case OMPC_shared:
     Res = ActOnOpenMPSharedClause(VarList, StartLoc, LParenLoc, EndLoc);
@@ -7839,6 +7851,16 @@ OMPClause *Sema::ActOnOpenMPVarListClause(
     break;
   case OMPC_is_device_ptr:
     Res = ActOnOpenMPIsDevicePtrClause(VarList, StartLoc, LParenLoc, EndLoc);
+    break;
+  case OMPC_task_reduction:
+    Res = ActOnOpenMPTaskReductionClause(VarList, StartLoc, LParenLoc, ColonLoc,
+                                         EndLoc, ReductionIdScopeSpec,
+                                         ReductionId);
+    break;
+  case OMPC_in_reduction:
+    Res =
+        ActOnOpenMPInReductionClause(VarList, StartLoc, LParenLoc, ColonLoc,
+                                     EndLoc, ReductionIdScopeSpec, ReductionId);
     break;
   case OMPC_if:
   case OMPC_final:
@@ -8392,6 +8414,9 @@ OMPClause *Sema::ActOnOpenMPFirstprivateClause(ArrayRef<Expr *> VarList,
 OMPClause *Sema::ActOnOpenMPLastprivateClause(ArrayRef<Expr *> VarList,
                                               SourceLocation StartLoc,
                                               SourceLocation LParenLoc,
+                                              OpenMPLastprivateClauseKind LpKind,
+                                              SourceLocation LpKindLoc,
+                                              SourceLocation ColonLoc,
                                               SourceLocation EndLoc) {
   SmallVector<Expr *, 8> Vars;
   SmallVector<Expr *, 8> SrcExprs;
@@ -8418,6 +8443,13 @@ OMPClause *Sema::ActOnOpenMPLastprivateClause(ArrayRef<Expr *> VarList,
 
     QualType Type = D->getType();
     auto *VD = dyn_cast<VarDecl>(D);
+
+    // OpenMP [2.15.3.5, Restrictions, p.3]
+    //  A list item that appears in a lastprivate clause with the
+    //  conditional modifier must be a scalar variable.
+    if (LpKind == OMPC_LASTPRIVATE_conditional &&
+        !Type->isScalarType())
+      Diag(ELoc, diag::err_omp_lastprivate_cond_wrong_type) << Type;
 
     // OpenMP [2.14.3.5, Restrictions, C/C++, p.2]
     //  A variable that appears in a lastprivate clause must not have an
@@ -8541,7 +8573,8 @@ OMPClause *Sema::ActOnOpenMPLastprivateClause(ArrayRef<Expr *> VarList,
   if (Vars.empty())
     return nullptr;
 
-  return OMPLastprivateClause::Create(Context, StartLoc, LParenLoc, EndLoc,
+  return OMPLastprivateClause::Create(Context, StartLoc, LParenLoc, LpKind,
+                                      LpKindLoc, ColonLoc, EndLoc,
                                       Vars, SrcExprs, DstExprs, AssignmentOps,
                                       buildPreInits(Context, ExprCaptures),
                                       buildPostUpdate(*this, ExprPostUpdates));
@@ -8756,11 +8789,22 @@ buildDeclareReductionRef(Sema &SemaRef, SourceLocation Loc, SourceRange Range,
   return ExprEmpty();
 }
 
-OMPClause *Sema::ActOnOpenMPReductionClause(
-    ArrayRef<Expr *> VarList, SourceLocation StartLoc, SourceLocation LParenLoc,
-    SourceLocation ColonLoc, SourceLocation EndLoc,
-    CXXScopeSpec &ReductionIdScopeSpec, const DeclarationNameInfo &ReductionId,
-    ArrayRef<Expr *> UnresolvedReductions) {
+// ArrayRef<Expr *> VarList, SourceLocation StartLoc, SourceLocation LParenLoc,
+//    SourceLocation ColonLoc, SourceLocation EndLoc,
+//    CXXScopeSpec &ReductionIdScopeSpec, const DeclarationNameInfo
+//    &ReductionId,
+//    ArrayRef<Expr *> UnresolvedReductions
+
+static void CheckOMPReductionTypeClause(
+    Sema &OMPSema, ASTContext &Context, DeclContext *CurContext,
+    const LangOptions &LangOpts, DSAStackTy *InDSAStack,
+    ArrayRef<Expr *> VarList, CXXScopeSpec &ReductionIdScopeSpec,
+    const DeclarationNameInfo &ReductionId,
+    ArrayRef<Expr *> UnresolvedReductions, SmallVector<Expr *, 8> &Vars,
+    SmallVector<Expr *, 8> &Privates, SmallVector<Expr *, 8> &LHSs,
+    SmallVector<Expr *, 8> &RHSs, SmallVector<Expr *, 8> &ReductionOps,
+    SmallVector<Decl *, 4> &ExprCaptures,
+    SmallVector<Expr *, 4> &ExprPostUpdates) {
   auto DN = ReductionId.getName();
   auto OOK = DN.getCXXOverloadedOperator();
   BinaryOperatorKind BOK = BO_Comma;
@@ -8848,13 +8892,6 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
     ReductionIdRange.setBegin(ReductionIdScopeSpec.getBeginLoc());
   ReductionIdRange.setEnd(ReductionId.getEndLoc());
 
-  SmallVector<Expr *, 8> Vars;
-  SmallVector<Expr *, 8> Privates;
-  SmallVector<Expr *, 8> LHSs;
-  SmallVector<Expr *, 8> RHSs;
-  SmallVector<Expr *, 8> ReductionOps;
-  SmallVector<Decl *, 4> ExprCaptures;
-  SmallVector<Expr *, 4> ExprPostUpdates;
   auto IR = UnresolvedReductions.begin(), ER = UnresolvedReductions.end();
   bool FirstIter = true;
   for (auto RefExpr : VarList) {
@@ -8872,7 +8909,7 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
     SourceLocation ELoc;
     SourceRange ERange;
     Expr *SimpleRefExpr = RefExpr;
-    auto Res = getPrivateItem(*this, SimpleRefExpr, ELoc, ERange,
+    auto Res = getPrivateItem(OMPSema, SimpleRefExpr, ELoc, ERange,
                               /*AllowArraySection=*/true);
     if (Res.second) {
       // It will be analyzed later.
@@ -8885,8 +8922,9 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
       QualType Type = Context.DependentTy;
       CXXCastPath BasePath;
       ExprResult DeclareReductionRef = buildDeclareReductionRef(
-          *this, ELoc, ERange, DSAStack->getCurScope(), ReductionIdScopeSpec,
-          ReductionId, Type, BasePath, IR == ER ? nullptr : *IR);
+          OMPSema, ELoc, ERange, InDSAStack->getCurScope(),
+          ReductionIdScopeSpec, ReductionId, Type, BasePath,
+          IR == ER ? nullptr : *IR);
       if (CurContext->isDependentContext() &&
           (DeclareReductionRef.isUnset() ||
            isa<UnresolvedLookupExpr>(DeclareReductionRef.get())))
@@ -8917,21 +8955,21 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
     // OpenMP [2.9.3.3, Restrictions, C/C++, p.3]
     //  A variable that appears in a private clause must not have an incomplete
     //  type or a reference type.
-    if (RequireCompleteType(ELoc, Type,
-                            diag::err_omp_reduction_incomplete_type))
+    if (OMPSema.RequireCompleteType(ELoc, Type,
+                                    diag::err_omp_reduction_incomplete_type))
       continue;
     // OpenMP [2.14.3.6, reduction clause, Restrictions]
     // A list item that appears in a reduction clause must not be
     // const-qualified.
     if (Type.getNonReferenceType().isConstant(Context)) {
-      Diag(ELoc, diag::err_omp_const_reduction_list_item)
+      OMPSema.Diag(ELoc, diag::err_omp_const_reduction_list_item)
           << getOpenMPClauseName(OMPC_reduction) << Type << ERange;
       if (!ASE && !OASE) {
         bool IsDecl = !VD ||
                       VD->isThisDeclarationADefinition(Context) ==
                           VarDecl::DeclarationOnly;
-        Diag(D->getLocation(),
-             IsDecl ? diag::note_previous_decl : diag::note_defined_here)
+        OMPSema.Diag(D->getLocation(), IsDecl ? diag::note_previous_decl
+                                              : diag::note_defined_here)
             << D;
       }
       continue;
@@ -8942,10 +8980,10 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
     if (!ASE && !OASE && VD) {
       VarDecl *VDDef = VD->getDefinition();
       if (VD->getType()->isReferenceType() && VDDef && VDDef->hasInit()) {
-        DSARefChecker Check(DSAStack);
+        DSARefChecker Check(InDSAStack);
         if (Check.Visit(VDDef->getInit())) {
-          Diag(ELoc, diag::err_omp_reduction_ref_type_arg) << ERange;
-          Diag(VDDef->getLocation(), diag::note_defined_here) << VDDef;
+          OMPSema.Diag(ELoc, diag::err_omp_reduction_ref_type_arg) << ERange;
+          OMPSema.Diag(VDDef->getLocation(), diag::note_defined_here) << VDDef;
           continue;
         }
       }
@@ -8963,17 +9001,17 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
     //  but a list item can appear only once in the reduction clauses for that
     //  directive.
     DSAStackTy::DSAVarData DVar;
-    DVar = DSAStack->getTopDSA(D, false);
+    DVar = InDSAStack->getTopDSA(D, false);
     if (DVar.CKind == OMPC_reduction) {
-      Diag(ELoc, diag::err_omp_once_referenced)
+      OMPSema.Diag(ELoc, diag::err_omp_once_referenced)
           << getOpenMPClauseName(OMPC_reduction);
       if (DVar.RefExpr)
-        Diag(DVar.RefExpr->getExprLoc(), diag::note_omp_referenced);
+        OMPSema.Diag(DVar.RefExpr->getExprLoc(), diag::note_omp_referenced);
     } else if (DVar.CKind != OMPC_unknown) {
-      Diag(ELoc, diag::err_omp_wrong_dsa)
+      OMPSema.Diag(ELoc, diag::err_omp_wrong_dsa)
           << getOpenMPClauseName(DVar.CKind)
           << getOpenMPClauseName(OMPC_reduction);
-      ReportOriginalDSA(*this, DSAStack, D, DVar);
+      ReportOriginalDSA(OMPSema, InDSAStack, D, DVar);
       continue;
     }
 
@@ -8981,16 +9019,16 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
     //  A list item that appears in a reduction clause of a worksharing
     //  construct must be shared in the parallel regions to which any of the
     //  worksharing regions arising from the worksharing construct bind.
-    OpenMPDirectiveKind CurrDir = DSAStack->getCurrentDirective();
+    OpenMPDirectiveKind CurrDir = InDSAStack->getCurrentDirective();
     if (isOpenMPWorksharingDirective(CurrDir) &&
         !isOpenMPParallelDirective(CurrDir) &&
         !isOpenMPTeamsDirective(CurrDir)) {
-      DVar = DSAStack->getImplicitDSA(D, true);
+      DVar = InDSAStack->getImplicitDSA(D, true);
       if (DVar.CKind != OMPC_shared) {
-        Diag(ELoc, diag::err_omp_required_access)
+        OMPSema.Diag(ELoc, diag::err_omp_required_access)
             << getOpenMPClauseName(OMPC_reduction)
             << getOpenMPClauseName(OMPC_shared);
-        ReportOriginalDSA(*this, DSAStack, D, DVar);
+        ReportOriginalDSA(OMPSema, InDSAStack, D, DVar);
         continue;
       }
     }
@@ -8999,7 +9037,7 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
     // builtin/overloaded operators.
     CXXCastPath BasePath;
     ExprResult DeclareReductionRef = buildDeclareReductionRef(
-        *this, ELoc, ERange, DSAStack->getCurScope(), ReductionIdScopeSpec,
+        OMPSema, ELoc, ERange, InDSAStack->getCurScope(), ReductionIdScopeSpec,
         ReductionId, Type, BasePath, IR == ER ? nullptr : *IR);
     if (DeclareReductionRef.isInvalid())
       continue;
@@ -9015,8 +9053,8 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
     }
     if (BOK == BO_Comma && DeclareReductionRef.isUnset()) {
       // Not allowed reduction identifier is found.
-      Diag(ReductionId.getLocStart(),
-           diag::err_omp_unknown_reduction_identifier)
+      OMPSema.Diag(ReductionId.getLocStart(),
+                   diag::err_omp_unknown_reduction_identifier)
           << Type << ReductionIdRange;
       continue;
     }
@@ -9032,28 +9070,28 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
     if (DeclareReductionRef.isUnset()) {
       if ((BOK == BO_GT || BOK == BO_LT) &&
           !(Type->isScalarType() ||
-            (getLangOpts().CPlusPlus && Type->isArithmeticType()))) {
-        Diag(ELoc, diag::err_omp_clause_not_arithmetic_type_arg)
-            << getLangOpts().CPlusPlus;
+            (LangOpts.CPlusPlus && Type->isArithmeticType()))) {
+        OMPSema.Diag(ELoc, diag::err_omp_clause_not_arithmetic_type_arg)
+            << LangOpts.CPlusPlus;
         if (!ASE && !OASE) {
           bool IsDecl = !VD ||
                         VD->isThisDeclarationADefinition(Context) ==
                             VarDecl::DeclarationOnly;
-          Diag(D->getLocation(),
-               IsDecl ? diag::note_previous_decl : diag::note_defined_here)
+          OMPSema.Diag(D->getLocation(), IsDecl ? diag::note_previous_decl
+                                                : diag::note_defined_here)
               << D;
         }
         continue;
       }
       if ((BOK == BO_OrAssign || BOK == BO_AndAssign || BOK == BO_XorAssign) &&
-          !getLangOpts().CPlusPlus && Type->isFloatingType()) {
-        Diag(ELoc, diag::err_omp_clause_floating_type_arg);
+          !LangOpts.CPlusPlus && Type->isFloatingType()) {
+        OMPSema.Diag(ELoc, diag::err_omp_clause_floating_type_arg);
         if (!ASE && !OASE) {
           bool IsDecl = !VD ||
                         VD->isThisDeclarationADefinition(Context) ==
                             VarDecl::DeclarationOnly;
-          Diag(D->getLocation(),
-               IsDecl ? diag::note_previous_decl : diag::note_defined_here)
+          OMPSema.Diag(D->getLocation(), IsDecl ? diag::note_previous_decl
+                                                : diag::note_defined_here)
               << D;
         }
         continue;
@@ -9061,9 +9099,9 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
     }
 
     Type = Type.getNonLValueExprType(Context).getUnqualifiedType();
-    auto *LHSVD = buildVarDecl(*this, ELoc, Type, ".reduction.lhs",
+    auto *LHSVD = buildVarDecl(OMPSema, ELoc, Type, ".reduction.lhs",
                                D->hasAttrs() ? &D->getAttrs() : nullptr);
-    auto *RHSVD = buildVarDecl(*this, ELoc, Type, D->getName(),
+    auto *RHSVD = buildVarDecl(OMPSema, ELoc, Type, D->getName(),
                                D->hasAttrs() ? &D->getAttrs() : nullptr);
     auto PrivateTy = Type;
     if (OASE ||
@@ -9082,12 +9120,12 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
                Context.getAsArrayType(D->getType().getNonReferenceType()))
       PrivateTy = D->getType().getNonReferenceType();
     // Private copy.
-    auto *PrivateVD = buildVarDecl(*this, ELoc, PrivateTy, D->getName(),
+    auto *PrivateVD = buildVarDecl(OMPSema, ELoc, PrivateTy, D->getName(),
                                    D->hasAttrs() ? &D->getAttrs() : nullptr);
     // Add initializer for private variable.
     Expr *Init = nullptr;
-    auto *LHSDRE = buildDeclRefExpr(*this, LHSVD, Type, ELoc);
-    auto *RHSDRE = buildDeclRefExpr(*this, RHSVD, Type, ELoc);
+    auto *LHSDRE = buildDeclRefExpr(OMPSema, LHSVD, Type, ELoc);
+    auto *RHSDRE = buildDeclRefExpr(OMPSema, RHSVD, Type, ELoc);
     if (DeclareReductionRef.isUsable()) {
       auto *DRDRef = DeclareReductionRef.getAs<DeclRefExpr>();
       auto *DRD = cast<OMPDeclareReductionDecl>(DRDRef->getDecl());
@@ -9104,13 +9142,13 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
       case BO_LOr:
         // '+', '-', '^', '|', '||' reduction ops - initializer is '0'.
         if (Type->isScalarType() || Type->isAnyComplexType())
-          Init = ActOnIntegerConstant(ELoc, /*Val=*/0).get();
+          Init = OMPSema.ActOnIntegerConstant(ELoc, /*Val=*/0).get();
         break;
       case BO_Mul:
       case BO_LAnd:
         if (Type->isScalarType() || Type->isAnyComplexType()) {
           // '*' and '&&' reduction ops - initializer is '1'.
-          Init = ActOnIntegerConstant(ELoc, /*Val=*/1).get();
+          Init = OMPSema.ActOnIntegerConstant(ELoc, /*Val=*/1).get();
         }
         break;
       case BO_And: {
@@ -9133,7 +9171,7 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
         if (Init && OrigType->isAnyComplexType()) {
           // Init = 0xFFFF + 0xFFFFi;
           auto *Im = new (Context) ImaginaryLiteral(Init, OrigType);
-          Init = CreateBuiltinBinOp(ELoc, BO_Add, Init, Im).get();
+          Init = OMPSema.CreateBuiltinBinOp(ELoc, BO_Add, Init, Im).get();
         }
         Type = OrigType;
         break;
@@ -9158,7 +9196,7 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
           Init = IntegerLiteral::Create(Context, InitValue, IntTy, ELoc);
           if (Type->isPointerType()) {
             // Cast to pointer type.
-            auto CastExpr = BuildCStyleCastExpr(
+            auto CastExpr = OMPSema.BuildCStyleCastExpr(
                 SourceLocation(), Context.getTrivialTypeSourceInfo(Type, ELoc),
                 SourceLocation(), Init);
             if (CastExpr.isInvalid())
@@ -9200,20 +9238,20 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
       }
     }
     if (Init && DeclareReductionRef.isUnset()) {
-      AddInitializerToDecl(RHSVD, Init, /*DirectInit=*/false,
-                           /*TypeMayContainAuto=*/false);
+      OMPSema.AddInitializerToDecl(RHSVD, Init, /*DirectInit=*/false,
+                                   /*TypeMayContainAuto=*/false);
     } else if (!Init)
-      ActOnUninitializedDecl(RHSVD, /*TypeMayContainAuto=*/false);
+      OMPSema.ActOnUninitializedDecl(RHSVD, /*TypeMayContainAuto=*/false);
     if (RHSVD->isInvalidDecl())
       continue;
     if (!RHSVD->hasInit() && DeclareReductionRef.isUnset()) {
-      Diag(ELoc, diag::err_omp_reduction_id_not_compatible) << Type
-                                                            << ReductionIdRange;
+      OMPSema.Diag(ELoc, diag::err_omp_reduction_id_not_compatible)
+          << Type << ReductionIdRange;
       bool IsDecl =
           !VD ||
           VD->isThisDeclarationADefinition(Context) == VarDecl::DeclarationOnly;
-      Diag(D->getLocation(),
-           IsDecl ? diag::note_previous_decl : diag::note_defined_here)
+      OMPSema.Diag(D->getLocation(),
+                   IsDecl ? diag::note_previous_decl : diag::note_defined_here)
           << D;
       continue;
     }
@@ -9221,16 +9259,16 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
     // codegen.
     PrivateVD->setInit(RHSVD->getInit());
     PrivateVD->setInitStyle(RHSVD->getInitStyle());
-    auto *PrivateDRE = buildDeclRefExpr(*this, PrivateVD, PrivateTy, ELoc);
+    auto *PrivateDRE = buildDeclRefExpr(OMPSema, PrivateVD, PrivateTy, ELoc);
     ExprResult ReductionOp;
     if (DeclareReductionRef.isUsable()) {
       QualType RedTy = DeclareReductionRef.get()->getType();
       QualType PtrRedTy = Context.getPointerType(RedTy);
-      ExprResult LHS = CreateBuiltinUnaryOp(ELoc, UO_AddrOf, LHSDRE);
-      ExprResult RHS = CreateBuiltinUnaryOp(ELoc, UO_AddrOf, RHSDRE);
+      ExprResult LHS = OMPSema.CreateBuiltinUnaryOp(ELoc, UO_AddrOf, LHSDRE);
+      ExprResult RHS = OMPSema.CreateBuiltinUnaryOp(ELoc, UO_AddrOf, RHSDRE);
       if (!BasePath.empty()) {
-        LHS = DefaultLvalueConversion(LHS.get());
-        RHS = DefaultLvalueConversion(RHS.get());
+        LHS = OMPSema.DefaultLvalueConversion(LHS.get());
+        RHS = OMPSema.DefaultLvalueConversion(RHS.get());
         LHS = ImplicitCastExpr::Create(Context, PtrRedTy,
                                        CK_UncheckedDerivedToBase, LHS.get(),
                                        &BasePath, LHS.get()->getValueKind());
@@ -9243,27 +9281,28 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
       QualType FnTy = Context.getFunctionType(Context.VoidTy, Params, EPI);
       auto *OVE = new (Context) OpaqueValueExpr(
           ELoc, Context.getPointerType(FnTy), VK_RValue, OK_Ordinary,
-          DefaultLvalueConversion(DeclareReductionRef.get()).get());
+          OMPSema.DefaultLvalueConversion(DeclareReductionRef.get()).get());
       Expr *Args[] = {LHS.get(), RHS.get()};
       ReductionOp = new (Context)
           CallExpr(Context, OVE, Args, Context.VoidTy, VK_RValue, ELoc);
     } else {
-      ReductionOp = BuildBinOp(DSAStack->getCurScope(),
-                               ReductionId.getLocStart(), BOK, LHSDRE, RHSDRE);
+      ReductionOp =
+          OMPSema.BuildBinOp(InDSAStack->getCurScope(),
+                             ReductionId.getLocStart(), BOK, LHSDRE, RHSDRE);
       if (ReductionOp.isUsable()) {
         if (BOK != BO_LT && BOK != BO_GT) {
-          ReductionOp =
-              BuildBinOp(DSAStack->getCurScope(), ReductionId.getLocStart(),
-                         BO_Assign, LHSDRE, ReductionOp.get());
+          ReductionOp = OMPSema.BuildBinOp(InDSAStack->getCurScope(),
+                                           ReductionId.getLocStart(), BO_Assign,
+                                           LHSDRE, ReductionOp.get());
         } else {
           auto *ConditionalOp = new (Context) ConditionalOperator(
               ReductionOp.get(), SourceLocation(), LHSDRE, SourceLocation(),
               RHSDRE, Type, VK_LValue, OK_Ordinary);
-          ReductionOp =
-              BuildBinOp(DSAStack->getCurScope(), ReductionId.getLocStart(),
-                         BO_Assign, LHSDRE, ConditionalOp);
+          ReductionOp = OMPSema.BuildBinOp(InDSAStack->getCurScope(),
+                                           ReductionId.getLocStart(), BO_Assign,
+                                           LHSDRE, ConditionalOp);
         }
-        ReductionOp = ActOnFinishFullExpr(ReductionOp.get());
+        ReductionOp = OMPSema.ActOnFinishFullExpr(ReductionOp.get());
       }
       if (ReductionOp.isInvalid())
         continue;
@@ -9273,37 +9312,57 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
     Expr *VarsExpr = RefExpr->IgnoreParens();
     if (!VD && !CurContext->isDependentContext()) {
       if (ASE || OASE) {
-        TransformExprToCaptures RebuildToCapture(*this, D);
+        TransformExprToCaptures RebuildToCapture(OMPSema, D);
         VarsExpr =
             RebuildToCapture.TransformExpr(RefExpr->IgnoreParens()).get();
         Ref = RebuildToCapture.getCapturedExpr();
       } else {
         VarsExpr = Ref =
-            buildCapture(*this, D, SimpleRefExpr, /*WithInit=*/false);
+            buildCapture(OMPSema, D, SimpleRefExpr, /*WithInit=*/false);
       }
-      if (!IsOpenMPCapturedDecl(D)) {
+      if (!OMPSema.IsOpenMPCapturedDecl(D)) {
         ExprCaptures.push_back(Ref->getDecl());
         if (Ref->getDecl()->hasAttr<OMPCaptureNoInitAttr>()) {
-          ExprResult RefRes = DefaultLvalueConversion(Ref);
+          ExprResult RefRes = OMPSema.DefaultLvalueConversion(Ref);
           if (!RefRes.isUsable())
             continue;
           ExprResult PostUpdateRes =
-              BuildBinOp(DSAStack->getCurScope(), ELoc, BO_Assign,
-                         SimpleRefExpr, RefRes.get());
+              OMPSema.BuildBinOp(InDSAStack->getCurScope(), ELoc, BO_Assign,
+                                 SimpleRefExpr, RefRes.get());
           if (!PostUpdateRes.isUsable())
             continue;
           ExprPostUpdates.push_back(
-              IgnoredValueConversions(PostUpdateRes.get()).get());
+              OMPSema.IgnoredValueConversions(PostUpdateRes.get()).get());
         }
       }
     }
-    DSAStack->addDSA(D, RefExpr->IgnoreParens(), OMPC_reduction, Ref);
+    InDSAStack->addDSA(D, RefExpr->IgnoreParens(), OMPC_reduction, Ref);
     Vars.push_back(VarsExpr);
     Privates.push_back(PrivateDRE);
     LHSs.push_back(LHSDRE);
     RHSs.push_back(RHSDRE);
     ReductionOps.push_back(ReductionOp.get());
   }
+}
+
+OMPClause *Sema::ActOnOpenMPReductionClause(
+    ArrayRef<Expr *> VarList, SourceLocation StartLoc, SourceLocation LParenLoc,
+    SourceLocation ColonLoc, SourceLocation EndLoc,
+    CXXScopeSpec &ReductionIdScopeSpec, const DeclarationNameInfo &ReductionId,
+    ArrayRef<Expr *> UnresolvedReductions) {
+
+  SmallVector<Expr *, 8> Vars;
+  SmallVector<Expr *, 8> Privates;
+  SmallVector<Expr *, 8> LHSs;
+  SmallVector<Expr *, 8> RHSs;
+  SmallVector<Expr *, 8> ReductionOps;
+  SmallVector<Decl *, 4> ExprCaptures;
+  SmallVector<Expr *, 4> ExprPostUpdates;
+
+  CheckOMPReductionTypeClause(
+      *this, Context, CurContext, getLangOpts(), DSAStack, VarList,
+      ReductionIdScopeSpec, ReductionId, UnresolvedReductions, Vars, Privates,
+      LHSs, RHSs, ReductionOps, ExprCaptures, ExprPostUpdates);
 
   if (Vars.empty())
     return nullptr;
@@ -11287,11 +11346,72 @@ OMPClause *Sema::ActOnOpenMPDefaultmapClause(
       OMPDefaultmapClause(StartLoc, LParenLoc, MLoc, KindLoc, EndLoc, Kind, M);
 }
 
+OMPClause *Sema::ActOnOpenMPTaskReductionClause(
+    ArrayRef<Expr *> VarList, SourceLocation StartLoc, SourceLocation LParenLoc,
+    SourceLocation ColonLoc, SourceLocation EndLoc,
+    CXXScopeSpec &ReductionIdScopeSpec, const DeclarationNameInfo &ReductionId,
+    ArrayRef<Expr *> UnresolvedReductions) {
+
+  SmallVector<Expr *, 8> Vars;
+  SmallVector<Expr *, 8> Privates;
+  SmallVector<Expr *, 8> LHSs;
+  SmallVector<Expr *, 8> RHSs;
+  SmallVector<Expr *, 8> ReductionOps;
+  SmallVector<Decl *, 4> ExprCaptures;
+  SmallVector<Expr *, 4> ExprPostUpdates;
+
+  CheckOMPReductionTypeClause(
+      *this, Context, CurContext, getLangOpts(), DSAStack, VarList,
+      ReductionIdScopeSpec, ReductionId, UnresolvedReductions, Vars, Privates,
+      LHSs, RHSs, ReductionOps, ExprCaptures, ExprPostUpdates);
+
+  if (Vars.empty())
+    return nullptr;
+
+  return OMPTaskReductionClause::Create(
+      Context, StartLoc, LParenLoc, ColonLoc, EndLoc, Vars,
+      ReductionIdScopeSpec.getWithLocInContext(Context), ReductionId, Privates,
+      LHSs, RHSs, ReductionOps, buildPreInits(Context, ExprCaptures),
+      buildPostUpdate(*this, ExprPostUpdates));
+}
+
+OMPClause *Sema::ActOnOpenMPInReductionClause(
+    ArrayRef<Expr *> VarList, SourceLocation StartLoc, SourceLocation LParenLoc,
+    SourceLocation ColonLoc, SourceLocation EndLoc,
+    CXXScopeSpec &ReductionIdScopeSpec, const DeclarationNameInfo &ReductionId,
+    ArrayRef<Expr *> UnresolvedReductions) {
+
+  SmallVector<Expr *, 8> Vars;
+  SmallVector<Expr *, 8> Privates;
+  SmallVector<Expr *, 8> LHSs;
+  SmallVector<Expr *, 8> RHSs;
+  SmallVector<Expr *, 8> ReductionOps;
+  SmallVector<Decl *, 4> ExprCaptures;
+  SmallVector<Expr *, 4> ExprPostUpdates;
+
+  CheckOMPReductionTypeClause(
+      *this, Context, CurContext, getLangOpts(), DSAStack, VarList,
+      ReductionIdScopeSpec, ReductionId, UnresolvedReductions, Vars, Privates,
+      LHSs, RHSs, ReductionOps, ExprCaptures, ExprPostUpdates);
+
+  // TODO: add restriction specific to InReduction and not other reduction types
+
+  if (Vars.empty())
+    return nullptr;
+
+  return OMPInReductionClause::Create(
+      Context, StartLoc, LParenLoc, ColonLoc, EndLoc, Vars,
+      ReductionIdScopeSpec.getWithLocInContext(Context), ReductionId, Privates,
+      LHSs, RHSs, ReductionOps, buildPreInits(Context, ExprCaptures),
+      buildPostUpdate(*this, ExprPostUpdates));
+}
+
 bool Sema::ActOnStartOpenMPDeclareTargetDirective(SourceLocation Loc) {
   DeclContext *CurLexicalContext = getCurLexicalContext();
   if (!CurLexicalContext->isFileContext() &&
       !CurLexicalContext->isExternCContext() &&
-      !CurLexicalContext->isExternCXXContext()) {
+      !CurLexicalContext->isExternCXXContext() &&
+      !(isa<CXXRecordDecl>(CurLexicalContext))) {
     Diag(Loc, diag::err_omp_region_not_file_context);
     return false;
   }

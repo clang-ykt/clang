@@ -720,10 +720,19 @@ enum OpenMPRTLFunction {
   // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
   // *arg_types);
   OMPRTL__tgt_target,
-  // Call to int32_t __tgt_target_teams(int64_t device_id, void *host_ptr,
+  // Call to int32_t __tgt_target_nowait(int64_t device_id, void *host_ptr,
   // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
-  // int64_t *arg_types, int32_t num_teams, int32_t thread_limit);
+  // int64_t *arg_types);
+  OMPRTL__tgt_target_nowait,
+  // Call to int32_t __tgt_target_teams(int64_t device_id, void *host_ptr,
+  // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+  // *arg_types, int32_t num_teams, int32_t thread_limit);
   OMPRTL__tgt_target_teams,
+  // Call to int32_t __tgt_target_teams_nowait(int64_t device_id,
+  // void *host_ptr, int32_t arg_num, void** args_base, void **args,
+  // size_t *arg_sizes, int64_t *arg_types, int32_t num_teams,
+  // int32_t thread_limit);
+  OMPRTL__tgt_target_teams_nowait,
   // Call to void __tgt_register_lib(__tgt_bin_desc *desc);
   OMPRTL__tgt_register_lib,
   // Call to void __tgt_unregister_lib(__tgt_bin_desc *desc);
@@ -731,12 +740,21 @@ enum OpenMPRTLFunction {
   // Call to void __tgt_target_data_begin(int64_t device_id, int32_t arg_num,
   // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
   OMPRTL__tgt_target_data_begin,
+  // Call to void __tgt_target_data_begin_nowait(int64_t device_id, int32_t
+  // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+  OMPRTL__tgt_target_data_begin_nowait,
   // Call to void __tgt_target_data_end(int64_t device_id, int32_t arg_num,
   // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
   OMPRTL__tgt_target_data_end,
+  // Call to void __tgt_target_data_end_nowait(int64_t device_id, int32_t
+  // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+  OMPRTL__tgt_target_data_end_nowait,
   // Call to void __tgt_target_data_update(int64_t device_id, int32_t arg_num,
-  // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+   // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
   OMPRTL__tgt_target_data_update,
+  // Call to void __tgt_target_data_update_nowait(int64_t device_id, int32_t
+  // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+  OMPRTL__tgt_target_data_update_nowait,
 };
 
 /// A basic class for pre|post-action for advanced codegen sequence for OpenMP
@@ -828,9 +846,9 @@ emitCombinerOrInitializer(CodeGenModule &CGM, QualType Ty,
   QualType PtrTy = C.getPointerType(Ty).withRestrict();
   FunctionArgList Args;
   ImplicitParamDecl OmpOutParm(C, /*DC=*/nullptr, Out->getLocation(),
-                               /*Id=*/nullptr, PtrTy);
+                               /*Id=*/nullptr, PtrTy, ImplicitParamDecl::Other);
   ImplicitParamDecl OmpInParm(C, /*DC=*/nullptr, In->getLocation(),
-                              /*Id=*/nullptr, PtrTy);
+                              /*Id=*/nullptr, PtrTy, ImplicitParamDecl::Other);
   Args.push_back(&OmpOutParm);
   Args.push_back(&OmpInParm);
   auto &FnInfo =
@@ -1730,6 +1748,42 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
     RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_teams");
     break;
   }
+  case OMPRTL__tgt_target_nowait: {
+    // Build int32_t __tgt_target_nowait(int64_t device_id, void *host_ptr,
+    // int32_t
+    // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+    // *arg_types);
+    llvm::Type *TypeParams[] = {CGM.Int64Ty,
+                                CGM.VoidPtrTy,
+                                CGM.Int32Ty,
+                                CGM.VoidPtrPtrTy,
+                                CGM.VoidPtrPtrTy,
+                                CGM.SizeTy->getPointerTo(),
+                                CGM.Int64Ty->getPointerTo()};
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.Int32Ty, TypeParams, /*isVarArg*/ false);
+    RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_nowait");
+    break;
+  }
+  case OMPRTL__tgt_target_teams_nowait: {
+    // Build int32_t __tgt_target_teams_nowait(int64_t device_id, void
+    // *host_ptr,
+    // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
+    // int64_t *arg_types, int32_t num_teams, int32_t thread_limit);
+    llvm::Type *TypeParams[] = {CGM.Int64Ty,
+                                CGM.VoidPtrTy,
+                                CGM.Int32Ty,
+                                CGM.VoidPtrPtrTy,
+                                CGM.VoidPtrPtrTy,
+                                CGM.SizeTy->getPointerTo(),
+                                CGM.Int64Ty->getPointerTo(),
+                                CGM.Int32Ty,
+                                CGM.Int32Ty};
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.Int32Ty, TypeParams, /*isVarArg*/ false);
+    RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_teams_nowait");
+    break;
+  }
   case OMPRTL__tgt_register_lib: {
     // Build void __tgt_register_lib(__tgt_bin_desc *desc);
     QualType ParamTy =
@@ -1764,6 +1818,21 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
     RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_begin");
     break;
   }
+  case OMPRTL__tgt_target_data_begin_nowait: {
+    // Build void __tgt_target_data_begin_nowait(int64_t device_id, int32_t
+    // arg_num,
+    // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+    llvm::Type *TypeParams[] = {CGM.Int64Ty,
+                                CGM.Int32Ty,
+                                CGM.VoidPtrPtrTy,
+                                CGM.VoidPtrPtrTy,
+                                CGM.SizeTy->getPointerTo(),
+                                CGM.Int64Ty->getPointerTo()};
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+    RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_begin_nowait");
+    break;
+  }
   case OMPRTL__tgt_target_data_end: {
     // Build void __tgt_target_data_end(int64_t device_id, int32_t arg_num,
     // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
@@ -1778,6 +1847,21 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
     RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_end");
     break;
   }
+  case OMPRTL__tgt_target_data_end_nowait: {
+    // Build void __tgt_target_data_end_nowait(int64_t device_id, int32_t
+    // arg_num,
+    // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+    llvm::Type *TypeParams[] = {CGM.Int64Ty,
+                                CGM.Int32Ty,
+                                CGM.VoidPtrPtrTy,
+                                CGM.VoidPtrPtrTy,
+                                CGM.SizeTy->getPointerTo(),
+                                CGM.Int64Ty->getPointerTo()};
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+    RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_end_nowait");
+    break;
+  }
   case OMPRTL__tgt_target_data_update: {
     // Build void __tgt_target_data_update(int64_t device_id, int32_t arg_num,
     // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
@@ -1790,6 +1874,21 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
     llvm::FunctionType *FnTy =
         llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
     RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_update");
+    break;
+  }
+  case OMPRTL__tgt_target_data_update_nowait: {
+    // Build void __tgt_target_data_update_nowait(int64_t device_id, int32_t
+    // arg_num,
+    // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+    llvm::Type *TypeParams[] = {CGM.Int64Ty,
+                                CGM.Int32Ty,
+                                CGM.VoidPtrPtrTy,
+                                CGM.VoidPtrPtrTy,
+                                CGM.SizeTy->getPointerTo(),
+                                CGM.Int64Ty->getPointerTo()};
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+    RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_update_nowait");
     break;
   }
   }
@@ -1950,8 +2049,8 @@ llvm::Function *CGOpenMPRuntime::emitThreadPrivateVarDefinition(
       // threadprivate copy of the variable VD
       CodeGenFunction CtorCGF(CGM);
       FunctionArgList Args;
-      ImplicitParamDecl Dst(CGM.getContext(), /*DC=*/nullptr, SourceLocation(),
-                            /*Id=*/nullptr, CGM.getContext().VoidPtrTy);
+      ImplicitParamDecl Dst(CGM.getContext(), CGM.getContext().VoidPtrTy,
+                            ImplicitParamDecl::Other);
       Args.push_back(&Dst);
 
       auto &FI = CGM.getTypes().arrangeBuiltinFunctionDeclaration(
@@ -1981,8 +2080,8 @@ llvm::Function *CGOpenMPRuntime::emitThreadPrivateVarDefinition(
       // of the variable VD
       CodeGenFunction DtorCGF(CGM);
       FunctionArgList Args;
-      ImplicitParamDecl Dst(CGM.getContext(), /*DC=*/nullptr, SourceLocation(),
-                            /*Id=*/nullptr, CGM.getContext().VoidPtrTy);
+      ImplicitParamDecl Dst(CGM.getContext(), CGM.getContext().VoidPtrTy,
+                            ImplicitParamDecl::Other);
       Args.push_back(&Dst);
 
       auto &FI = CGM.getTypes().arrangeBuiltinFunctionDeclaration(
@@ -2337,10 +2436,8 @@ static llvm::Value *emitCopyprivateCopyFunction(
   auto &C = CGM.getContext();
   // void copy_func(void *LHSArg, void *RHSArg);
   FunctionArgList Args;
-  ImplicitParamDecl LHSArg(C, /*DC=*/nullptr, SourceLocation(), /*Id=*/nullptr,
-                           C.VoidPtrTy);
-  ImplicitParamDecl RHSArg(C, /*DC=*/nullptr, SourceLocation(), /*Id=*/nullptr,
-                           C.VoidPtrTy);
+  ImplicitParamDecl LHSArg(C, C.VoidPtrTy, ImplicitParamDecl::Other);
+  ImplicitParamDecl RHSArg(C, C.VoidPtrTy, ImplicitParamDecl::Other);
   Args.push_back(&LHSArg);
   Args.push_back(&RHSArg);
   auto &CGFI = CGM.getTypes().arrangeBuiltinFunctionDeclaration(C.VoidTy, Args);
@@ -3082,8 +3179,7 @@ createOffloadingHelperFunction(CodeGenModule &CGM, StringRef Name,
                                const RegionCodeGenTy &Codegen) {
   auto &C = CGM.getContext();
   FunctionArgList Args;
-  ImplicitParamDecl DummyPtr(C, /*DC=*/nullptr, SourceLocation(),
-                             /*Id=*/nullptr, C.VoidPtrTy);
+  ImplicitParamDecl DummyPtr(C, C.VoidPtrTy, ImplicitParamDecl::Other);
   if (RequiresArgument)
     Args.push_back(&DummyPtr);
 
@@ -3187,7 +3283,7 @@ CGOpenMPRuntime::createOffloadingBinaryDescriptorRegistration() {
   // descriptor, so we can reuse the logic that emits Ctors and Dtors.
   auto *IdentInfo = &C.Idents.get(".omp_offloading.reg_unreg_var");
   ImplicitParamDecl RegUnregVar(C, C.getTranslationUnitDecl(), SourceLocation(),
-                                IdentInfo, C.CharTy);
+                                IdentInfo, C.CharTy, ImplicitParamDecl::Other);
 
   auto *UnRegFn = createOffloadingHelperFunction(
       CGM, ".omp_offloading.descriptor_unreg", /*RequiresArgument=*/true,
@@ -3688,10 +3784,11 @@ emitProxyTaskFunction(CodeGenModule &CGM, SourceLocation Loc,
                       llvm::Value *TaskPrivatesMap) {
   auto &C = CGM.getContext();
   FunctionArgList Args;
-  ImplicitParamDecl GtidArg(C, /*DC=*/nullptr, Loc, /*Id=*/nullptr, KmpInt32Ty);
-  ImplicitParamDecl TaskTypeArg(C, /*DC=*/nullptr, Loc,
-                                /*Id=*/nullptr,
-                                KmpTaskTWithPrivatesPtrQTy.withRestrict());
+  ImplicitParamDecl GtidArg(C, /*DC=*/nullptr, Loc, /*Id=*/nullptr, KmpInt32Ty,
+                            ImplicitParamDecl::Other);
+  ImplicitParamDecl TaskTypeArg(C, /*DC=*/nullptr, Loc, /*Id=*/nullptr,
+                                KmpTaskTWithPrivatesPtrQTy.withRestrict(),
+                                ImplicitParamDecl::Other);
   Args.push_back(&GtidArg);
   Args.push_back(&TaskTypeArg);
   auto &TaskEntryFnInfo =
@@ -3782,10 +3879,11 @@ static llvm::Value *emitDestructorsFunction(CodeGenModule &CGM,
                                             QualType KmpTaskTWithPrivatesQTy) {
   auto &C = CGM.getContext();
   FunctionArgList Args;
-  ImplicitParamDecl GtidArg(C, /*DC=*/nullptr, Loc, /*Id=*/nullptr, KmpInt32Ty);
-  ImplicitParamDecl TaskTypeArg(C, /*DC=*/nullptr, Loc,
-                                /*Id=*/nullptr,
-                                KmpTaskTWithPrivatesPtrQTy.withRestrict());
+  ImplicitParamDecl GtidArg(C, /*DC=*/nullptr, Loc, /*Id=*/nullptr, KmpInt32Ty,
+                            ImplicitParamDecl::Other);
+  ImplicitParamDecl TaskTypeArg(C, /*DC=*/nullptr, Loc, /*Id=*/nullptr,
+                                KmpTaskTWithPrivatesPtrQTy.withRestrict(),
+                                ImplicitParamDecl::Other);
   Args.push_back(&GtidArg);
   Args.push_back(&TaskTypeArg);
   FunctionType::ExtInfo Info;
@@ -3841,36 +3939,40 @@ emitTaskPrivateMappingFunction(CodeGenModule &CGM, SourceLocation Loc,
   FunctionArgList Args;
   ImplicitParamDecl TaskPrivatesArg(
       C, /*DC=*/nullptr, Loc, /*Id=*/nullptr,
-      C.getPointerType(PrivatesQTy).withConst().withRestrict());
+      C.getPointerType(PrivatesQTy).withConst().withRestrict(),
+      ImplicitParamDecl::Other);
   Args.push_back(&TaskPrivatesArg);
   llvm::DenseMap<const VarDecl *, unsigned> PrivateVarsPos;
   unsigned Counter = 1;
   for (auto *E: PrivateVars) {
     Args.push_back(ImplicitParamDecl::Create(
-        C, /*DC=*/nullptr, Loc,
-        /*Id=*/nullptr, C.getPointerType(C.getPointerType(E->getType()))
-                            .withConst()
-                            .withRestrict()));
+        C, /*DC=*/nullptr, Loc, /*Id=*/nullptr,
+        C.getPointerType(C.getPointerType(E->getType()))
+            .withConst()
+            .withRestrict(),
+        ImplicitParamDecl::Other));
     auto *VD = cast<VarDecl>(cast<DeclRefExpr>(E)->getDecl());
     PrivateVarsPos[VD] = Counter;
     ++Counter;
   }
   for (auto *E : FirstprivateVars) {
     Args.push_back(ImplicitParamDecl::Create(
-        C, /*DC=*/nullptr, Loc,
-        /*Id=*/nullptr, C.getPointerType(C.getPointerType(E->getType()))
-                            .withConst()
-                            .withRestrict()));
+        C, /*DC=*/nullptr, Loc, /*Id=*/nullptr,
+        C.getPointerType(C.getPointerType(E->getType()))
+            .withConst()
+            .withRestrict(),
+        ImplicitParamDecl::Other));
     auto *VD = cast<VarDecl>(cast<DeclRefExpr>(E)->getDecl());
     PrivateVarsPos[VD] = Counter;
     ++Counter;
   }
   for (auto *E: LastprivateVars) {
     Args.push_back(ImplicitParamDecl::Create(
-        C, /*DC=*/nullptr, Loc,
-        /*Id=*/nullptr, C.getPointerType(C.getPointerType(E->getType()))
-                            .withConst()
-                            .withRestrict()));
+        C, /*DC=*/nullptr, Loc, /*Id=*/nullptr,
+        C.getPointerType(C.getPointerType(E->getType()))
+            .withConst()
+            .withRestrict(),
+        ImplicitParamDecl::Other));
     auto *VD = cast<VarDecl>(cast<DeclRefExpr>(E)->getDecl());
     PrivateVarsPos[VD] = Counter;
     ++Counter;
@@ -4027,12 +4129,14 @@ emitTaskDupFunction(CodeGenModule &CGM, SourceLocation Loc,
                     ArrayRef<PrivateDataTy> Privates, bool WithLastIter) {
   auto &C = CGM.getContext();
   FunctionArgList Args;
-  ImplicitParamDecl DstArg(C, /*DC=*/nullptr, Loc,
-                           /*Id=*/nullptr, KmpTaskTWithPrivatesPtrQTy);
-  ImplicitParamDecl SrcArg(C, /*DC=*/nullptr, Loc,
-                           /*Id=*/nullptr, KmpTaskTWithPrivatesPtrQTy);
-  ImplicitParamDecl LastprivArg(C, /*DC=*/nullptr, Loc,
-                                /*Id=*/nullptr, C.IntTy);
+  ImplicitParamDecl DstArg(C, /*DC=*/nullptr, Loc, /*Id=*/nullptr,
+                           KmpTaskTWithPrivatesPtrQTy,
+                           ImplicitParamDecl::Other);
+  ImplicitParamDecl SrcArg(C, /*DC=*/nullptr, Loc, /*Id=*/nullptr,
+                           KmpTaskTWithPrivatesPtrQTy,
+                           ImplicitParamDecl::Other);
+  ImplicitParamDecl LastprivArg(C, /*DC=*/nullptr, Loc, /*Id=*/nullptr, C.IntTy,
+                                ImplicitParamDecl::Other);
   Args.push_back(&DstArg);
   Args.push_back(&SrcArg);
   Args.push_back(&LastprivArg);
@@ -4646,10 +4750,8 @@ llvm::Value *CGOpenMPRuntime::emitReductionFunction(
 
   // void reduction_func(void *LHSArg, void *RHSArg);
   FunctionArgList Args;
-  ImplicitParamDecl LHSArg(C, /*DC=*/nullptr, SourceLocation(), /*Id=*/nullptr,
-                           C.VoidPtrTy);
-  ImplicitParamDecl RHSArg(C, /*DC=*/nullptr, SourceLocation(), /*Id=*/nullptr,
-                           C.VoidPtrTy);
+  ImplicitParamDecl LHSArg(C, C.VoidPtrTy, ImplicitParamDecl::Other);
+  ImplicitParamDecl RHSArg(C, C.VoidPtrTy, ImplicitParamDecl::Other);
   Args.push_back(&LHSArg);
   Args.push_back(&RHSArg);
   auto &CGFI = CGM.getTypes().arrangeBuiltinFunctionDeclaration(C.VoidTy, Args);
@@ -6122,7 +6224,7 @@ public:
     // We have to process the component lists that relate with the same
     // declaration in a single chunk so that we can generate the map flags
     // correctly. Therefore, we organize all lists in a map.
-    llvm::DenseMap<const ValueDecl *, SmallVector<MapInfo, 8>> Info;
+    llvm::MapVector<const ValueDecl *, SmallVector<MapInfo, 8>> Info;
 
     // Helper function to fill the information map for the different supported
     // clauses.
@@ -6472,16 +6574,11 @@ emitOffloadingArrays(CodeGenFunction &CGF,
 
     for (unsigned i = 0; i < Info.NumberOfPtrs; ++i) {
       llvm::Value *BPVal = *BasePointers[i];
-      if (BPVal->getType()->isPointerTy())
-        BPVal = CGF.Builder.CreateBitCast(BPVal, CGM.VoidPtrTy);
-      else {
-        assert(BPVal->getType()->isIntegerTy() &&
-               "If not a pointer, the value type must be an integer.");
-        BPVal = CGF.Builder.CreateIntToPtr(BPVal, CGM.VoidPtrTy);
-      }
       llvm::Value *BP = CGF.Builder.CreateConstInBoundsGEP2_32(
           llvm::ArrayType::get(CGM.VoidPtrTy, Info.NumberOfPtrs),
           Info.BasePointersArray, 0, i);
+      BP = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
+          BP, BPVal->getType()->getPointerTo(/*AddrSpace=*/0));
       Address BPAddr(BP, Ctx.getTypeAlignInChars(Ctx.VoidPtrTy));
       CGF.Builder.CreateStore(BPVal, BPAddr);
 
@@ -6490,16 +6587,11 @@ emitOffloadingArrays(CodeGenFunction &CGF,
           Info.CaptureDeviceAddrMap.insert(std::make_pair(DevVD, BPAddr));
 
       llvm::Value *PVal = Pointers[i];
-      if (PVal->getType()->isPointerTy())
-        PVal = CGF.Builder.CreateBitCast(PVal, CGM.VoidPtrTy);
-      else {
-        assert(PVal->getType()->isIntegerTy() &&
-               "If not a pointer, the value type must be an integer.");
-        PVal = CGF.Builder.CreateIntToPtr(PVal, CGM.VoidPtrTy);
-      }
       llvm::Value *P = CGF.Builder.CreateConstInBoundsGEP2_32(
           llvm::ArrayType::get(CGM.VoidPtrTy, Info.NumberOfPtrs),
           Info.PointersArray, 0, i);
+      P = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
+          P, PVal->getType()->getPointerTo(/*AddrSpace=*/0));
       Address PAddr(P, Ctx.getTypeAlignInChars(Ctx.VoidPtrTy));
       CGF.Builder.CreateStore(PVal, PAddr);
 
@@ -6700,6 +6792,9 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
 
   assert(OutlinedFn && "Invalid outlined function!");
 
+  // Check if directive has nowait clause
+  bool hasNowait = D.hasClausesOfKind<OMPNowaitClause>();
+
   auto &Ctx = CGF.getContext();
 
   // Fill up the arrays with all the captured variables.
@@ -6813,8 +6908,8 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
 
   // Fill up the pointer arrays and transfer execution to the device.
   auto &&ThenGen = [&Ctx, &BasePointers, &Pointers, &Sizes, &MapTypes, Device,
-                    OutlinedFnID, OffloadError, OffloadErrorQType,
-                    &D](CodeGenFunction &CGF, PrePostActionTy &) {
+                    OutlinedFnID, OffloadError, OffloadErrorQType, &D,
+                    hasNowait](CodeGenFunction &CGF, PrePostActionTy &) {
     auto &RT = CGF.CGM.getOpenMPRuntime();
     // Emit the offloading arrays.
     TargetDataInfo Info;
@@ -6867,16 +6962,26 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
           Info.PointersArray, Info.SizesArray,
           Info.MapTypesArray, NumTeams,
           ThreadLimit};
-      Return = CGF.EmitRuntimeCall(
-          RT.createRuntimeFunction(OMPRTL__tgt_target_teams), OffloadingArgs);
+      if (hasNowait)
+        Return = CGF.EmitRuntimeCall(
+            RT.createRuntimeFunction(OMPRTL__tgt_target_teams_nowait),
+            OffloadingArgs);
+      else
+        Return = CGF.EmitRuntimeCall(
+            RT.createRuntimeFunction(OMPRTL__tgt_target_teams), OffloadingArgs);
     } else {
       llvm::Value *OffloadingArgs[] = {
           DeviceID,           OutlinedFnID,
           PointerNum,         Info.BasePointersArray,
           Info.PointersArray, Info.SizesArray,
           Info.MapTypesArray};
-      Return = CGF.EmitRuntimeCall(RT.createRuntimeFunction(OMPRTL__tgt_target),
-                                   OffloadingArgs);
+      if (hasNowait)
+        Return = CGF.EmitRuntimeCall(
+            RT.createRuntimeFunction(OMPRTL__tgt_target_nowait),
+            OffloadingArgs);
+      else
+        Return = CGF.EmitRuntimeCall(
+            RT.createRuntimeFunction(OMPRTL__tgt_target), OffloadingArgs);
     }
 
     CGF.EmitStoreOfScalar(Return, OffloadError);
@@ -7021,10 +7126,10 @@ bool CGOpenMPRuntime::emitTargetFunctions(GlobalDecl GD) {
   if (!CGM.getLangOpts().OpenMPIsDevice)
     return false;
 
-  // Emit this function normally if it is a device function.
-  if (OffloadEntriesInfoManager.hasDeviceFunctionEntryInfo(
-          CGM.getMangledName(GD)))
-    return false;
+  // Emit this function normally if it is a device function, but still scan the
+  // function in case if it is marked as 'declare target'.
+  bool EmitNormally = !OffloadEntriesInfoManager.hasDeviceFunctionEntryInfo(
+      CGM.getMangledName(GD));
 
   // Try to detect target regions in the function.
   scanForTargetRegionsFunctions(FD.getBody(), CGM.getMangledName(GD));
@@ -7032,7 +7137,7 @@ bool CGOpenMPRuntime::emitTargetFunctions(GlobalDecl GD) {
   // We should not emit any function other that the ones created during the
   // scanning. Therefore, we signal that this function is completely dealt
   // with.
-  return true;
+  return EmitNormally;
 }
 
 bool CGOpenMPRuntime::emitTargetGlobalVariable(GlobalDecl GD) {
@@ -7594,6 +7699,7 @@ void CGOpenMPRuntime::emitTargetDataCalls(
     CGF.EmitRuntimeCall(RT.createRuntimeFunction(OMPRTL__tgt_target_data_begin),
                         OffloadingArgs);
 
+
     // If device pointer privatization is required, emit the body of the region
     // here. It will have to be duplicated: with and without privatization.
     if (!Info.CaptureDeviceAddrMap.empty())
@@ -7728,18 +7834,29 @@ void CGOpenMPRuntime::emitTargetDataStandAloneCall(
     // Select the right runtime function call for each expected standalone
     // directive.
     OpenMPRTLFunction RTLFn;
+    // Check if directive has nowait clause
+    bool hasNowait = D.hasClausesOfKind<OMPNowaitClause>();
     switch (D.getDirectiveKind()) {
     default:
       llvm_unreachable("Unexpected standalone target data directive.");
       break;
     case OMPD_target_enter_data:
-      RTLFn = OMPRTL__tgt_target_data_begin;
+      if (hasNowait)
+        RTLFn = OMPRTL__tgt_target_data_begin_nowait;
+      else
+        RTLFn = OMPRTL__tgt_target_data_begin;
       break;
     case OMPD_target_exit_data:
-      RTLFn = OMPRTL__tgt_target_data_end;
+      if (hasNowait)
+        RTLFn = OMPRTL__tgt_target_data_end_nowait;
+      else
+        RTLFn = OMPRTL__tgt_target_data_end;
       break;
     case OMPD_target_update:
-      RTLFn = OMPRTL__tgt_target_data_update;
+      if (hasNowait)
+        RTLFn = OMPRTL__tgt_target_data_update_nowait;
+      else
+        RTLFn = OMPRTL__tgt_target_data_update;
       break;
     }
     CGF.EmitRuntimeCall(RT.createRuntimeFunction(RTLFn), OffloadingArgs);

@@ -1397,6 +1397,30 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setMasterSharedDataSize() {
   }
 }
 
+static const OMPExecutableDirective *
+getTeamsDirective(const CodeGenModule &CGM, const OMPExecutableDirective &D) {
+  switch (D.getDirectiveKind()) {
+  case OMPD_target:
+  case OMPD_target_simd: {
+    const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+    if (auto *NestedDir = dyn_cast_or_null<OMPExecutableDirective>(
+            ignoreCompoundStmts(CS.getCapturedStmt())))
+      return NestedDir;
+    else
+      return &D;
+  }
+  default:
+    return &D;
+  }
+
+  return nullptr;
+}
+
+void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setHasTeamsReduction() {
+  const OMPExecutableDirective &TD = *getTeamsDirective(CGM, D);
+  HasTeamsReduction = TD.hasClausesOfKind<OMPReductionClause>();
+}
+
 void CGOpenMPRuntimeNVPTX::WorkerFunctionState::createWorkerFunction(
     CodeGenModule &CGM) {
   // Create an worker function with no arguments.
@@ -1643,6 +1667,18 @@ static void SetPropertyExecutionMode(CodeGenModule &CGM, StringRef Name,
       CGM.getModule(), CGM.Int8Ty, /*isConstant=*/true,
       llvm::GlobalValue::WeakAnyLinkage,
       llvm::ConstantInt::get(CGM.Int8Ty, Mode), Name + Twine("_exec_mode"));
+}
+
+// Create a unique global variable to indicate whether the target teams region
+// has
+// a reduction operation.
+static void SetPropertyReduction(CodeGenModule &CGM, StringRef Name,
+                                 bool HasReduction) {
+  (void)new llvm::GlobalVariable(
+      CGM.getModule(), CGM.Int8Ty, /*isConstant=*/true,
+      llvm::GlobalValue::WeakAnyLinkage,
+      llvm::ConstantInt::get(CGM.Int8Ty, HasReduction),
+      Name + Twine("_reduction"));
 }
 
 void CGOpenMPRuntimeNVPTX::emitSPMDEntryHeader(
@@ -2378,6 +2414,7 @@ void CGOpenMPRuntimeNVPTX::emitTargetOutlinedFunction(
   }
 
   SetPropertyExecutionMode(CGM, OutlinedFn->getName(), Mode);
+  SetPropertyReduction(CGM, OutlinedFn->getName(), TP.hasTeamsReduction());
 
   CGM.getContext().getDiagnostics().Report(
       D.getLocStart(),
@@ -3093,19 +3130,20 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
       Ctx.getIntTypeForBitwidth(/*DestWidth=*/32, /*Signed=*/false);
   ArgImplDecls.push_back(ImplicitParamDecl(
       Ctx, /*DC=*/nullptr, SourceLocation(),
-      &Ctx.Idents.get("data_share_saved_slot"), Ctx.getPointerType(SlotPtrTy)));
-  ArgImplDecls.push_back(
-      ImplicitParamDecl(Ctx, /*DC=*/nullptr, SourceLocation(),
-                        &Ctx.Idents.get("data_share_saved_stack"),
-                        Ctx.getPointerType(Ctx.VoidPtrTy)));
-  ArgImplDecls.push_back(
-      ImplicitParamDecl(Ctx, /*DC=*/nullptr, SourceLocation(),
-                        &Ctx.Idents.get("data_share_saved_frame"),
-                        Ctx.getPointerType(Ctx.VoidPtrTy)));
-  ArgImplDecls.push_back(
-      ImplicitParamDecl(Ctx, /*DC=*/nullptr, SourceLocation(),
-                        &Ctx.Idents.get("data_share_active_threads"),
-                        Ctx.getPointerType(Int32QTy)));
+      &Ctx.Idents.get("data_share_saved_slot"), Ctx.getPointerType(SlotPtrTy),
+      ImplicitParamDecl::Other));
+  ArgImplDecls.push_back(ImplicitParamDecl(
+      Ctx, /*DC=*/nullptr, SourceLocation(),
+      &Ctx.Idents.get("data_share_saved_stack"),
+      Ctx.getPointerType(Ctx.VoidPtrTy), ImplicitParamDecl::Other));
+  ArgImplDecls.push_back(ImplicitParamDecl(
+      Ctx, /*DC=*/nullptr, SourceLocation(),
+      &Ctx.Idents.get("data_share_saved_frame"),
+      Ctx.getPointerType(Ctx.VoidPtrTy), ImplicitParamDecl::Other));
+  ArgImplDecls.push_back(ImplicitParamDecl(
+      Ctx, /*DC=*/nullptr, SourceLocation(),
+      &Ctx.Idents.get("data_share_active_threads"),
+      Ctx.getPointerType(Int32QTy), ImplicitParamDecl::Other));
 
   auto *MasterRD = DSI.MasterRecordType->getAs<RecordType>()->getDecl();
   auto CapturesIt = DSI.CapturesValues.begin();
@@ -3135,7 +3173,7 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
       Name += ".addr";
       auto &NameID = Ctx.Idents.get(Name);
       ImplicitParamDecl D(Ctx, /*DC=*/nullptr, SourceLocation(), &NameID,
-                          Ctx.getPointerType(ArgTy));
+                          Ctx.getPointerType(ArgTy), ImplicitParamDecl::Other);
       ArgImplDecls.push_back(D);
     }
 
@@ -3143,7 +3181,7 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
     NameOrig += ".orig";
     auto &NameOrigID = Ctx.Idents.get(NameOrig);
     ImplicitParamDecl OrigD(Ctx, /*DC=*/nullptr, SourceLocation(), &NameOrigID,
-                            ArgTy);
+                            ArgTy, ImplicitParamDecl::Other);
     ArgImplDecls.push_back(OrigD);
 
     ++CapturesIt;
@@ -3444,14 +3482,11 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   QualType Int32QTy =
       Ctx.getIntTypeForBitwidth(/*DestWidth=*/32, /*Signed=*/false);
   QualType Int32PtrQTy = Ctx.getPointerType(Int32QTy);
-  ImplicitParamDecl ParallelLevelArg(Ctx, /*DC=*/nullptr, SourceLocation(),
-                                     /*Id=*/nullptr, Int16QTy);
-  ImplicitParamDecl WrapperArg(Ctx, /*DC=*/nullptr, SourceLocation(),
-                               /*Id=*/nullptr, Int32QTy);
-  ImplicitParamDecl WrapperLaneArg(Ctx, /*DC=*/nullptr, SourceLocation(),
-                                   /*Id=*/nullptr, Int32PtrQTy);
-  ImplicitParamDecl WrapperNumLanesArg(Ctx, /*DC=*/nullptr, SourceLocation(),
-                                       /*Id=*/nullptr, Int32PtrQTy);
+  ImplicitParamDecl ParallelLevelArg(Ctx, Int16QTy, ImplicitParamDecl::Other);
+  ImplicitParamDecl WrapperArg(Ctx, Int32QTy, ImplicitParamDecl::Other);
+  ImplicitParamDecl WrapperLaneArg(Ctx, Int32PtrQTy, ImplicitParamDecl::Other);
+  ImplicitParamDecl WrapperNumLanesArg(Ctx, Int32PtrQTy,
+                                       ImplicitParamDecl::Other);
   WrapperArgs.push_back(&ParallelLevelArg);
   WrapperArgs.push_back(&WrapperArg);
   if (IsSimd) {
@@ -4957,7 +4992,10 @@ StringRef CGOpenMPRuntimeNVPTX::RenameStandardFunction(StringRef name) {
 
     // temporary solution for Znam: this is how the cuda toolkit defines
     // _Znam but the header file is not properly picked up
+    // same for new and delete
     stdFuncs.insert(std::make_pair("_Znam", "malloc"));
+    stdFuncs.insert(std::make_pair("_Znwm", "malloc"));
+    stdFuncs.insert(std::make_pair("_ZdlPv", "free"));
   }
 
   // If callee is standard function, change its name
@@ -5267,20 +5305,16 @@ llvm::Value *EmitCopyToScratchpad(CodeGenModule &CGM,
   FunctionArgList Args;
 
   // ReduceData- this is the source of the copy.
-  ImplicitParamDecl ReduceDataArg(C, /*DC=*/nullptr, SourceLocation(),
-                                  /*Id=*/nullptr, C.VoidPtrTy);
+  ImplicitParamDecl ReduceDataArg(C, C.VoidPtrTy, ImplicitParamDecl::Other);
   // This is the pointer to the scratchpad array, with each element
   // storing ReduceData.
-  ImplicitParamDecl ScratchPadArg(C, /*DC=*/nullptr, SourceLocation(),
-                                  /*Id=*/nullptr, C.VoidPtrTy);
+  ImplicitParamDecl ScratchPadArg(C, C.VoidPtrTy, ImplicitParamDecl::Other);
   // This argument specifies the index into the scratchpad array,
   // typically the TeamId.
-  ImplicitParamDecl IndexArg(C, /*DC=*/nullptr, SourceLocation(),
-                             /*Id=*/nullptr, C.IntTy);
+  ImplicitParamDecl IndexArg(C, C.IntTy, ImplicitParamDecl::Other);
   // This argument specifies the row width of an element, typically
   // the number of teams.
-  ImplicitParamDecl WidthArg(C, /*DC=*/nullptr, SourceLocation(),
-                             /*Id=*/nullptr, C.IntTy);
+  ImplicitParamDecl WidthArg(C, C.IntTy, ImplicitParamDecl::Other);
   Args.push_back(&ReduceDataArg);
   Args.push_back(&ScratchPadArg);
   Args.push_back(&IndexArg);
@@ -5358,22 +5392,17 @@ llvm::Value *EmitReduceScratchpadFunction(CodeGenModule &CGM,
   FunctionArgList Args;
 
   // This is the pointer that points to ReduceData.
-  ImplicitParamDecl ReduceDataArg(C, /*DC=*/nullptr, SourceLocation(),
-                                  /*Id=*/nullptr, C.VoidPtrTy);
+  ImplicitParamDecl ReduceDataArg(C, C.VoidPtrTy, ImplicitParamDecl::Other);
   // Pointer to the scratchpad.
-  ImplicitParamDecl ScratchPadArg(C, /*DC=*/nullptr, SourceLocation(),
-                                  /*Id=*/nullptr, C.VoidPtrTy);
+  ImplicitParamDecl ScratchPadArg(C, C.VoidPtrTy, ImplicitParamDecl::Other);
   // This argument specifies the index of the ReduceData in the
   // scratchpad.
-  ImplicitParamDecl IndexArg(C, /*DC=*/nullptr, SourceLocation(),
-                             /*Id=*/nullptr, C.IntTy);
+  ImplicitParamDecl IndexArg(C, C.IntTy, ImplicitParamDecl::Other);
   // This argument specifies the row width of an element.
-  ImplicitParamDecl WidthArg(C, /*DC=*/nullptr, SourceLocation(),
-                             /*Id=*/nullptr, C.IntTy);
+  ImplicitParamDecl WidthArg(C, C.IntTy, ImplicitParamDecl::Other);
   // If should_reduce == 1, then it's load AND reduce,
   // If should_reduce == 0 (or otherwise), then it only loads (+ copy).
-  ImplicitParamDecl ShouldReduceArg(C, /*DC=*/nullptr, SourceLocation(),
-                                    /*Id=*/nullptr, C.IntTy);
+  ImplicitParamDecl ShouldReduceArg(C, C.IntTy, ImplicitParamDecl::Other);
 
   Args.push_back(&ReduceDataArg);
   Args.push_back(&ScratchPadArg);
@@ -5495,13 +5524,11 @@ static llvm::Value *EmitInterWarpCopyFunction(CodeGenModule &CGM,
   // ReduceData: thread local reduce_data.
   // At the stage of the computation when this function is called,
   // useful values reside in the first lane of every warp.
-  ImplicitParamDecl ReduceDataArg(C, /*DC=*/nullptr, SourceLocation(),
-                                  /*Id=*/nullptr, C.VoidPtrTy);
+  ImplicitParamDecl ReduceDataArg(C, C.VoidPtrTy, ImplicitParamDecl::Other);
   // WarpNum: number of warps needed to compute the entire block
   // of elements. This could be smaller than 32 for partial
   // block reduction.
-  ImplicitParamDecl WarpNumArg(C, /*DC=*/nullptr, SourceLocation(),
-                               /*Id=*/nullptr, C.IntTy);
+  ImplicitParamDecl WarpNumArg(C, C.IntTy, ImplicitParamDecl::Other);
   FunctionArgList Args;
   Args.push_back(&ReduceDataArg);
   Args.push_back(&WarpNumArg);
@@ -5733,16 +5760,12 @@ EmitShuffleAndReduceFunction(CodeGenModule &CGM,
 
   // Thread local reduce_data used to host the values of data
   // to be reduced.
-  ImplicitParamDecl ReduceDataArg(C, /*DC=*/nullptr, SourceLocation(),
-                                  /*Id=*/nullptr, C.VoidPtrTy);
+  ImplicitParamDecl ReduceDataArg(C, C.VoidPtrTy, ImplicitParamDecl::Other);
   // Current lane id, could be logical.
-  ImplicitParamDecl LaneIDArg(C, /*DC=*/nullptr, SourceLocation(),
-                              /*Id=*/nullptr, C.ShortTy);
+  ImplicitParamDecl LaneIDArg(C, C.ShortTy, ImplicitParamDecl::Other);
   // Offset of the remote source lane relative to the current lane.
-  ImplicitParamDecl OffsetArg(C, /*DC=*/nullptr, SourceLocation(),
-                              /*Id=*/nullptr, C.ShortTy);
-  ImplicitParamDecl AlgoVerArg(C, /*DC=*/nullptr, SourceLocation(),
-                               /*Id=*/nullptr, C.ShortTy);
+  ImplicitParamDecl OffsetArg(C, C.ShortTy, ImplicitParamDecl::Other);
+  ImplicitParamDecl AlgoVerArg(C, C.ShortTy, ImplicitParamDecl::Other);
 
   FunctionArgList Args;
   Args.push_back(&ReduceDataArg);
@@ -5889,6 +5912,13 @@ void CGOpenMPRuntimeNVPTX::emitReduction(
     OpenMPDirectiveKind ReductionKind) {
   if (!CGF.HaveInsertPoint())
     return;
+
+  if (SimpleReduction) {
+    CGOpenMPRuntime::emitReduction(CGF, Loc, Privates, LHSExprs, RHSExprs,
+                                   ReductionOps, WithNowait, SimpleReduction,
+                                   ReductionKind);
+    return;
+  }
 
   bool TeamsReduction = isOpenMPTeamsDirective(ReductionKind);
   bool ParallelReduction = isOpenMPParallelDirective(ReductionKind);

@@ -1022,6 +1022,8 @@ def err_omp_unknown_map_type_modifier : Error<
   "incorrect map type modifier, expected 'always'">;
 def err_omp_map_type_missing : Error<
   "missing map type">;
+def err_omp_unknown_lastprivate_type : Error<
+  "unknown lastprivate type">;
 def err_omp_declare_simd_inbranch_notinbranch : Error<
   "unexpected '%0' clause, '%1' is specified already">;
 def err_expected_end_declare_target : Error<
