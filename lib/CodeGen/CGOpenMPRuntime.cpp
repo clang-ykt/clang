@@ -728,10 +728,9 @@ enum OpenMPRTLFunction {
   // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
   // *arg_types, int32_t num_teams, int32_t thread_limit);
   OMPRTL__tgt_target_teams,
-  // Call to int32_t __tgt_target_teams_nowait(int64_t device_id,
-  // void *host_ptr, int32_t arg_num, void** args_base, void **args,
-  // size_t *arg_sizes, int64_t *arg_types, int32_t num_teams,
-  // int32_t thread_limit);
+  // Call to int32_t __tgt_target_teams_nowait(int64_t device_id, void
+  // *host_ptr, int32_t arg_num, void** args_base, void **args, size_t
+  // *arg_sizes, int64_t *arg_types, int32_t num_teams, int32_t thread_limit);
   OMPRTL__tgt_target_teams_nowait,
   // Call to void __tgt_register_lib(__tgt_bin_desc *desc);
   OMPRTL__tgt_register_lib,
@@ -741,19 +740,22 @@ enum OpenMPRTLFunction {
   // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
   OMPRTL__tgt_target_data_begin,
   // Call to void __tgt_target_data_begin_nowait(int64_t device_id, int32_t
-  // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+  // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+  // *arg_types);
   OMPRTL__tgt_target_data_begin_nowait,
   // Call to void __tgt_target_data_end(int64_t device_id, int32_t arg_num,
   // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
   OMPRTL__tgt_target_data_end,
   // Call to void __tgt_target_data_end_nowait(int64_t device_id, int32_t
-  // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+  // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+  // *arg_types);
   OMPRTL__tgt_target_data_end_nowait,
   // Call to void __tgt_target_data_update(int64_t device_id, int32_t arg_num,
    // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
   OMPRTL__tgt_target_data_update,
   // Call to void __tgt_target_data_update_nowait(int64_t device_id, int32_t
-  // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+  // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+  // *arg_types);
   OMPRTL__tgt_target_data_update_nowait,
 };
 
@@ -1750,9 +1752,8 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
   }
   case OMPRTL__tgt_target_nowait: {
     // Build int32_t __tgt_target_nowait(int64_t device_id, void *host_ptr,
-    // int32_t
-    // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
-    // *arg_types);
+    // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
+    // int64_t *arg_types);
     llvm::Type *TypeParams[] = {CGM.Int64Ty,
                                 CGM.VoidPtrTy,
                                 CGM.Int32Ty,
@@ -1767,9 +1768,8 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
   }
   case OMPRTL__tgt_target_teams_nowait: {
     // Build int32_t __tgt_target_teams_nowait(int64_t device_id, void
-    // *host_ptr,
-    // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
-    // int64_t *arg_types, int32_t num_teams, int32_t thread_limit);
+    // *host_ptr, int32_t arg_num, void** args_base, void **args, size_t
+    // *arg_sizes, int64_t *arg_types, int32_t num_teams, int32_t thread_limit);
     llvm::Type *TypeParams[] = {CGM.Int64Ty,
                                 CGM.VoidPtrTy,
                                 CGM.Int32Ty,
@@ -1820,8 +1820,8 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
   }
   case OMPRTL__tgt_target_data_begin_nowait: {
     // Build void __tgt_target_data_begin_nowait(int64_t device_id, int32_t
-    // arg_num,
-    // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+    // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+    // *arg_types);
     llvm::Type *TypeParams[] = {CGM.Int64Ty,
                                 CGM.Int32Ty,
                                 CGM.VoidPtrPtrTy,
@@ -1849,8 +1849,8 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
   }
   case OMPRTL__tgt_target_data_end_nowait: {
     // Build void __tgt_target_data_end_nowait(int64_t device_id, int32_t
-    // arg_num,
-    // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+    // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+    // *arg_types);
     llvm::Type *TypeParams[] = {CGM.Int64Ty,
                                 CGM.Int32Ty,
                                 CGM.VoidPtrPtrTy,
@@ -1878,8 +1878,8 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
   }
   case OMPRTL__tgt_target_data_update_nowait: {
     // Build void __tgt_target_data_update_nowait(int64_t device_id, int32_t
-    // arg_num,
-    // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+    // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+    // *arg_types);
     llvm::Type *TypeParams[] = {CGM.Int64Ty,
                                 CGM.Int32Ty,
                                 CGM.VoidPtrPtrTy,
@@ -5642,16 +5642,15 @@ public:
     /// \brief Delete the element from the device environment, ignoring the
     /// current reference count associated with the element.
     OMP_MAP_DELETE = 0x08,
-    /// \brief The element being mapped is a pointer, therefore the pointee
-    /// should be mapped as well.
+    /// \brief The element being mapped is a pointer-pointee pair; both the
+    /// pointer and the pointee should be mapped.
     OMP_MAP_PTR_AND_OBJ = 0x10,
-    /// \brief This flags signals that an argument is the first one relating to
-    /// a map/private clause expression. For some cases a single
-    /// map/privatization results in multiple arguments passed to the runtime
-    /// library.
+    /// \brief This flags signals that the base address of an entry should be
+    /// passed to the target kernel as an argument.
     OMP_MAP_TARGET_PARAM = 0x20,
     /// \brief Signal that the runtime library has to return the device pointer
-    /// in the current position for the data being mapped.
+    /// in the current position for the data being mapped. Used when we have the
+    /// use_device_ptr clause.
     OMP_MAP_RETURN_PARAM = 0x40,
     /// \brief This flag signals that the reference being passed is a pointer to
     /// private data.
@@ -5660,6 +5659,8 @@ public:
     OMP_MAP_LITERAL = 0x100,
     /// \brief States the map is implicit.
     OMP_MAP_IMPLICIT = 0x200,
+    /// \brief The 16 MSBs of the flags indicate whether the entry is member of
+    /// some struct/class.
     OMP_MAP_MEMBER_OF = 0xffff000000000000
   };
 
@@ -5916,28 +5917,28 @@ private:
     //
     // map(s.p[:22], s.a s.b)
     // &s, &(s.p), sizeof(double*), noflags
-    // &(s.p), &(s.p[0]), 22*sizeof(double), ptr_flag + extra_flag
+    // &(s.p), &(s.p[0]), 22*sizeof(double), ptr_flag
     //
     // map(s.ps)
     // &s, &(s.ps), sizeof(S2*), noflags
     //
     // map(s.ps->s.i)
     // &s, &(s.ps), sizeof(S2*), noflags
-    // &(s.ps), &(s.ps->s.i), sizeof(int), ptr_flag + extra_flag
+    // &(s.ps), &(s.ps->s.i), sizeof(int), ptr_flag
     //
     // map(s.ps->ps)
     // &s, &(s.ps), sizeof(S2*), noflags
-    // &(s.ps), &(s.ps->ps), sizeof(S2*), ptr_flag + extra_flag
+    // &(s.ps), &(s.ps->ps), sizeof(S2*), ptr_flag
     //
     // map(s.ps->ps->ps)
     // &s, &(s.ps), sizeof(S2*), noflags
-    // &(s.ps), &(s.ps->ps), sizeof(S2*), ptr_flag + extra_flag
-    // &(s.ps->ps), &(s.ps->ps->ps), sizeof(S2*), ptr_flag + extra_flag
+    // &(s.ps), &(s.ps->ps), sizeof(S2*), ptr_flag
+    // &(s.ps->ps), &(s.ps->ps->ps), sizeof(S2*), ptr_flag
     //
     // map(s.ps->ps->s.f[:22])
     // &s, &(s.ps), sizeof(S2*), noflags
-    // &(s.ps), &(s.ps->ps), sizeof(S2*), ptr_flag + extra_flag
-    // &(s.ps->ps), &(s.ps->ps->s.f[0]), 22*sizeof(float), ptr_flag + extra_flag
+    // &(s.ps), &(s.ps->ps), sizeof(S2*), ptr_flag
+    // &(s.ps->ps), &(s.ps->ps->s.f[0]), 22*sizeof(float), ptr_flag
     //
     // map(ps)
     // &ps, &ps, sizeof(S2*), noflags
@@ -5953,29 +5954,28 @@ private:
     //
     // map(ps->p[:22])
     // ps, &(ps->p), sizeof(double*), noflags
-    // &(ps->p), &(ps->p[0]), 22*sizeof(double), ptr_flag + extra_flag
+    // &(ps->p), &(ps->p[0]), 22*sizeof(double), ptr_flag
     //
     // map(ps->ps)
     // ps, &(ps->ps), sizeof(S2*), noflags
     //
     // map(ps->ps->s.i)
     // ps, &(ps->ps), sizeof(S2*), noflags
-    // &(ps->ps), &(ps->ps->s.i), sizeof(int), ptr_flag + extra_flag
+    // &(ps->ps), &(ps->ps->s.i), sizeof(int), ptr_flag
     //
     // map(ps->ps->ps)
     // ps, &(ps->ps), sizeof(S2*), noflags
-    // &(ps->ps), &(ps->ps->ps), sizeof(S2*), ptr_flag + extra_flag
+    // &(ps->ps), &(ps->ps->ps), sizeof(S2*), ptr_flag
     //
     // map(ps->ps->ps->ps)
     // ps, &(ps->ps), sizeof(S2*), noflags
-    // &(ps->ps), &(ps->ps->ps), sizeof(S2*), ptr_flag + extra_flag
-    // &(ps->ps->ps), &(ps->ps->ps->ps), sizeof(S2*), ptr_flag + extra_flag
+    // &(ps->ps), &(ps->ps->ps), sizeof(S2*), ptr_flag
+    // &(ps->ps->ps), &(ps->ps->ps->ps), sizeof(S2*), ptr_flag
     //
     // map(ps->ps->ps->s.f[:22])
     // ps, &(ps->ps), sizeof(S2*), noflags
-    // &(ps->ps), &(ps->ps->ps), sizeof(S2*), ptr_flag + extra_flag
-    // &(ps->ps->ps), &(ps->ps->ps->s.f[0]), 22*sizeof(float), ptr_flag +
-    // extra_flag
+    // &(ps->ps), &(ps->ps->ps), sizeof(S2*), ptr_flag
+    // &(ps->ps->ps), &(ps->ps->ps->s.f[0]), 22*sizeof(float), ptr_flag
 
     // Track if the map information being generated is the first for a capture.
     bool IsCaptureFirstInfo = IsFirstComponentList;
@@ -6026,12 +6026,33 @@ private:
       }
     }
 
+    // Track whether a component of the list should be marked as MEMBER_OF some
+    // combined entry (for partial structs). Only the first PTR_AND_OBJ entry
+    // in a component list should be marked as MEMBER_OF, all subsequent entries
+    // do not belong to the base struct. E.g.
+    // struct S2 s;
+    // s.ps->ps->ps->f[:]
+    //   (1) (2) (3) (4)
+    // ps(1) is a member pointer, ps(2) is a pointee of ps(1), so it is a
+    // PTR_AND_OBJ entry; the PTR is ps(1), so MEMBER_OF the base struct. ps(3)
+    // is the pointee of ps(2) which is not member of struct s, so it should not
+    // be marked as such (it is still PTR_AND_OBJ).
+    // The variable is initialized to false so that PTR_AND_OBJ entries which
+    // are not struct members are not considered (e.g. array of pointers to
+    // data).
+    bool ShouldBeMemberOf = false;
+
     for (; I != CE; ++I) {
       auto Next = std::next(I);
 
       // If the current component is member of a struct (parent struct) mark it.
       if (!EncounteredME) {
         EncounteredME = dyn_cast<MemberExpr>(I->getAssociatedExpression());
+        // If we encounter a PTR_AND_OBJ entry from now on it should be marked
+        // as MEMBER_OF the parent struct.
+        if (EncounteredME) {
+          ShouldBeMemberOf = true;
+        }
       }
 
       // We need to generate the addresses and sizes if this is the last
@@ -6082,10 +6103,10 @@ private:
           BP = RefAddr;
         }
 
-        // If this component is a pointer inside a struct (not a pointer of
-        // another struct pointed to by a pointer inside the base struct, then
-        // we don't need to create any entry for it - if we did, it would just
-        // be an entry with 0 flags. This is an optimization.
+        // If this component is a pointer inside the base struct (not a pointer
+        // of another struct pointed to by a pointer inside the base struct),
+        // then we don't need to create any entry for it - if we did, it would
+        // just be an entry with 0 flags. This is an optimization.
         bool IsMemberPointer = IsPointer &&
             (dyn_cast<MemberExpr>(I->getAssociatedExpression()) ==
                 EncounteredME);
@@ -6104,6 +6125,14 @@ private:
           if (IsPointer)
             flags &=
                 ~(OMP_MAP_TO | OMP_MAP_FROM | OMP_MAP_ALWAYS | OMP_MAP_DELETE);
+          if (!IsExpressionFirstInfo && ShouldBeMemberOf) {
+            // Set placeholder value MEMBER_OF=FFFF to indicate that the flag
+            // should be later updated with the correct value of MEMBER_OF.
+            flags |= OMP_MAP_MEMBER_OF;
+            // From now on, all subsequent PTR_AND_OBJ entries should not be
+            // marked as MEMBER_OF.
+            ShouldBeMemberOf = false;
+          }
           Types.push_back(flags);
         }
 
@@ -6487,14 +6516,6 @@ enum OpenMPOffloadingReservedDeviceIDs {
   /// \brief Device ID if the device was not defined, runtime should get it
   /// from environment variables in the spec.
   OMP_DEVICEID_UNDEF = -1,
-  /// \brief Device ID if the region is meant to run on all devices before their
-  /// first use. This is meant to target regions that implement device global
-  /// initializers.
-  OMP_DEVICEID_CTOR = -2,
-  /// \brief Device ID if the region is meant to run on all devices that have
-  /// been used so far. This is meant for target regions that implement device
-  /// global destructors.
-  OMP_DEVICEID_DTOR = -3,
 };
 } // anonymous namespace
 
@@ -6878,10 +6899,25 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
       // Remove TARGET_PARAM flag from the first element
       (*CurMapTypes.begin()) &= ~MappableExprsHandler::OMP_MAP_TARGET_PARAM;
 
-      // All other current entries will be MEMBER_OF the combined entry
+      // All other current entries will be MEMBER_OF the combined entry except
+      // for PTR_AND_OBJ entries which do not have a placeholder value 0xFFFF
+      // in the MEMBER_OF field.
       uint64_t MemberOfFlag =
           MappableExprsHandler::getMemberOfFlag(BasePointers.size() - 1);
       for (unsigned i = 0; i < CurMapTypes.size(); ++i) {
+        if (CurMapTypes[i] & MappableExprsHandler::OMP_MAP_PTR_AND_OBJ) {
+          // We have two cases: if the entry has not been marked with the
+          // special placeholder value, then it should not be marked as
+          // MEMBER_OF, so continue to the next entry.
+          if ((CurMapTypes[i] & MappableExprsHandler::OMP_MAP_MEMBER_OF) !=
+                  MappableExprsHandler::OMP_MAP_MEMBER_OF) {
+            continue;
+          } else {
+            // Reset the placeholder value to prepare the flag for the
+            // assignment of the proper MEMBER_OF value.
+            CurMapTypes[i] &= ~MappableExprsHandler::OMP_MAP_MEMBER_OF;
+          }
+        }
         CurMapTypes[i] |= MemberOfFlag;
       }
     } else {
@@ -7609,11 +7645,27 @@ static void TranslateStructEntries(CodeGenFunction &CGF,
       (TmpMapTypes[TmpBasePointersIdx]) &=
           ~MappableExprsHandler::OMP_MAP_TARGET_PARAM;
 
-      // All other current entries will be MEMBER_OF the combined entry
+      // All other current entries will be MEMBER_OF the combined entry except
+      // for PTR_AND_OBJ entries which do not have a placeholder value 0xFFFF
+      // in the MEMBER_OF field.
       uint64_t MemberOfFlag =
           MappableExprsHandler::getMemberOfFlag(BasePointers.size() - 1);
       for (unsigned i = 0; i < NumOfEntries; ++i) {
-        TmpMapTypes[TmpBasePointersIdx+i] |= MemberOfFlag;
+        uint64_t &flags = TmpMapTypes[TmpBasePointersIdx+i];
+        if (flags & MappableExprsHandler::OMP_MAP_PTR_AND_OBJ) {
+          // We have two cases: if the entry has not been marked with the
+          // special placeholder value, then it should not be marked as
+          // MEMBER_OF, so continue to the next entry.
+          if ((flags & MappableExprsHandler::OMP_MAP_MEMBER_OF) !=
+                  MappableExprsHandler::OMP_MAP_MEMBER_OF) {
+            continue;
+          } else {
+            // Reset the placeholder value to prepare the flag for the
+            // assignment of the proper MEMBER_OF value.
+            flags &= ~MappableExprsHandler::OMP_MAP_MEMBER_OF;
+          }
+        }
+        flags |= MemberOfFlag;
       }
 
       // Advance indices and iterators
