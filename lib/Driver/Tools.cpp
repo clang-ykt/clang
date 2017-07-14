@@ -12315,6 +12315,8 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
       // Currently, we only pass the input files to the linker, we do not pass
       // any libraries that may be valid only for the host.
+      printf(" ---------> Is filename? %d \n", II.isFilename());
+      printf(" ---------> File %s \n", II.getAsString().c_str());
       if (!II.isFilename())
         continue;
 

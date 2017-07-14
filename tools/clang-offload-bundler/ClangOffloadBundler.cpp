@@ -28,6 +28,7 @@
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Object/Archive.h"
 #include "llvm/Object/Binary.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Casting.h"
@@ -51,6 +52,30 @@
 
 using namespace llvm;
 using namespace llvm::object;
+
+namespace llvm {
+
+static void error(Error Err) {
+  if (Err) {
+    logAllUnhandledErrors(std::move(Err), outs(), "Error reading file: ");
+    outs().flush();
+    exit(1);
+  }
+}
+
+} // namespace llvm
+
+static void reportError(StringRef Input, StringRef Message) {
+  if (Input == "-")
+    Input = "<stdin>";
+  errs() << Input << ": " << Message << "\n";
+  errs().flush();
+  exit(1);
+}
+
+static void reportError(StringRef Input, std::error_code EC) {
+  reportError(Input, EC.message());
+}
 
 static cl::opt<bool> Help("h", cl::desc("Alias for -help"), cl::Hidden);
 
@@ -82,7 +107,8 @@ static cl::opt<std::string>
                        "  s   - assembler\n"
                        "  o   - object\n"
                        "  gch - precompiled-header\n"
-                       "  ast - clang AST file"),
+                       "  ast - clang AST file\n"
+                       "  a   - archive"),
               cl::cat(ClangOffloadBundlerCategory));
 static cl::opt<bool>
     Unbundle("unbundle",
@@ -705,6 +731,43 @@ public:
   }
 };
 
+// /// Only unbundle.
+// class ArchiveHandler final : public FileHandler {
+//   /// The object file we are currently dealing with.
+//   std::unique_ptr<Archive> Arch;
+
+// public:
+//   ArchiveHandler(std::unique_ptr<Archive> ObjIn)
+//       : FileHandler(), Arch(std::move(ObjIn)) {}
+
+//   ~ArchiveHandler() final {}
+
+//   void ReadHeader(MemoryBuffer &Input) final {}
+
+//   StringRef ReadBundleStart(MemoryBuffer &Input) final {
+//     return "";
+//   }
+
+//   void ReadBundleEnd(MemoryBuffer &Input) final {}
+
+//   void ReadBundle(raw_fd_ostream &OS, MemoryBuffer &Input) final {}
+
+//   void WriteHeader(raw_fd_ostream &OS,
+//                    ArrayRef<std::unique_ptr<MemoryBuffer>> Inputs) final {}
+
+//   void WriteBundleStart(raw_fd_ostream &OS, StringRef TargetTriple) final {}
+
+//   bool WriteBundleEnd(raw_fd_ostream &OS, StringRef TargetTriple) final {
+//     return false;
+//   }
+
+//   void WriteBundle(raw_fd_ostream &OS, MemoryBuffer &Input) final {}
+
+//   bool isArchive() {
+//     return true;
+//   }
+// };
+
 /// Return an appropriate object file handler. We use the specific object
 /// handler if we know how to deal with that format, otherwise we use a default
 /// binary file handler.
@@ -732,6 +795,40 @@ static FileHandler *CreateObjectFileHandler(MemoryBuffer &FirstInput) {
   return new ObjectFileHandler(std::move(Obj));
 }
 
+static Archive *GetArchive(StringRef File) {
+  // Check if the input file format is one that we know how to deal with.
+  Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(File);
+  if (!BinaryOrErr) {
+    auto EC = errorToErrorCode(BinaryOrErr.takeError());
+    reportError(File, EC);
+    return nullptr;
+  }
+  Binary &Binary = *BinaryOrErr.get().getBinary();
+  if (Archive *Arc = dyn_cast<Archive>(&Binary))
+    return Arc;
+  reportError(File, "Cannot retrieve archive from provided Binary file.");
+
+  return nullptr;
+}
+
+// static void dumpInput(StringRef File) {
+//   // Attempt to open the binary.
+//   Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(File);
+//   if (!BinaryOrErr) {
+//     auto EC = errorToErrorCode(BinaryOrErr.takeError());
+//     reportError(File, EC);
+//     return;
+//   }
+//   Binary &Binary = *BinaryOrErr.get().getBinary();
+
+//   if (Archive *Arc = dyn_cast<Archive>(&Binary))
+//     dumpArchive(Arc);
+//   else if (ObjectFile *Obj = dyn_cast<ObjectFile>(&Binary))
+//     dumpCXXData(Obj);
+//   else
+//     reportError(File, cxxdump_error::unrecognized_file_format);
+// }
+
 /// Return an appropriate handler given the input files and options.
 static FileHandler *CreateFileHandler(MemoryBuffer &FirstInput) {
   if (FilesType == "i")
@@ -750,6 +847,8 @@ static FileHandler *CreateFileHandler(MemoryBuffer &FirstInput) {
     return new BinaryFileHandler();
   if (FilesType == "ast")
     return new BinaryFileHandler();
+  // if (FilesType == "a")
+  //   return CreateArchiveHandler(FirstInput);
 
   errs() << "error: invalid file type specified.\n";
   return nullptr;
@@ -912,6 +1011,87 @@ static bool UnbundleFiles() {
   return false;
 }
 
+// Unbundle the files. Return true if archive was handled.
+static bool HandleArchiveFiles() {
+  // Only handle archives, nothing else.
+  if (FilesType != "a") {
+    return false;
+  }
+
+  printf(" ------------> We are correctly trying to unbundle an archive!\n");
+  
+  printf(" ------------> Extract files from archive!\n");
+  // Extract object files from archive
+  StringRef InputFileName = InputFileNames.front();
+  const char *ExtractArchiveArgs[] = {"ar", "x",
+                                      InputFileName.str().c_str(),
+                                      nullptr};
+  auto ArBinary = sys::findProgramByName("ar");
+  bool Failed = sys::ExecuteAndWait(ArBinary.get(), ExtractArchiveArgs);
+
+  // errs() << "\"" << ArBinary.get() << "\"";
+  // for (unsigned I = 1; ExtractArchiveArgs[I]; ++I)
+  //   errs() << " \"" << ExtractArchiveArgs[I] << "\"";
+  // errs() << "\n";
+
+  if (Failed) {
+    errs() << "error: extracting the archived object files failed.\n";
+    return true;
+  }
+
+  printf(" ------------> Get archive members!\n");
+  // const char *GetArchiveObjs[] = {"ar", "t",
+  //                                 InputFileName.str().c_str(),
+  //                                 nullptr};
+
+  // Failed = sys::ExecuteAndWait(ArBinary.get(), GetArchiveObjs);
+
+  // if (Failed) {
+  //   errs() << "error: getting a list of the files in the archive failed.\n";
+  //   return true;
+  // }
+
+  // Open Input file.
+  ErrorOr<std::unique_ptr<MemoryBuffer>> CodeOrErr =
+      MemoryBuffer::getFileOrSTDIN(InputFileName);
+  if (std::error_code EC = CodeOrErr.getError()) {
+    errs() << "error: Can't open file " << InputFileName << ": "
+           << EC.message() << "\n";
+    return true;
+  }
+  const Archive *Arc = GetArchive(InputFileName);
+  Error Err = Error::success();
+  for (auto &ObjFile : Arc->children(Err)) {
+    printf("BLA\n\n");
+    Expected<std::unique_ptr<Binary>> ChildOrErr = ObjFile.getAsBinary();
+    if (!ChildOrErr) {
+      // Ignore non-object files.
+      if (auto E = isNotObjectErrorInvalidFileType(ChildOrErr.takeError())) {
+        std::string Buf;
+        raw_string_ostream OS(Buf);
+        logAllUnhandledErrors(std::move(E), OS, "");
+        OS.flush();
+        reportError(Arc->getFileName(), Buf);
+      }
+      consumeError(ChildOrErr.takeError());
+      continue;
+    }
+    if (ObjectFile *Obj = dyn_cast<ObjectFile>(&*ChildOrErr.get())) {
+      printf(" --------- Child Object File --------- %s\n", Obj->getFileName().str().c_str());
+      // printf(" --------- Child Object File --------- \n");
+      for (StringRef Target : TargetNames) {
+        printf("    ------- Target name: %s\n", Target.str().c_str());
+      }
+    } else {
+      llvm_unreachable("Non-object file in object-only code.");
+    }
+  }
+  error(std::move(Err));
+
+  // Return true to say we are all done!
+  return true;
+}
+
 static void PrintVersion() {
   raw_ostream &OS = outs();
   OS << clang::getClangToolFullVersion("clang-offload-bundler") << '\n';
@@ -1007,6 +1187,9 @@ int main(int argc, const char **argv) {
   // Save the current executable directory as it will be useful to find other
   // tools.
   BundlerExecutable = sys::fs::getMainExecutable(argv[0], &BundlerExecutable);
+
+  if (HandleArchiveFiles())
+    return 1;
 
   return Unbundle ? UnbundleFiles() : BundleFiles();
 }
