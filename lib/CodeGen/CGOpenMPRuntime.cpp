@@ -7625,7 +7625,7 @@ static void TranslateStructEntries(CodeGenFunction &CGF,
       NumOfEntries = StructIndices[StructIndicesIdx].second;
 
       // Base is the base of the struct
-      BasePointers.push_back(TmpBasePointers[TmpBasePointersIdx]);
+      BasePointers.push_back(PSIt->second.Base);
       // Pointer is the address of the lowest element
       auto *LB = PSIt->second.LowestElem.Pointer;
       Pointers.push_back(LB);
