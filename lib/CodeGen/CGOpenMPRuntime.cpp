@@ -6097,35 +6097,37 @@ private:
           auto *LI = cast<llvm::LoadInst>(LB);
           auto *RefAddr = LI->getPointerOperand();
 
+          BasePointers.push_back(BP);
+          Pointers.push_back(RefAddr);
+          Sizes.push_back(CGF.getTypeSize(CGF.getContext().VoidPtrTy));
+          Types.push_back(getMapTypeBits(
+              /*MapType*/ OMPC_MAP_alloc, /*MapTypeModifier=*/OMPC_MAP_unknown,
+              !IsExpressionFirstInfo, IsCaptureFirstInfo));
+
           IsExpressionFirstInfo = false;
           IsCaptureFirstInfo = false;
           // The reference will be the next base address.
           BP = RefAddr;
         }
 
-        // If this component is a pointer inside the base struct (not a pointer
-        // of another struct pointed to by a pointer inside the base struct),
-        // then we don't need to create any entry for it - if we did, it would
-        // just be an entry with 0 flags. This is an optimization.
-        bool IsMemberPointer = IsPointer &&
-            (dyn_cast<MemberExpr>(I->getAssociatedExpression()) ==
-                EncounteredME);
-        if (!IsMemberPointer) {
-          BasePointers.push_back(BP);
-          Pointers.push_back(LB);
-          Sizes.push_back(Size);
+        BasePointers.push_back(BP);
+        Pointers.push_back(LB);
+        Sizes.push_back(Size);
 
-          // We need to add a pointer flag for each map that comes from the
-          // same expression except for the first one. Such pointers must have
-          // their TO/FROM/ALWAYS/DELETE flags reset. We also need to signal
-          // this map is the first one that relates with the current capture
-          // (there is a set of entries for each capture).
-          uint64_t flags = getMapTypeBits(MapType, MapTypeModifier,
-              !IsExpressionFirstInfo, IsCaptureFirstInfo);
+        // We need to add a pointer flag for each map that comes from the
+        // same expression except for the first one. Such pointers must have
+        // their TO/FROM/ALWAYS/DELETE flags reset. We also need to signal
+        // this map is the first one that relates with the current capture
+        // (there is a set of entries for each capture).
+        uint64_t flags = getMapTypeBits(MapType, MapTypeModifier,
+            !IsExpressionFirstInfo, IsCaptureFirstInfo);
+
+        if (!IsExpressionFirstInfo) {
           if (IsPointer)
             flags &=
                 ~(OMP_MAP_TO | OMP_MAP_FROM | OMP_MAP_ALWAYS | OMP_MAP_DELETE);
-          if (!IsExpressionFirstInfo && ShouldBeMemberOf) {
+
+          if (ShouldBeMemberOf) {
             // Set placeholder value MEMBER_OF=FFFF to indicate that the flag
             // should be later updated with the correct value of MEMBER_OF.
             flags |= OMP_MAP_MEMBER_OF;
@@ -6133,8 +6135,9 @@ private:
             // marked as MEMBER_OF.
             ShouldBeMemberOf = false;
           }
-          Types.push_back(flags);
         }
+
+        Types.push_back(flags);
 
         // If we have encountered a member expression so far, keep track of the
         // mapped member. If the parent is "*this", then the value declaration
