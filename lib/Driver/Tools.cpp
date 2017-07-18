@@ -12317,8 +12317,11 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
       // any libraries that may be valid only for the host.
       printf(" ---------> Is filename? %d \n", II.isFilename());
       printf(" ---------> File %s \n", II.getAsString().c_str());
+      printf(" ---------> BaseInput %s \n", II.getBaseInput());
       if (!II.isFilename())
         continue;
+
+      printf(" ---------> BaseInput %s \n", II.getFilename());
 
       StringRef Name = llvm::sys::path::filename(II.getFilename());
       std::pair<StringRef, StringRef> Split = Name.rsplit('.');
