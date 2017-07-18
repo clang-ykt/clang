@@ -1000,32 +1000,55 @@ static bool HandleArchiveFiles() {
   // is extracted. When linking with nvlink use all the cubin files
   // in the folder of the static library the user is trying to link
   // against.
-  //
-  // printf(" ------------> Extract files from archive!\n");
-  // // Create folder for extracting object files from archive.
-  // SmallString<256> Buffer;
-  // llvm::raw_svector_ostream FolderName(Buffer);
-  // FolderName << "/tmp/" <<  InputFileName.split("/").split(".").first.str();
-  // const char *CreateFolderArgs[] = {"mkdir",
-  //                                   FolderName.str().str().c_str(),
-  //                                   nullptr};
-  // auto MkDirBinary = sys::findProgramByName("mkdir");
-  // Failed = sys::ExecuteAndWait(MkDirBinary.get(), CreateFolderArgs);
-  // if (Failed) {
-  //   errs() << "error: could not create folder for extracting archive.\n";
-  //   return true;
+
+  // Create folder for extracting object files from archive.
+  // TODO: get root directory in a generic way
+  SmallString<128> TempLibPath("/");
+  llvm::sys::path::append(TempLibPath, "tmp");
+
+  printf(" --------------------> Temp Folder:  %s\n", TempLibPath.str().str().c_str());
+
+  StringRef LibraryName = InputFileName;
+  if (llvm::sys::path::is_absolute(InputFileName)) {
+    LibraryName = llvm::sys::path::filename(InputFileName);
+  }
+
+  printf(" --------------------> LibraryName:  %s\n", LibraryName.str().c_str());
+
+  llvm::sys::path::append(TempLibPath, LibraryName.split(".").first);
+  StringRef FolderName = TempLibPath.str();
+
+  printf(" ---------------------> FolderName:  %s\n", FolderName.str().c_str());
+
+  llvm::sys::path::append(TempLibPath, LibraryName);
+
+  printf(" --------------------> TempLibPath:  %s\n", TempLibPath.str().str().c_str());
+
+  // Check if library already copied to temp lib folder.
+  // This means a temp folder already exists so no need
+  // to create it again. Copy static lib to temp folder
+  // to avoid stale versions of the lib.
+  llvm::sys::fs::file_status Status;
+  llvm::sys::fs::status(TempLibPath, Status);
+  if (!llvm::sys::fs::exists(Status))
+    llvm::sys::fs::create_directories(FolderName);
+  else
+    llvm::sys::fs::remove(TempLibPath);
+  printf(" ------------------> InputFileName:  %s\n", InputFileName.str().c_str());
+  // if (std::error_code EC = sys::fs::copy_file(InputFileName, TempLibPath)) {
+  //     errs() << "error: while copying file " << InputFileName << " to " << TempLibPath
+  //            << ": " << EC.message() << "\n";
   // }
 
-  // // Copy archive into folder.
-  // FolderName << "/";
-  // const char *CpArchiveArgs[] = {"cp",
-  //                                InputFileName.str().c_str(),
-  //                                FolderName.str().str().c_str(),
-  //                                nullptr};
-  // auto CpBinary = sys::findProgramByName("cp");
-  // Failed = sys::ExecuteAndWait(CpBinary.get(), CpArchiveArgs);
+  // // TODO: cd to temp lib folder
+  // printf("----> %s\n", llvm::sys::path::parent_path(TempLibPath).str().c_str());
+  // const char *CdToTempFolderArgs[] = {"cd",
+  //     llvm::sys::path::parent_path(TempLibPath).str().c_str(),
+  //     nullptr};
+  // auto CdBinary = sys::findProgramByName("cd");
+  // Failed = sys::ExecuteAndWait(CdBinary.get(), CdToTempFolderArgs);
   // if (Failed) {
-  //   errs() << "error: could not cp archive into folder.\n";
+  //   errs() << "error: failed to change current dir to temp dir.\n";
   //   return true;
   // }
 
@@ -1035,16 +1058,18 @@ static bool HandleArchiveFiles() {
                                       nullptr};
   auto ArBinary = sys::findProgramByName("ar");
   Failed = sys::ExecuteAndWait(ArBinary.get(), ExtractArchiveArgs);
-
-  // errs() << "\"" << ArBinary.get() << "\"";
-  // for (unsigned I = 1; ExtractArchiveArgs[I]; ++I)
-  //   errs() << " \"" << ExtractArchiveArgs[I] << "\"";
-  // errs() << "\n";
-
   if (Failed) {
     errs() << "error: extracting the archived object files failed.\n";
     return true;
   }
+
+  // // TODO: cd back to working folder
+  // const char *CdBackArgs[] = {"cd", "-", nullptr};
+  // Failed = sys::ExecuteAndWait(CdBinary.get(), CdBackArgs);
+  // if (Failed) {
+  //   errs() << "error: failed to return to work dir.\n";
+  //   return true;
+  // }
 
   // Open Input file.
   ErrorOr<std::unique_ptr<MemoryBuffer>> CodeOrErr =
@@ -1112,6 +1137,20 @@ static bool HandleArchiveFiles() {
     printf(" -----------------------> ArchiveObjectName = %s \n", InputFileName.str().str().c_str());
     UnbundleFiles(InputFileName.str(),
                   NewOutputFileNames);
+
+    // Copy unbundled files to temp lib folder.
+    for(auto OutputFileName: *NewOutputFileNames) {
+      llvm::sys::path::remove_filename(TempLibPath);
+      llvm::sys::path::append(TempLibPath, OutputFileName);
+      if (std::error_code EC = sys::fs::copy_file(OutputFileName, TempLibPath)) {
+        errs() << "error: while copying file " << OutputFileName << " to " << TempLibPath
+               << ": " << EC.message() << "\n";
+      }
+      llvm::sys::fs::remove(OutputFileName);
+    }
+
+    // Remove original object file.
+    llvm::sys::fs::remove(InputFileName.str());
   }
 
   // Return true to say we are all done!
