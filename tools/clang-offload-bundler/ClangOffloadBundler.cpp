@@ -995,7 +995,6 @@ static bool HandleArchiveFiles() {
   StringRef InputFileName = InputFileNames.front();
   bool Failed;
 
-  // TODO:
   // Create a folder that is library specific, where the library
   // is extracted. When linking with nvlink use all the cubin files
   // in the folder of the static library the user is trying to link
@@ -1040,18 +1039,6 @@ static bool HandleArchiveFiles() {
   //            << ": " << EC.message() << "\n";
   // }
 
-  // // TODO: cd to temp lib folder
-  // printf("----> %s\n", llvm::sys::path::parent_path(TempLibPath).str().c_str());
-  // const char *CdToTempFolderArgs[] = {"cd",
-  //     llvm::sys::path::parent_path(TempLibPath).str().c_str(),
-  //     nullptr};
-  // auto CdBinary = sys::findProgramByName("cd");
-  // Failed = sys::ExecuteAndWait(CdBinary.get(), CdToTempFolderArgs);
-  // if (Failed) {
-  //   errs() << "error: failed to change current dir to temp dir.\n";
-  //   return true;
-  // }
-
   // Extract object files from archive
   const char *ExtractArchiveArgs[] = {"ar", "x",
                                       InputFileName.str().c_str(),
@@ -1062,14 +1049,6 @@ static bool HandleArchiveFiles() {
     errs() << "error: extracting the archived object files failed.\n";
     return true;
   }
-
-  // // TODO: cd back to working folder
-  // const char *CdBackArgs[] = {"cd", "-", nullptr};
-  // Failed = sys::ExecuteAndWait(CdBinary.get(), CdBackArgs);
-  // if (Failed) {
-  //   errs() << "error: failed to return to work dir.\n";
-  //   return true;
-  // }
 
   // Open Input file.
   ErrorOr<std::unique_ptr<MemoryBuffer>> CodeOrErr =
