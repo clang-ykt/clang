@@ -29,6 +29,9 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Object/Archive.h"
+#include "llvm/Object/Binary.h"
+#include "llvm/Object/ObjectFile.h"
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/Option.h"
@@ -52,6 +55,32 @@ using namespace clang::driver;
 using namespace clang::driver::tools;
 using namespace clang;
 using namespace llvm::opt;
+// using namespace llvm;
+// using namespace llvm::object;
+
+// namespace llvm {
+
+// static void error(Error Err) {
+//   if (Err) {
+//     logAllUnhandledErrors(std::move(Err), outs(), "Error reading file: ");
+//     outs().flush();
+//     exit(1);
+//   }
+// }
+
+// } // namespace llvm
+
+// static void reportError(StringRef Input, StringRef Message) {
+//   if (Input == "-")
+//     Input = "<stdin>";
+//   errs() << Input << ": " << Message << "\n";
+//   errs().flush();
+//   exit(1);
+// }
+
+// static void reportError(StringRef Input, std::error_code EC) {
+//   reportError(Input, EC.message());
+// }
 
 static void handleTargetFeaturesGroup(const ArgList &Args,
                                       std::vector<StringRef> &Features,
@@ -7302,8 +7331,16 @@ void OffloadBundler::ConstructJobMultipleOutputs(
   InputInfo Input = Inputs.front();
 
   // Get the type.
-  CmdArgs.push_back(TCArgs.MakeArgString(
-      Twine("-type=") + types::getTypeTempSuffix(Input.getType())));
+  printf(" =========================UNBUNDLE================================ \n");
+  StringRef InputFilname = Input.getFilename();
+  bool InputIsArchive = InputFilname.endswith(".a");
+  printf(" ------------> Is Archive = %d\n", InputIsArchive);
+  if (InputIsArchive)
+    CmdArgs.push_back(TCArgs.MakeArgString(
+        Twine("-type=a")));
+  else
+    CmdArgs.push_back(TCArgs.MakeArgString(
+        Twine("-type=") + types::getTypeTempSuffix(Input.getType())));
 
   // Get the targets.
   SmallString<128> Triples;
@@ -12242,6 +12279,62 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
   C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
 }
 
+// static llvm::object::Archive *GetArchive(StringRef File) {
+//   // Check if the input file format is one that we know how to deal with.
+//   Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(File);
+//   if (!BinaryOrErr) {
+//     auto EC = errorToErrorCode(BinaryOrErr.takeError());
+//     reportError(File, EC);
+//     return nullptr;
+//   }
+//   llvm::object::Binary &Binary = *BinaryOrErr.get().getBinary();
+//   if (Archive *Arc = dyn_cast<Archive>(&Binary))
+//     return Arc;
+//   reportError(File, "Cannot retrieve archive from provided Binary file.");
+
+//   return nullptr;
+// }
+
+// static std::vector<std::string> *GetArchivedCubins(StringRef InputArchive,
+//       StringRef Target) {
+//   const Archive *Arc = GetArchive(InputArchive);
+//   std::vector<std::string> *ArchiveObjectNames = new std::vector<std::string>();
+//   llvm::Error Err = llvm::Error::success();
+//   for (auto &ObjFile : Arc->children(Err)) {
+//     printf("BLA\n\n");
+//     llvm::Expected<std::unique_ptr<Binary>> ChildOrErr = ObjFile.getAsBinary();
+//     if (!ChildOrErr) {
+//       // Ignore non-object files.
+//       if (auto E = isNotObjectErrorInvalidFileType(ChildOrErr.takeError())) {
+//         std::string Buf;
+//         llvm::raw_string_ostream OS(Buf);
+//         logAllUnhandledErrors(std::move(E), OS, "");
+//         OS.flush();
+//         reportError(Arc->getFileName(), Buf);
+//       }
+//       consumeError(ChildOrErr.takeError());
+//       continue;
+//     }
+
+//     if (ObjectFile *Obj = dyn_cast<ObjectFile>(&*ChildOrErr.get())) {
+//       ArchiveObjectNames->push_back(Obj->getFileName().split(".").first.str());
+//       printf(" --------- Child Object File --------- %s\n", Obj->getFileName().str().c_str());
+//     }
+//   }
+//   error(std::move(Err));
+
+//   std::vector<std::string> *NewOutputFileNames = new std::vector<std::string>();
+//   for(unsigned i=0; i<ArchiveObjectNames->size(); i++) {
+//     SmallString<256> Buffer;
+//     llvm::raw_svector_ostream OutFileName(Buffer);
+//     OutFileName << "/tmp/" << llvm::sys::path::filename(InputArchive) << "/";
+//     OutFileName << (*ArchiveObjectNames)[i] << "-" << Target;
+//     OutFileName << ".cubin";
+//     NewOutputFileNames->push_back(OutFileName.str());
+//   }
+//   return NewOutputFileNames;
+// }
+
 // All inputs to this linker must be from CudaDeviceActions, as we need to look
 // at the Inputs' Actions in order to figure out which GPU architecture they
 // correspond to.
@@ -12253,6 +12346,7 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   const auto &TC =
       static_cast<const toolchains::CudaToolChain &>(getToolChain());
   assert(TC.getTriple().isNVPTX() && "Wrong platform");
+  assert(false);
 
   ArgStringList CmdArgs;
 
@@ -12321,26 +12415,48 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
       if (!II.isFilename())
         continue;
 
-      printf(" ---------> BaseInput %s \n", II.getFilename());
+      // Get original file input.
+      StringRef OrigInputFileName =
+          llvm::sys::path::filename(II.getBaseInput());
+      if (OrigInputFileName.endswith(".a")) {
+        // If the file is an archive then we need to pass all
+        // the cubins contained in this library's temporary folder
+        // containing the extracted and then unbundled object files.
+        SmallString<128> TempLibPath("/");
+        llvm::sys::path::append(TempLibPath, "tmp");
+        llvm::sys::path::append(TempLibPath, OrigInputFileName.split(".").first);
+        llvm::sys::path::append(TempLibPath, "*.cubin");
+        printf(" -----------> %s\n", TempLibPath.str().str().c_str());
+        const char *CubinFiles =
+            C.addTempFile(C.getArgs().MakeArgString(TempLibPath.str()));
+        CmdArgs.push_back(CubinFiles);
+        // std::vector<std::string> *CubinList =
+        //     GetArchivedCubins(II.getBaseInput(), TC.getTriple().str());
+        // for (auto Cubin: *CubinList) {
+        //   const char *CubinFile =
+        //     C.addTempFile(C.getArgs().MakeArgString(Cubin));
+        //   CmdArgs.push_back(CubinFile);
+        // }
+      } else {
+        StringRef Name = llvm::sys::path::filename(II.getFilename());
+        std::pair<StringRef, StringRef> Split = Name.rsplit('.');
+        std::string TmpName =
+            C.getDriver().GetTemporaryPath(Split.first, "cubin");
 
-      StringRef Name = llvm::sys::path::filename(II.getFilename());
-      std::pair<StringRef, StringRef> Split = Name.rsplit('.');
-      std::string TmpName =
-          C.getDriver().GetTemporaryPath(Split.first, "cubin");
+        const char *CubinF =
+            C.addTempFile(C.getArgs().MakeArgString(TmpName.c_str()));
 
-      const char *CubinF =
-          C.addTempFile(C.getArgs().MakeArgString(TmpName.c_str()));
+        const char *CopyExec = Args.MakeArgString(getToolChain().GetProgramPath(
+            C.getDriver().IsCLMode() ? "copy" : "cp"));
 
-      const char *CopyExec = Args.MakeArgString(getToolChain().GetProgramPath(
-          C.getDriver().IsCLMode() ? "copy" : "cp"));
+        ArgStringList CopyCmdArgs;
+        CopyCmdArgs.push_back(II.getFilename());
+        CopyCmdArgs.push_back(CubinF);
+        C.addCommand(
+            llvm::make_unique<Command>(JA, *this, CopyExec, CopyCmdArgs, Inputs));
 
-      ArgStringList CopyCmdArgs;
-      CopyCmdArgs.push_back(II.getFilename());
-      CopyCmdArgs.push_back(CubinF);
-      C.addCommand(
-          llvm::make_unique<Command>(JA, *this, CopyExec, CopyCmdArgs, Inputs));
-
-      CmdArgs.push_back(CubinF);
+        CmdArgs.push_back(CubinF);
+      }
     }
 
     AddOpenMPLinkerScript(getToolChain(), C, Output, Inputs, Args, CmdArgs, JA);

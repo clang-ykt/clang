@@ -35,8 +35,20 @@ Command::Command(const Action &Source, const Tool &Creator,
     : Source(Source), Creator(Creator), Executable(Executable),
       Arguments(Arguments), ResponseFile(nullptr) {
   for (const auto &II : Inputs)
-    if (II.isFilename())
-      InputFilenames.push_back(II.getFilename());
+    if (II.isFilename()) {
+      StringRef OrigInputFileName =
+          llvm::sys::path::filename(II.getBaseInput());
+      if (OrigInputFileName.endswith(".a")) {
+        SmallString<128> TempLibPath("/");
+        llvm::sys::path::append(TempLibPath, "tmp");
+        llvm::sys::path::append(TempLibPath, OrigInputFileName.split(".").first);
+        llvm::sys::path::append(TempLibPath, "*.cubin");
+        printf(" -----------> %s\n", TempLibPath.str().str().c_str());
+        const char *CubinFiles = TempLibPath.str().str().c_str();
+        InputFilenames.push_back(CubinFiles);
+      } else
+        InputFilenames.push_back(II.getFilename());
+    }
 }
 
 /// @brief Check if the compiler flag in question should be skipped when
