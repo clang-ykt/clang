@@ -12346,7 +12346,7 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   const auto &TC =
       static_cast<const toolchains::CudaToolChain &>(getToolChain());
   assert(TC.getTriple().isNVPTX() && "Wrong platform");
-  assert(false);
+  // assert(false);
 
   ArgStringList CmdArgs;
 
@@ -12415,29 +12415,29 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
       if (!II.isFilename())
         continue;
 
-      // Get original file input.
-      StringRef OrigInputFileName =
-          llvm::sys::path::filename(II.getBaseInput());
-      if (OrigInputFileName.endswith(".a")) {
-        // If the file is an archive then we need to pass all
-        // the cubins contained in this library's temporary folder
-        // containing the extracted and then unbundled object files.
-        SmallString<128> TempLibPath("/");
-        llvm::sys::path::append(TempLibPath, "tmp");
-        llvm::sys::path::append(TempLibPath, OrigInputFileName.split(".").first);
-        llvm::sys::path::append(TempLibPath, "*.cubin");
-        printf(" -----------> %s\n", TempLibPath.str().str().c_str());
-        const char *CubinFiles =
-            C.addTempFile(C.getArgs().MakeArgString(TempLibPath.str()));
-        CmdArgs.push_back(CubinFiles);
-        // std::vector<std::string> *CubinList =
-        //     GetArchivedCubins(II.getBaseInput(), TC.getTriple().str());
-        // for (auto Cubin: *CubinList) {
-        //   const char *CubinFile =
-        //     C.addTempFile(C.getArgs().MakeArgString(Cubin));
-        //   CmdArgs.push_back(CubinFile);
-        // }
-      } else {
+      // // Get original file input.
+      // StringRef OrigInputFileName =
+      //     llvm::sys::path::filename(II.getBaseInput());
+      // if (OrigInputFileName.endswith(".a")) {
+      //   // If the file is an archive then we need to pass all
+      //   // the cubins contained in this library's temporary folder
+      //   // containing the extracted and then unbundled object files.
+      //   SmallString<128> TempLibPath("/");
+      //   llvm::sys::path::append(TempLibPath, "tmp");
+      //   llvm::sys::path::append(TempLibPath, OrigInputFileName.split(".").first);
+      //   llvm::sys::path::append(TempLibPath, "*.cubin");
+      //   printf(" -----------> %s\n", TempLibPath.str().str().c_str());
+      //   const char *CubinFiles =
+      //       C.addTempFile(C.getArgs().MakeArgString(TempLibPath.str()));
+      //   CmdArgs.push_back(CubinFiles);
+      //   // std::vector<std::string> *CubinList =
+      //   //     GetArchivedCubins(II.getBaseInput(), TC.getTriple().str());
+      //   // for (auto Cubin: *CubinList) {
+      //   //   const char *CubinFile =
+      //   //     C.addTempFile(C.getArgs().MakeArgString(Cubin));
+      //   //   CmdArgs.push_back(CubinFile);
+      //   // }
+      // } else {
         StringRef Name = llvm::sys::path::filename(II.getFilename());
         std::pair<StringRef, StringRef> Split = Name.rsplit('.');
         std::string TmpName =
@@ -12456,7 +12456,7 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
             llvm::make_unique<Command>(JA, *this, CopyExec, CopyCmdArgs, Inputs));
 
         CmdArgs.push_back(CubinF);
-      }
+      // }
     }
 
     AddOpenMPLinkerScript(getToolChain(), C, Output, Inputs, Args, CmdArgs, JA);
