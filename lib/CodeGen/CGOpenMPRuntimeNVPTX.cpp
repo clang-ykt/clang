@@ -2961,6 +2961,9 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
       DataSharingInfo::DataSharingType DST = DataSharingInfo::DST_Val;
 
       if (CurField->hasCapturedVLAType()) {
+        // Add "declaration" for this "variable".
+        auto VAT = CurField->getCapturedVLAType();
+        Info.addVLASize(VAT);
         continue;
       } else if (CurCap->capturesThis()) {
         // We use null to indicate 'this'.
@@ -3191,6 +3194,11 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   int count = 0;
   for (auto &I : ArgImplDecls) {
     ArgList.push_back(&I);
+    count++;
+  }
+
+  for(auto VAT: DSI.CapturesVLASizes) {
+    ArgList.push_back(EnclosingCGF.VLASizeMap[VAT->getSizeExpr()]);
     count++;
   }
 

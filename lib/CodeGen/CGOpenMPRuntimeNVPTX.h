@@ -129,8 +129,14 @@ public:
     // being shared is a reference and not the variable original storage.
     llvm::SmallVector<std::pair<const VarDecl *, DataSharingType>, 8>
         CapturesValues;
+    llvm::SmallVector<const VariableArrayType *, 8>
+        CapturesVLASizes;
     void add(const VarDecl *VD, DataSharingType DST) {
       CapturesValues.push_back(std::make_pair(VD, DST));
+    }
+
+    void addVLASize(const VariableArrayType *VAT) {
+      CapturesVLASizes.push_back(VAT);
     }
 
     // The record type of the sharing region if shared by the master.
