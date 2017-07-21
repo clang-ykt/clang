@@ -32,6 +32,7 @@
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/SemaInternal.h"
+#include "llvm/ADT/PointerEmbeddedInt.h"
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
@@ -85,9 +86,25 @@ private:
       CriticalsWithHintsTy;
   typedef llvm::DenseMap<OMPDependClause *, OperatorOffsetTy>
       DoacrossDependMapTy;
+  struct ReductionData {
+    typedef llvm::PointerEmbeddedInt<BinaryOperatorKind, 16> BOKPtrType;
+    SourceRange ReductionRange;
+    llvm::PointerUnion<const Expr *, BOKPtrType> ReductionOp;
+    ReductionData() = default;
+    void set(BinaryOperatorKind BO, SourceRange RR) {
+      ReductionRange = RR;
+      ReductionOp = BO;
+    }
+    void set(const Expr *RefExpr, SourceRange RR) {
+      ReductionRange = RR;
+      ReductionOp = RefExpr;
+    }
+  };
+  typedef llvm::DenseMap<ValueDecl *, ReductionData> DeclReductionMapTy;
 
   struct SharingMapTy final {
     DeclSAMapTy SharingMap;
+    DeclReductionMapTy ReductionMap;
     AlignedMapTy AlignedMap;
     MappedExprComponentsTy MappedExprComponents;
     LoopControlVariablesMapTy LCVMap;
@@ -222,6 +239,21 @@ public:
   /// \brief Adds explicit data sharing attribute to the specified declaration.
   void addDSA(ValueDecl *D, Expr *E, OpenMPClauseKind A,
               DeclRefExpr *PrivateCopy = nullptr);
+
+  /// Adds additional information for the reduction items with the reduction id
+  /// represented as an operator.
+  void addReductionData(ValueDecl *D, SourceRange SR, BinaryOperatorKind BOK);
+  /// Adds additional information for the reduction items with the reduction id
+  /// represented as reduction identifier.
+  void addReductionData(ValueDecl *D, SourceRange SR, const Expr *ReductionRef);
+  /// Returns the location and reduction operation from the innermost parent
+  /// region for the given \p D.
+  bool getTopMostReductionData(ValueDecl *D, SourceRange &SR,
+                               BinaryOperatorKind &BOK);
+  /// Returns the location and reduction operation from the innermost parent
+  /// region for the given \p D.
+  bool getTopMostReductionData(ValueDecl *D, SourceRange &SR,
+                               const Expr *&ReductionRef);
 
   /// \brief Returns data sharing attributes from top of the stack for the
   /// specified declaration.
@@ -730,6 +762,80 @@ void DSAStackTy::addDSA(ValueDecl *D, Expr *E, OpenMPClauseKind A,
       Data.PrivateCopy = nullptr;
     }
   }
+}
+
+void DSAStackTy::addReductionData(ValueDecl *D, SourceRange SR,
+                                  BinaryOperatorKind BOK) {
+  D = getCanonicalDecl(D);
+  assert(!isStackEmpty() && "Data-sharing attributes stack is empty");
+  auto &Data = Stack.back().first.back().SharingMap[D];
+  assert(
+      Data.Attributes == OMPC_reduction &&
+      "Additional reduction info may be specified only for reduction items.");
+  auto &ReductionData = Stack.back().first.back().ReductionMap[D];
+  assert(ReductionData.ReductionRange.isInvalid() &&
+         "Additional reduction info may be specified only once for reduction "
+         "items.");
+  ReductionData.set(BOK, SR);
+}
+
+void DSAStackTy::addReductionData(ValueDecl *D, SourceRange SR,
+                                  const Expr *ReductionRef) {
+  D = getCanonicalDecl(D);
+  assert(!isStackEmpty() && "Data-sharing attributes stack is empty");
+  auto &Data = Stack.back().first.back().SharingMap[D];
+  assert(
+      Data.Attributes == OMPC_reduction &&
+      "Additional reduction info may be specified only for reduction items.");
+  auto &ReductionData = Stack.back().first.back().ReductionMap[D];
+  assert(ReductionData.ReductionRange.isInvalid() &&
+         "Additional reduction info may be specified only once for reduction "
+         "items.");
+  ReductionData.set(ReductionRef, SR);
+}
+
+bool DSAStackTy::getTopMostReductionData(ValueDecl *D, SourceRange &SR,
+                                         BinaryOperatorKind &BOK) {
+  D = getCanonicalDecl(D);
+  assert(!isStackEmpty() && Stack.back().first.size() > 1 &&
+         "Data-sharing attributes stack is empty or has only 1 region.");
+  for (auto I = std::next(Stack.back().first.rbegin(), 0),
+            E = Stack.back().first.rend();
+       I != E; std::advance(I, 1)) {
+    auto &Data = I->SharingMap[D];
+    if (Data.Attributes != OMPC_reduction)
+      continue;
+    auto &ReductionData = I->ReductionMap[D];
+    if (!ReductionData.ReductionOp ||
+        ReductionData.ReductionOp.is<const Expr *>())
+      return false;
+    SR = ReductionData.ReductionRange;
+    BOK = ReductionData.ReductionOp.get<ReductionData::BOKPtrType>();
+    return true;
+  }
+  return false;
+}
+
+bool DSAStackTy::getTopMostReductionData(ValueDecl *D, SourceRange &SR,
+                                         const Expr *&ReductionRef) {
+  D = getCanonicalDecl(D);
+  assert(!isStackEmpty() && Stack.back().first.size() > 1 &&
+         "Data-sharing attributes stack is empty or has only 1 region.");
+  for (auto I = std::next(Stack.back().first.rbegin(), 0),
+            E = Stack.back().first.rend();
+       I != E; std::advance(I, 1)) {
+    auto &Data = I->SharingMap[D];
+    if (Data.Attributes != OMPC_reduction)
+      continue;
+    auto &ReductionData = I->ReductionMap[D];
+    if (!ReductionData.ReductionOp ||
+        !ReductionData.ReductionOp.is<const Expr *>())
+      return false;
+    SR = ReductionData.ReductionRange;
+    ReductionRef = ReductionData.ReductionOp.get<const Expr *>();
+    return true;
+  }
+  return false;
 }
 
 bool DSAStackTy::isOpenMPLocal(VarDecl *D, StackTy::reverse_iterator Iter) {
@@ -8801,7 +8907,7 @@ buildDeclareReductionRef(Sema &SemaRef, SourceLocation Loc, SourceRange Range,
 //    ArrayRef<Expr *> UnresolvedReductions
 
 static void CheckOMPReductionTypeClause(
-    Sema &OMPSema, ASTContext &Context, DeclContext *CurContext,
+    Sema &OMPSema, OpenMPClauseKind ClauseKind, DeclContext *CurContext,
     const LangOptions &LangOpts, DSAStackTy *InDSAStack,
     ArrayRef<Expr *> VarList, CXXScopeSpec &ReductionIdScopeSpec,
     const DeclarationNameInfo &ReductionId,
@@ -8810,6 +8916,7 @@ static void CheckOMPReductionTypeClause(
     SmallVector<Expr *, 8> &RHSs, SmallVector<Expr *, 8> &ReductionOps,
     SmallVector<Decl *, 4> &ExprCaptures,
     SmallVector<Expr *, 4> &ExprPostUpdates) {
+  ASTContext &Context = OMPSema.getASTContext();
   auto DN = ReductionId.getName();
   auto OOK = DN.getCXXOverloadedOperator();
   BinaryOperatorKind BOK = BO_Comma;
@@ -8988,7 +9095,8 @@ static void CheckOMPReductionTypeClause(
       if (VD->getType()->isReferenceType() && VDDef && VDDef->hasInit()) {
         DSARefChecker Check(InDSAStack);
         if (Check.Visit(VDDef->getInit())) {
-          OMPSema.Diag(ELoc, diag::err_omp_reduction_ref_type_arg) << ERange;
+          OMPSema.Diag(ELoc, diag::err_omp_reduction_ref_type_arg)
+              << getOpenMPClauseName(ClauseKind) << ERange;
           OMPSema.Diag(VDDef->getLocation(), diag::note_defined_here) << VDDef;
           continue;
         }
@@ -9010,9 +9118,10 @@ static void CheckOMPReductionTypeClause(
     DVar = InDSAStack->getTopDSA(D, false);
     if (DVar.CKind == OMPC_reduction) {
       OMPSema.Diag(ELoc, diag::err_omp_once_referenced)
-          << getOpenMPClauseName(OMPC_reduction);
+          << getOpenMPClauseName(ClauseKind);
       if (DVar.RefExpr)
         OMPSema.Diag(DVar.RefExpr->getExprLoc(), diag::note_omp_referenced);
+      continue;
     } else if (DVar.CKind != OMPC_unknown) {
       OMPSema.Diag(ELoc, diag::err_omp_wrong_dsa)
           << getOpenMPClauseName(DVar.CKind)
@@ -9078,7 +9187,7 @@ static void CheckOMPReductionTypeClause(
           !(Type->isScalarType() ||
             (LangOpts.CPlusPlus && Type->isArithmeticType()))) {
         OMPSema.Diag(ELoc, diag::err_omp_clause_not_arithmetic_type_arg)
-            << LangOpts.CPlusPlus;
+            << getOpenMPClauseName(ClauseKind) << LangOpts.CPlusPlus;
         if (!ASE && !OASE) {
           bool IsDecl = !VD ||
                         VD->isThisDeclarationADefinition(Context) ==
@@ -9091,7 +9200,8 @@ static void CheckOMPReductionTypeClause(
       }
       if ((BOK == BO_OrAssign || BOK == BO_AndAssign || BOK == BO_XorAssign) &&
           !LangOpts.CPlusPlus && Type->isFloatingType()) {
-        OMPSema.Diag(ELoc, diag::err_omp_clause_floating_type_arg);
+        OMPSema.Diag(ELoc, diag::err_omp_clause_floating_type_arg)
+            << getOpenMPClauseName(ClauseKind);
         if (!ASE && !OASE) {
           bool IsDecl = !VD ||
                         VD->isThisDeclarationADefinition(Context) ==
@@ -9315,6 +9425,52 @@ static void CheckOMPReductionTypeClause(
         continue;
     }
 
+    // OpenMP [2.15.4.6, Restrictions, p.2]
+    // A list item that appears in an in_reduction clause of a task construct
+    // must appear in a task_reduction clause of a construct associated with a
+    // taskgroup region that includes the participating task in its taskgroup
+    // set. The construct associated with the innermost region that meets this
+    // condition must specify the same reduction-identifier as the in_reduction
+    // clause.
+    if (ClauseKind == OMPC_in_reduction) {
+      DVar = InDSAStack->hasDSA(
+          D, [](OpenMPClauseKind K) { return K != OMPC_unknown; },
+          [](OpenMPDirectiveKind K) { return K == OMPD_taskgroup; },
+          /*FromParent=*/true);
+      if (DVar.CKind != OMPC_reduction || DVar.DKind != OMPD_taskgroup) {
+        OMPSema.Diag(ELoc, diag::err_omp_in_reduction_not_task_reduction);
+        continue;
+      }
+      SourceRange ParentSR;
+      BinaryOperatorKind ParentBOK;
+      const Expr *ParentReductionOp;
+      bool IsParentBOK =
+          InDSAStack->getTopMostReductionData(D, ParentSR, ParentBOK);
+      bool IsParentReductionOp =
+          InDSAStack->getTopMostReductionData(D, ParentSR, ParentReductionOp);
+      if ((DeclareReductionRef.isUnset() && IsParentReductionOp) ||
+          (DeclareReductionRef.isUsable() && IsParentBOK) || BOK != ParentBOK ||
+          IsParentReductionOp) {
+        bool EmitError = true;
+        if (IsParentReductionOp && DeclareReductionRef.isUsable()) {
+          llvm::FoldingSetNodeID RedId, ParentRedId;
+          ParentReductionOp->Profile(ParentRedId, Context, /*Canonical=*/true);
+          DeclareReductionRef.get()->Profile(RedId, Context,
+                                             /*Canonical=*/true);
+          EmitError = RedId != ParentRedId;
+        }
+        if (EmitError) {
+          OMPSema.Diag(ReductionId.getLocStart(),
+                       diag::err_omp_reduction_identifier_mismatch)
+              << ReductionIdRange << RefExpr->getSourceRange();
+          OMPSema.Diag(ParentSR.getBegin(),
+                       diag::note_omp_previous_reduction_identifier)
+              << ParentSR << DVar.RefExpr->getSourceRange();
+          continue;
+        }
+      }
+    }
+
     DeclRefExpr *Ref = nullptr;
     Expr *VarsExpr = RefExpr->IgnoreParens();
     if (!VD && !CurContext->isDependentContext()) {
@@ -9350,6 +9506,11 @@ static void CheckOMPReductionTypeClause(
       }
     }
     InDSAStack->addDSA(D, RefExpr->IgnoreParens(), OMPC_reduction, Ref);
+    if (DeclareReductionRef.isUsable()) {
+      InDSAStack->addReductionData(D, ReductionIdRange,
+                                   DeclareReductionRef.get());
+    } else
+      InDSAStack->addReductionData(D, ReductionIdRange, BOK);
     Vars.push_back(VarsExpr);
     Privates.push_back(PrivateDRE);
     LHSs.push_back(LHSDRE);
@@ -9373,7 +9534,7 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
   SmallVector<Expr *, 4> ExprPostUpdates;
 
   CheckOMPReductionTypeClause(
-      *this, Context, CurContext, getLangOpts(), DSAStack, VarList,
+      *this, OMPC_reduction, CurContext, getLangOpts(), DSAStack, VarList,
       ReductionIdScopeSpec, ReductionId, UnresolvedReductions, Vars, Privates,
       LHSs, RHSs, ReductionOps, ExprCaptures, ExprPostUpdates);
 
@@ -11376,7 +11537,7 @@ OMPClause *Sema::ActOnOpenMPTaskReductionClause(
   SmallVector<Expr *, 4> ExprPostUpdates;
 
   CheckOMPReductionTypeClause(
-      *this, Context, CurContext, getLangOpts(), DSAStack, VarList,
+      *this, OMPC_task_reduction, CurContext, getLangOpts(), DSAStack, VarList,
       ReductionIdScopeSpec, ReductionId, UnresolvedReductions, Vars, Privates,
       LHSs, RHSs, ReductionOps, ExprCaptures, ExprPostUpdates);
 
@@ -11405,11 +11566,9 @@ OMPClause *Sema::ActOnOpenMPInReductionClause(
   SmallVector<Expr *, 4> ExprPostUpdates;
 
   CheckOMPReductionTypeClause(
-      *this, Context, CurContext, getLangOpts(), DSAStack, VarList,
+      *this, OMPC_in_reduction, CurContext, getLangOpts(), DSAStack, VarList,
       ReductionIdScopeSpec, ReductionId, UnresolvedReductions, Vars, Privates,
       LHSs, RHSs, ReductionOps, ExprCaptures, ExprPostUpdates);
-
-  // TODO: add restriction specific to InReduction and not other reduction types
 
   if (Vars.empty())
     return nullptr;
