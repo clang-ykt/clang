@@ -3450,7 +3450,6 @@ const char *Driver::GetNamedOutputPath(Compilation &C, const JobAction &JA,
 
   // Determine what the derived output name should be.
   const char *NamedOutput;
-
   if ((JA.getType() == types::TY_Object || JA.getType() == types::TY_LTO_BC) &&
       C.getArgs().hasArg(options::OPT__SLASH_Fo, options::OPT__SLASH_o)) {
     // The /Fo or /o flag decides the object filename.
@@ -3506,7 +3505,10 @@ const char *Driver::GetNamedOutputPath(Compilation &C, const JobAction &JA,
         JA.getType() == types::TY_LLVM_BC)
       Suffixed += ".tmp";
     Suffixed += '.';
-    Suffixed += Suffix;
+    if (((StringRef)BaseInput).endswith(".a"))
+      Suffixed += "a";
+    else
+      Suffixed += Suffix;
     NamedOutput = C.getArgs().MakeArgString(Suffixed.c_str());
   }
 

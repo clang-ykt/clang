@@ -867,8 +867,6 @@ static bool UnbundleFiles(StringRef ArchiveFileName="",
   if (ArchiveFileName != "")
     InputFile = ArchiveFileName;
 
-  printf("Input File ============================= %s\n", InputFile.str().c_str());
-
   // Open Input file.
   ErrorOr<std::unique_ptr<MemoryBuffer>> CodeOrErr =
       MemoryBuffer::getFileOrSTDIN(InputFile);
@@ -979,9 +977,18 @@ static bool UnbundleFiles(StringRef ArchiveFileName="",
       return true;
     }
   }
-  printf("Unbundling is done\n");
 
   return false;
+}
+
+// Function that assembles an argument.
+std::string AssembleArgString(
+      StringRef Prefix, StringRef ArgValue, StringRef Suffix=""){
+  SmallString<128> StringArgBuffer;
+  llvm::raw_svector_ostream StringArg(StringArgBuffer);
+  StringArg << Prefix << ArgValue << Suffix;
+  return StringArg.str().str();
+  // return (Prefix + ArgValue + Suffix).str().c_str();
 }
 
 // Unbundle the files. Return true if archive was handled.
@@ -1000,45 +1007,6 @@ static bool HandleArchiveFiles() {
   // in the folder of the static library the user is trying to link
   // against.
 
-  // Create folder for extracting object files from archive.
-  // TODO: get root directory in a generic way
-  SmallString<128> TempLibPath("/");
-  llvm::sys::path::append(TempLibPath, "tmp");
-
-  printf(" --------------------> Temp Folder:  %s\n", TempLibPath.str().str().c_str());
-
-  StringRef LibraryName = InputFileName;
-  if (llvm::sys::path::is_absolute(InputFileName)) {
-    LibraryName = llvm::sys::path::filename(InputFileName);
-  }
-
-  printf(" --------------------> LibraryName:  %s\n", LibraryName.str().c_str());
-
-  llvm::sys::path::append(TempLibPath, LibraryName.split(".").first);
-  StringRef FolderName = TempLibPath.str();
-
-  printf(" ---------------------> FolderName:  %s\n", FolderName.str().c_str());
-
-  llvm::sys::path::append(TempLibPath, LibraryName);
-
-  printf(" --------------------> TempLibPath:  %s\n", TempLibPath.str().str().c_str());
-
-  // Check if library already copied to temp lib folder.
-  // This means a temp folder already exists so no need
-  // to create it again. Copy static lib to temp folder
-  // to avoid stale versions of the lib.
-  llvm::sys::fs::file_status Status;
-  llvm::sys::fs::status(TempLibPath, Status);
-  if (!llvm::sys::fs::exists(Status))
-    llvm::sys::fs::create_directories(FolderName);
-  else
-    llvm::sys::fs::remove(TempLibPath);
-  printf(" ------------------> InputFileName:  %s\n", InputFileName.str().c_str());
-  // if (std::error_code EC = sys::fs::copy_file(InputFileName, TempLibPath)) {
-  //     errs() << "error: while copying file " << InputFileName << " to " << TempLibPath
-  //            << ": " << EC.message() << "\n";
-  // }
-
   // Extract object files from archive
   const char *ExtractArchiveArgs[] = {"ar", "x",
                                       InputFileName.str().c_str(),
@@ -1046,7 +1014,7 @@ static bool HandleArchiveFiles() {
   auto ArBinary = sys::findProgramByName("ar");
   Failed = sys::ExecuteAndWait(ArBinary.get(), ExtractArchiveArgs);
   if (Failed) {
-    errs() << "error: extracting the archived object files failed.\n";
+    errs() << "error: 1 extracting the archived object files failed.\n";
     return true;
   }
 
@@ -1062,7 +1030,6 @@ static bool HandleArchiveFiles() {
   std::vector<std::string> *ArchiveObjectNames = new std::vector<std::string>();
   Error Err = Error::success();
   for (auto &ObjFile : Arc->children(Err)) {
-    printf("BLA\n\n");
     Expected<std::unique_ptr<Binary>> ChildOrErr = ObjFile.getAsBinary();
     if (!ChildOrErr) {
       // Ignore non-object files.
@@ -1077,25 +1044,20 @@ static bool HandleArchiveFiles() {
       continue;
     }
 
-    if (ObjectFile *Obj = dyn_cast<ObjectFile>(&*ChildOrErr.get())) {
+    if (ObjectFile *Obj = dyn_cast<ObjectFile>(&*ChildOrErr.get()))
       ArchiveObjectNames->push_back(Obj->getFileName().split(".").first.str());
-      printf(" --------- Child Object File --------- %s\n", Obj->getFileName().str().c_str());
-    }
   }
   error(std::move(Err));
 
   for(unsigned i=0; i<ArchiveObjectNames->size(); i++) {
-    printf(" -----------------------> ArchiveObjectName = %s \n", (*ArchiveObjectNames)[i].c_str());
-    std::vector<std::string> *NewOutputFileNames = new std::vector<std::string>();
+    std::vector<std::string> *NewOutputFileNames =
+        new std::vector<std::string>();
     for (StringRef Target : TargetNames) {
-      printf("    ------- Target name: %s\n", Target.str().c_str());
       SmallString<256> Buffer;
       llvm::raw_svector_ostream OutFileName(Buffer);
       OutFileName << (*ArchiveObjectNames)[i] << "-" << Target;
       if (Target == "openmp-nvptx64-nvidia-cuda" ||
           Target == "openmp-nvptx32-nvidia-cuda") {
-        printf("        ------- Target is NVIDIA GPU\n");
-        // OutFileName << ".o";
         OutFileName << ".cubin";
         NewOutputFileNames->push_back(OutFileName.str());
         continue;
@@ -1104,28 +1066,98 @@ static bool HandleArchiveFiles() {
       NewOutputFileNames->push_back(OutFileName.str());
     }
 
-    auto Output = NewOutputFileNames->begin();
-    for (StringRef Target : TargetNames) {
-      printf("    ------- Output file name: %s (%s)\n", Output->c_str(), Target.str().c_str());
-      ++Output;
-    }
+    // auto Output = NewOutputFileNames->begin();
+    // for (StringRef Target : TargetNames) {
+    //   printf("    ------- Output file name: %s (%s)\n", Output->c_str(), Target.str().c_str());
+    //   ++Output;
+    // }
 
     SmallString<256> Buffer;
     llvm::raw_svector_ostream InputFileName(Buffer);
     InputFileName << (*ArchiveObjectNames)[i] << ".o";
-    printf(" -----------------------> ArchiveObjectName = %s \n", InputFileName.str().str().c_str());
     UnbundleFiles(InputFileName.str(),
                   NewOutputFileNames);
 
+    // Find fatbinary binary
+    auto FatBinary = sys::findProgramByName("fatbinary");
+    auto ClangBinary = sys::findProgramByName("clang");
+
+    unsigned count = 0;
     // Copy unbundled files to temp lib folder.
-    for(auto OutputFileName: *NewOutputFileNames) {
-      llvm::sys::path::remove_filename(TempLibPath);
-      llvm::sys::path::append(TempLibPath, OutputFileName);
-      if (std::error_code EC = sys::fs::copy_file(OutputFileName, TempLibPath)) {
-        errs() << "error: while copying file " << OutputFileName << " to " << TempLibPath
-               << ": " << EC.message() << "\n";
+    for(StringRef OutputFileName: *NewOutputFileNames) {
+      // cubin files need to handled differently: we need to
+      // invoke the fatbinary executable for each cubin and create
+      // a fatbin file which needs to be wrapped in a C wrapper.
+      // The new file needs to be compiled into a .o file. This
+      // latter file can now be included in the initial static lib.
+      if (OutputFileName.endswith(".cubin")) {
+        // Output file base name, no extension.
+        StringRef OutBaseName = OutputFileName.split(".").first;
+
+        // Create .fatbin file.
+        std::string FatbinFileName = AssembleArgString(OutBaseName,
+            ".fatbin");
+
+        // Create .fatbin.c file
+        std::string WrapFatbinName = AssembleArgString(OutBaseName,
+            ".fatbin.c");
+
+        const char *GenAndWrapFatbinArgs[] = {"fatbinary",
+            AssembleArgString("--image=profile=sm_35,file=",
+                              OutputFileName).c_str(),
+            AssembleArgString("--create=", FatbinFileName).c_str(),
+            AssembleArgString("--embedded-fatbin=",
+                              WrapFatbinName).c_str(), "-64",
+            "--cmdline=--compile-only", "--cuda", "--device-c",
+            nullptr};
+        Failed = sys::ExecuteAndWait(FatBinary.get(), GenAndWrapFatbinArgs);
+        if (Failed) {
+          errs() << "error: generating and wrapping fatbin.\n";
+        }
+
+        // Create fatbin object file (.fatbin.o).
+        std::string ObjectFileName = AssembleArgString(OutBaseName,
+            ".fatbin.o");
+
+        // Arguments for call to clang.
+        const char *WrapFatbinObjArgs[] = {"clang", "-c",
+            "-I/usr/local/cuda/include/",
+            "-Wno-extern-initializer",
+            WrapFatbinName.c_str(), "-o",
+            ObjectFileName.c_str(), nullptr};
+        Failed = sys::ExecuteAndWait(ClangBinary.get(), WrapFatbinObjArgs);
+        if (Failed) {
+          errs() << "error: generating fatbin object.\n";
+        }
+
+        // Add newly formed fatbin object to target specific archive
+        const char *AddToArchiveArgs[] = {"ar", "rcs",
+            OutputFileNames[count].c_str(),
+            ObjectFileName.c_str(), nullptr};
+        Failed = sys::ExecuteAndWait(ArBinary.get(), AddToArchiveArgs);
+        if (Failed) {
+          errs() << "error: adding object to static library.\n";
+        }
+
+        llvm::sys::fs::remove(ObjectFileName);
+        llvm::sys::fs::remove(WrapFatbinName);
+        llvm::sys::fs::remove(FatbinFileName);
+      } else {
+        // Add unbundled object to static library
+        const char *AddToArchiveArgs[] = {"ar", "rcs",
+            OutputFileNames[count].c_str(),
+            OutputFileName.str().c_str(),
+            nullptr};
+        Failed = sys::ExecuteAndWait(ArBinary.get(), AddToArchiveArgs);
+        if (Failed) {
+          errs() << "error: adding object to static library.\n";
+        }
       }
+
+      // Remove output file.
       llvm::sys::fs::remove(OutputFileName);
+
+      count++;
     }
 
     // Remove original object file.

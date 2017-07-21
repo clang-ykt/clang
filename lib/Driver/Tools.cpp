@@ -7331,10 +7331,8 @@ void OffloadBundler::ConstructJobMultipleOutputs(
   InputInfo Input = Inputs.front();
 
   // Get the type.
-  printf(" =========================UNBUNDLE================================ \n");
   StringRef InputFilname = Input.getFilename();
   bool InputIsArchive = InputFilname.endswith(".a");
-  printf(" ------------> Is Archive = %d\n", InputIsArchive);
   if (InputIsArchive)
     CmdArgs.push_back(TCArgs.MakeArgString(
         Twine("-type=a")));
@@ -12279,62 +12277,6 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
   C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
 }
 
-// static llvm::object::Archive *GetArchive(StringRef File) {
-//   // Check if the input file format is one that we know how to deal with.
-//   Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(File);
-//   if (!BinaryOrErr) {
-//     auto EC = errorToErrorCode(BinaryOrErr.takeError());
-//     reportError(File, EC);
-//     return nullptr;
-//   }
-//   llvm::object::Binary &Binary = *BinaryOrErr.get().getBinary();
-//   if (Archive *Arc = dyn_cast<Archive>(&Binary))
-//     return Arc;
-//   reportError(File, "Cannot retrieve archive from provided Binary file.");
-
-//   return nullptr;
-// }
-
-// static std::vector<std::string> *GetArchivedCubins(StringRef InputArchive,
-//       StringRef Target) {
-//   const Archive *Arc = GetArchive(InputArchive);
-//   std::vector<std::string> *ArchiveObjectNames = new std::vector<std::string>();
-//   llvm::Error Err = llvm::Error::success();
-//   for (auto &ObjFile : Arc->children(Err)) {
-//     printf("BLA\n\n");
-//     llvm::Expected<std::unique_ptr<Binary>> ChildOrErr = ObjFile.getAsBinary();
-//     if (!ChildOrErr) {
-//       // Ignore non-object files.
-//       if (auto E = isNotObjectErrorInvalidFileType(ChildOrErr.takeError())) {
-//         std::string Buf;
-//         llvm::raw_string_ostream OS(Buf);
-//         logAllUnhandledErrors(std::move(E), OS, "");
-//         OS.flush();
-//         reportError(Arc->getFileName(), Buf);
-//       }
-//       consumeError(ChildOrErr.takeError());
-//       continue;
-//     }
-
-//     if (ObjectFile *Obj = dyn_cast<ObjectFile>(&*ChildOrErr.get())) {
-//       ArchiveObjectNames->push_back(Obj->getFileName().split(".").first.str());
-//       printf(" --------- Child Object File --------- %s\n", Obj->getFileName().str().c_str());
-//     }
-//   }
-//   error(std::move(Err));
-
-//   std::vector<std::string> *NewOutputFileNames = new std::vector<std::string>();
-//   for(unsigned i=0; i<ArchiveObjectNames->size(); i++) {
-//     SmallString<256> Buffer;
-//     llvm::raw_svector_ostream OutFileName(Buffer);
-//     OutFileName << "/tmp/" << llvm::sys::path::filename(InputArchive) << "/";
-//     OutFileName << (*ArchiveObjectNames)[i] << "-" << Target;
-//     OutFileName << ".cubin";
-//     NewOutputFileNames->push_back(OutFileName.str());
-//   }
-//   return NewOutputFileNames;
-// }
-
 // All inputs to this linker must be from CudaDeviceActions, as we need to look
 // at the Inputs' Actions in order to figure out which GPU architecture they
 // correspond to.
@@ -12409,35 +12351,16 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
       // Currently, we only pass the input files to the linker, we do not pass
       // any libraries that may be valid only for the host.
-      printf(" ---------> Is filename? %d \n", II.isFilename());
-      printf(" ---------> File %s \n", II.getAsString().c_str());
-      printf(" ---------> BaseInput %s \n", II.getBaseInput());
       if (!II.isFilename())
         continue;
 
-      // // Get original file input.
-      // StringRef OrigInputFileName =
-      //     llvm::sys::path::filename(II.getBaseInput());
-      // if (OrigInputFileName.endswith(".a")) {
-      //   // If the file is an archive then we need to pass all
-      //   // the cubins contained in this library's temporary folder
-      //   // containing the extracted and then unbundled object files.
-      //   SmallString<128> TempLibPath("/");
-      //   llvm::sys::path::append(TempLibPath, "tmp");
-      //   llvm::sys::path::append(TempLibPath, OrigInputFileName.split(".").first);
-      //   llvm::sys::path::append(TempLibPath, "*.cubin");
-      //   printf(" -----------> %s\n", TempLibPath.str().str().c_str());
-      //   const char *CubinFiles =
-      //       C.addTempFile(C.getArgs().MakeArgString(TempLibPath.str()));
-      //   CmdArgs.push_back(CubinFiles);
-      //   // std::vector<std::string> *CubinList =
-      //   //     GetArchivedCubins(II.getBaseInput(), TC.getTriple().str());
-      //   // for (auto Cubin: *CubinList) {
-      //   //   const char *CubinFile =
-      //   //     C.addTempFile(C.getArgs().MakeArgString(Cubin));
-      //   //   CmdArgs.push_back(CubinFile);
-      //   // }
-      // } else {
+      StringRef OrigInputFileName =
+          llvm::sys::path::filename(II.getBaseInput());
+      if (OrigInputFileName.endswith(".a")) {
+        const char *StaticLibName =
+            C.addTempFile(C.getArgs().MakeArgString(II.getFilename()));
+        CmdArgs.push_back(StaticLibName);
+      } else {
         StringRef Name = llvm::sys::path::filename(II.getFilename());
         std::pair<StringRef, StringRef> Split = Name.rsplit('.');
         std::string TmpName =
@@ -12456,7 +12379,7 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
             llvm::make_unique<Command>(JA, *this, CopyExec, CopyCmdArgs, Inputs));
 
         CmdArgs.push_back(CubinF);
-      // }
+      }
     }
 
     AddOpenMPLinkerScript(getToolChain(), C, Output, Inputs, Args, CmdArgs, JA);
