@@ -130,6 +130,8 @@ private:
     bool CancelRegion = false;
     unsigned AssociatedLoops = 1;
     SourceLocation InnerTeamsRegionLoc;
+    /// Reference to the taskgroup task_reduction reference expression.
+    Expr *TaskgroupReductionRef = nullptr;
     bool DefaultMapIsToFrom = false;
     SharingMapTy(OpenMPDirectiveKind DKind, DeclarationNameInfo Name,
                  Scope *CurScope, SourceLocation Loc)
@@ -246,10 +248,12 @@ public:
 
   /// Adds additional information for the reduction items with the reduction id
   /// represented as an operator.
-  void addReductionData(ValueDecl *D, SourceRange SR, BinaryOperatorKind BOK);
+  void addTaskgroupReductionData(ValueDecl *D, SourceRange SR,
+                                 BinaryOperatorKind BOK);
   /// Adds additional information for the reduction items with the reduction id
   /// represented as reduction identifier.
-  void addReductionData(ValueDecl *D, SourceRange SR, const Expr *ReductionRef);
+  void addTaskgroupReductionData(ValueDecl *D, SourceRange SR,
+                                 const Expr *ReductionRef);
   /// Returns the location and reduction operation from the innermost parent
   /// region for the given \p D.
   DSAVarData getTopMostTaskgroupReductionData(ValueDecl *D, SourceRange &SR,
@@ -258,6 +262,13 @@ public:
   /// region for the given \p D.
   DSAVarData getTopMostTaskgroupReductionData(ValueDecl *D, SourceRange &SR,
                                               const Expr *&ReductionRef);
+  /// Return reduction reference expression for the current taskgroup.
+  Expr *getTaskgroupReductionRef() const {
+    assert(Stack.back().first.back().Directive == OMPD_taskgroup &&
+           "taskgroup reference expression requested for non taskgroup "
+           "directive.");
+    return Stack.back().first.back().TaskgroupReductionRef;
+  }
 
   /// \brief Returns data sharing attributes from top of the stack for the
   /// specified declaration.
@@ -768,8 +779,35 @@ void DSAStackTy::addDSA(ValueDecl *D, Expr *E, OpenMPClauseKind A,
   }
 }
 
-void DSAStackTy::addReductionData(ValueDecl *D, SourceRange SR,
-                                  BinaryOperatorKind BOK) {
+/// \brief Build a variable declaration for OpenMP loop iteration variable.
+static VarDecl *buildVarDecl(Sema &SemaRef, SourceLocation Loc, QualType Type,
+                             StringRef Name, const AttrVec *Attrs = nullptr) {
+  DeclContext *DC = SemaRef.CurContext;
+  IdentifierInfo *II = &SemaRef.PP.getIdentifierTable().get(Name);
+  TypeSourceInfo *TInfo = SemaRef.Context.getTrivialTypeSourceInfo(Type, Loc);
+  VarDecl *Decl =
+      VarDecl::Create(SemaRef.Context, DC, Loc, Loc, II, Type, TInfo, SC_None);
+  if (Attrs) {
+    for (specific_attr_iterator<AlignedAttr> I(Attrs->begin()), E(Attrs->end());
+         I != E; ++I)
+      Decl->addAttr(*I);
+  }
+  Decl->setImplicit();
+  return Decl;
+}
+
+static DeclRefExpr *buildDeclRefExpr(Sema &S, VarDecl *D, QualType Ty,
+                                     SourceLocation Loc,
+                                     bool RefersToCapture = false) {
+  D->setReferenced();
+  D->markUsed(S.Context);
+  return DeclRefExpr::Create(S.getASTContext(), NestedNameSpecifierLoc(),
+                             SourceLocation(), D, RefersToCapture, Loc, Ty,
+                             VK_LValue);
+}
+
+void DSAStackTy::addTaskgroupReductionData(ValueDecl *D, SourceRange SR,
+                                           BinaryOperatorKind BOK) {
   D = getCanonicalDecl(D);
   assert(!isStackEmpty() && "Data-sharing attributes stack is empty");
   auto &Data = Stack.back().first.back().SharingMap[D];
@@ -778,13 +816,22 @@ void DSAStackTy::addReductionData(ValueDecl *D, SourceRange SR,
       "Additional reduction info may be specified only for reduction items.");
   auto &ReductionData = Stack.back().first.back().ReductionMap[D];
   assert(ReductionData.ReductionRange.isInvalid() &&
+         Stack.back().first.back().Directive == OMPD_taskgroup &&
          "Additional reduction info may be specified only once for reduction "
          "items.");
   ReductionData.set(BOK, SR);
+  Expr *&TaskgroupReductionRef =
+      Stack.back().first.back().TaskgroupReductionRef;
+  if (!TaskgroupReductionRef) {
+    auto *VD = buildVarDecl(SemaRef, SourceLocation(),
+                            SemaRef.Context.VoidPtrTy, ".task_red.");
+    TaskgroupReductionRef = buildDeclRefExpr(
+        SemaRef, VD, SemaRef.Context.VoidPtrTy, SourceLocation());
+  }
 }
 
-void DSAStackTy::addReductionData(ValueDecl *D, SourceRange SR,
-                                  const Expr *ReductionRef) {
+void DSAStackTy::addTaskgroupReductionData(ValueDecl *D, SourceRange SR,
+                                           const Expr *ReductionRef) {
   D = getCanonicalDecl(D);
   assert(!isStackEmpty() && "Data-sharing attributes stack is empty");
   auto &Data = Stack.back().first.back().SharingMap[D];
@@ -793,9 +840,18 @@ void DSAStackTy::addReductionData(ValueDecl *D, SourceRange SR,
       "Additional reduction info may be specified only for reduction items.");
   auto &ReductionData = Stack.back().first.back().ReductionMap[D];
   assert(ReductionData.ReductionRange.isInvalid() &&
+         Stack.back().first.back().Directive == OMPD_taskgroup &&
          "Additional reduction info may be specified only once for reduction "
          "items.");
   ReductionData.set(ReductionRef, SR);
+  Expr *&TaskgroupReductionRef =
+      Stack.back().first.back().TaskgroupReductionRef;
+  if (!TaskgroupReductionRef) {
+    auto *VD = buildVarDecl(SemaRef, SourceLocation(),
+                            SemaRef.Context.VoidPtrTy, ".task_red.");
+    TaskgroupReductionRef = buildDeclRefExpr(
+        SemaRef, VD, SemaRef.Context.VoidPtrTy, SourceLocation());
+  }
 }
 
 DSAStackTy::DSAVarData
@@ -864,33 +920,6 @@ bool DSAStackTy::isOpenMPLocal(VarDecl *D, StackTy::reverse_iterator Iter) {
     return CurScope != TopScope;
   }
   return false;
-}
-
-/// \brief Build a variable declaration for OpenMP loop iteration variable.
-static VarDecl *buildVarDecl(Sema &SemaRef, SourceLocation Loc, QualType Type,
-                             StringRef Name, const AttrVec *Attrs = nullptr) {
-  DeclContext *DC = SemaRef.CurContext;
-  IdentifierInfo *II = &SemaRef.PP.getIdentifierTable().get(Name);
-  TypeSourceInfo *TInfo = SemaRef.Context.getTrivialTypeSourceInfo(Type, Loc);
-  VarDecl *Decl =
-      VarDecl::Create(SemaRef.Context, DC, Loc, Loc, II, Type, TInfo, SC_None);
-  if (Attrs) {
-    for (specific_attr_iterator<AlignedAttr> I(Attrs->begin()), E(Attrs->end());
-         I != E; ++I)
-      Decl->addAttr(*I);
-  }
-  Decl->setImplicit();
-  return Decl;
-}
-
-static DeclRefExpr *buildDeclRefExpr(Sema &S, VarDecl *D, QualType Ty,
-                                     SourceLocation Loc,
-                                     bool RefersToCapture = false) {
-  D->setReferenced();
-  D->markUsed(S.Context);
-  return DeclRefExpr::Create(S.getASTContext(), NestedNameSpecifierLoc(),
-                             SourceLocation(), D, RefersToCapture, Loc, Ty,
-                             VK_LValue);
 }
 
 DSAStackTy::DSAVarData DSAStackTy::getTopDSA(ValueDecl *D, bool FromParent) {
@@ -5304,7 +5333,8 @@ StmtResult Sema::ActOnOpenMPTaskgroupDirective(ArrayRef<OMPClause *> Clauses,
   getCurFunction()->setHasBranchProtectedScope();
 
   return OMPTaskgroupDirective::Create(Context, StartLoc, EndLoc, Clauses,
-                                       AStmt);
+                                       AStmt,
+                                       DSAStack->getTaskgroupReductionRef());
 }
 
 StmtResult Sema::ActOnOpenMPFlushDirective(ArrayRef<OMPClause *> Clauses,
@@ -9520,10 +9550,10 @@ static void CheckOMPReductionTypeClause(
     InDSAStack->addDSA(D, RefExpr->IgnoreParens(), OMPC_reduction, Ref);
     if (CurrDir == OMPD_taskgroup) {
       if (DeclareReductionRef.isUsable()) {
-        InDSAStack->addReductionData(D, ReductionIdRange,
-                                     DeclareReductionRef.get());
+        InDSAStack->addTaskgroupReductionData(D, ReductionIdRange,
+                                              DeclareReductionRef.get());
       } else
-        InDSAStack->addReductionData(D, ReductionIdRange, BOK);
+        InDSAStack->addTaskgroupReductionData(D, ReductionIdRange, BOK);
     }
     Vars.push_back(VarsExpr);
     Privates.push_back(PrivateDRE);
