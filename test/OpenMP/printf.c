@@ -2,7 +2,7 @@
 // REQUIRES: nvptx-registered-target
 
 // RUN: %clang_cc1 -verify -fopenmp -x c -triple powerpc64le-unknown-unknown -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm-bc %s -o %t-ppc-host.bc
-// RUN: %clang_cc1 -verify -fopenmp -x c -triple nvptx64-nvidia-cuda -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm %s -fopenmp-is-device -fopenmp-host-ir-file-path %t-ppc-host.bc -o - | FileCheck %s
+// RUN: %clang_cc1 -verify -fopenmp -x c -triple nvptx64-nvidia-cuda -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm -debug-info-kind=limited %s -fopenmp-is-device -fopenmp-host-ir-file-path %t-ppc-host.bc -o - | FileCheck %s
 
 #include <stdarg.h>
 
@@ -35,7 +35,7 @@ int CheckSimple() {
 void CheckNoArgs() {
 #pragma omp target
   {
-    // CHECK: call i32 @vprintf({{.*}}, i8* null){{$}}
+    // CHECK: call i32 @vprintf({{.*}}, i8* null)
     printf("hello, world!");
   }
 }

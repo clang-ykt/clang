@@ -261,7 +261,8 @@ private:
           RequiresOMPRuntime(true), RequiresDataSharing(true),
           MayContainOrphanedParallel(true),
           HasAtMostOneNestedParallelInLexicalScope(false),
-          MasterSharedDataSize(0) {
+          MasterSharedDataSize(0), ReductionVariableCount(0),
+          ReductionSizeInBytes(0) {
       assert(isOpenMPTargetExecutionDirective(D.getDirectiveKind()) &&
              "Expecting a target execution directive.");
       setExecutionMode();
@@ -270,7 +271,7 @@ private:
       setRequiresOMPRuntime();
       setMayContainOrphanedParallel();
       setHasAtMostOneNestedParallelInLexicalScope();
-      setHasTeamsReduction();
+      setTeamsReductionInfo();
     };
 
     CGOpenMPRuntimeNVPTX::ExecutionMode getExecutionMode() const {
@@ -301,7 +302,11 @@ private:
 
     unsigned masterSharedDataSize() const { return MasterSharedDataSize; }
 
-    bool hasTeamsReduction() const { return HasTeamsReduction; }
+    unsigned getReductionVariableCount() const {
+      return ReductionVariableCount;
+    }
+
+    unsigned getReductionSizeInBytes() const { return ReductionSizeInBytes; }
 
   private:
     const CodeGenModule &CGM;
@@ -327,8 +332,10 @@ private:
     // Approximate the size in bytes of variables to be shared from master
     // to workers.
     unsigned MasterSharedDataSize;
-    // Indicate whether this target region has a teams reduction clause.
-    bool HasTeamsReduction;
+    // Number of teams reduction variables on the target construct.
+    unsigned ReductionVariableCount;
+    // Total size of teams reduction variables in bytes.
+    unsigned ReductionSizeInBytes;
 
     void setExecutionMode();
 
@@ -345,7 +352,7 @@ private:
 
     void setMasterSharedDataSize();
 
-    void setHasTeamsReduction();
+    void setTeamsReductionInfo();
   };
 
   class EntryFunctionState {
@@ -353,7 +360,7 @@ private:
     const TargetKernelProperties &TP;
     llvm::BasicBlock *ExitBB;
 
-    EntryFunctionState(const TargetKernelProperties &TP)
+    EntryFunctionState(CodeGenModule &CGM, const TargetKernelProperties &TP)
         : TP(TP), ExitBB(nullptr){};
   };
 
@@ -433,6 +440,24 @@ private:
   /// address \a Addr and size \a Size with flags \a Flags.
   void createOffloadEntry(llvm::Constant *ID, llvm::Constant *Addr,
                           uint64_t Size, uint64_t Flags = 0u) override;
+
+  // Create a unique global struct per target region to store kernel properties.
+  // This global data structure is used by the offload library to setup the
+  // launch parameters.
+  void SetTargetKernelProperties(CodeGenModule &CGM, StringRef TargetName,
+                                 CGOpenMPRuntimeNVPTX::ExecutionMode Mode,
+                                 unsigned ReductionVariableCount,
+                                 unsigned ReductionSizeInBytes);
+
+  /// \brief Helper to emit outline 'target' directive. This creates a wrapper
+  /// with device specific arguments.
+  /// \brief Returns a pointer to the outlined function.
+  /// \param D Directive to emit.
+  /// \param Name Name of the outlined function.
+  /// \param CodeGen Lambda codegen specific to an accelerator device.
+  virtual llvm::Function *
+  outlineTargetDirective(const OMPExecutableDirective &D, StringRef Name,
+                         const RegionCodeGenTy &CodeGen) override;
 
   /// \brief Emit outlined function specialized for the Fork-Join
   /// programming model for applicable target directives on the NVPTX device.

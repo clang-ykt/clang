@@ -2516,6 +2516,10 @@ public:
   LValue InitCapturedStruct(const CapturedStmt &S);
   llvm::Function *EmitCapturedStmt(const CapturedStmt &S, CapturedRegionKind K);
   llvm::Function *GenerateCapturedStmtFunction(const CapturedStmt &S);
+  void GenerateOpenMPCapturedStmtParameters(
+      const CapturedStmt &S, bool UseCapturedArgumentsOnly,
+      unsigned CaptureLevel, unsigned ImplicitParamStop, bool NonAliasedMaps,
+      bool UIntPtrCastRequired, FunctionArgList &Args);
   Address GenerateCapturedStmtArgument(const CapturedStmt &S);
   llvm::Function *GenerateOpenMPCapturedStmtFunction(
       const CapturedStmt &S, bool UseCapturedArgumentsOnly = false,

@@ -15,6 +15,7 @@
 #include "CGOpenMPRuntimeNVPTX.h"
 #include "CGCleanup.h"
 #include "CodeGenFunction.h"
+#include "ConstantBuilder.h"
 #include "clang/AST/DeclOpenMP.h"
 #include "clang/AST/StmtOpenMP.h"
 #include "clang/AST/StmtVisitor.h"
@@ -26,6 +27,8 @@ using namespace CodeGen;
 
 namespace {
 enum OpenMPRTLFunctionNVPTX {
+  /// \brief Call to void __kmpc_kernel_init_params(void *ScratchpadPtr);
+  OMPRTL_NVPTX__kmpc_kernel_init_params,
   /// \brief Call to void __kmpc_kernel_init(kmp_int32 thread_limit,
   /// int16_t RequiresOMPRuntime);
   OMPRTL_NVPTX__kmpc_kernel_init,
@@ -1414,9 +1417,20 @@ getTeamsDirective(const CodeGenModule &CGM, const OMPExecutableDirective &D) {
   return nullptr;
 }
 
-void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setHasTeamsReduction() {
+void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setTeamsReductionInfo() {
   const OMPExecutableDirective &TD = *getTeamsDirective(CGM, D);
-  HasTeamsReduction = TD.hasClausesOfKind<OMPReductionClause>();
+
+  ReductionVariableCount = 0;
+  ReductionSizeInBytes = 0;
+  for (const auto *C : TD.getClausesOfKind<OMPReductionClause>()) {
+    for (auto *V : C->privates()) {
+      assert(!V->getType()->isVariablyModifiedType() &&
+             "NVPTX device cannot handle variably modified types.");
+      ReductionVariableCount++;
+      ReductionSizeInBytes +=
+          CGM.getContext().getTypeSize(V->getType().getCanonicalType());
+    }
+  }
 }
 
 void CGOpenMPRuntimeNVPTX::WorkerFunctionState::createWorkerFunction(
@@ -1658,27 +1672,40 @@ void CGOpenMPRuntimeNVPTX::emitGenericEntryFooter(CodeGenFunction &CGF,
   EST.ExitBB = nullptr;
 }
 
-// Create a unique global variable to indicate the execution mode of this target
-// region. This variable is picked up by the offload library to setup the device
-// before kernel launch.
-static void SetPropertyExecutionMode(CodeGenModule &CGM, StringRef Name,
-                                     CGOpenMPRuntimeNVPTX::ExecutionMode Mode) {
-  (void)new llvm::GlobalVariable(
-      CGM.getModule(), CGM.Int8Ty, /*isConstant=*/true,
-      llvm::GlobalValue::WeakAnyLinkage,
-      llvm::ConstantInt::get(CGM.Int8Ty, Mode), Name + Twine("_exec_mode"));
-}
+// Create a unique global structure to indicate the execution mode and other
+// properties of this target region. This data is picked up by the offload
+// library to setup the device before kernel launch.
+void CGOpenMPRuntimeNVPTX::SetTargetKernelProperties(
+    CodeGenModule &CGM, StringRef TargetName,
+    CGOpenMPRuntimeNVPTX::ExecutionMode Mode, unsigned ReductionVariableCount,
+    unsigned ReductionSizeInBytes) {
+  ASTContext &C = CGM.getContext();
 
-// Create a unique global variable to indicate whether the target teams region
-// has
-// a reduction operation.
-static void SetPropertyReduction(CodeGenModule &CGM, StringRef Name,
-                                 bool HasReduction) {
-  (void)new llvm::GlobalVariable(
-      CGM.getModule(), CGM.Int8Ty, /*isConstant=*/true,
-      llvm::GlobalValue::WeakAnyLinkage,
-      llvm::ConstantInt::get(CGM.Int8Ty, HasReduction),
-      Name + Twine("_reduction"));
+  const char *TTName = "__openmp_nvptx_target_property_ty";
+  auto Int32Ty = C.getIntTypeForBitwidth(/*DestWidth=*/32, /*Signed=*/true);
+  auto *RD = C.buildImplicitRecord(TTName);
+  RD->startDefinition();
+  // Execution Mode: 0 - SPMD mode, 1 - Generic mode.
+  addFieldToRecordDecl(C, RD, C.CharTy);
+  // Number of teams reduction variables.
+  addFieldToRecordDecl(C, RD, Int32Ty);
+  // Total size of reduction variables.
+  addFieldToRecordDecl(C, RD, Int32Ty);
+  RD->completeDefinition();
+
+  auto *TargetPropertyTy = cast<llvm::StructType>(
+      CGM.getTypes().ConvertTypeForMem(C.getRecordType(RD)));
+
+  ConstantInitBuilder Bld(CGM);
+  auto fields = Bld.beginStruct(TargetPropertyTy);
+  fields.addInt(CGM.Int8Ty,
+                Mode == CGOpenMPRuntimeNVPTX::ExecutionMode::GENERIC);
+  fields.addInt(CGM.Int32Ty, ReductionVariableCount);
+  fields.addInt(CGM.Int32Ty, ReductionSizeInBytes);
+  auto Align = CharUnits::fromQuantity(1);
+  fields.finishAndCreateGlobal(TargetName + Twine("_property"), Align,
+                               /*isConstant=*/true,
+                               llvm::GlobalValue::WeakAnyLinkage);
 }
 
 void CGOpenMPRuntimeNVPTX::emitSPMDEntryHeader(
@@ -1727,6 +1754,14 @@ llvm::Constant *
 CGOpenMPRuntimeNVPTX::createNVPTXRuntimeFunction(unsigned Function) {
   llvm::Constant *RTLFn = nullptr;
   switch (static_cast<OpenMPRTLFunctionNVPTX>(Function)) {
+  case OMPRTL_NVPTX__kmpc_kernel_init_params: {
+    // Build void __kmpc_kernel_init_params(void *ScratchpadPtr);
+    llvm::Type *TypeParams[] = {CGM.Int8PtrTy};
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+    RTLFn = CGM.CreateRuntimeFunction(FnTy, "__kmpc_kernel_init_params");
+    break;
+  }
   case OMPRTL_NVPTX__kmpc_kernel_init: {
     // Build void __kmpc_kernel_init(kmp_int32 thread_limit,
     // int16_t RequiresOMPRuntime);
@@ -2264,6 +2299,92 @@ void CGOpenMPRuntimeNVPTX::createOffloadEntry(llvm::Constant *ID,
   MD->addOperand(llvm::MDNode::get(Ctx, MDVals));
 }
 
+llvm::Function *
+CGOpenMPRuntimeNVPTX::outlineTargetDirective(const OMPExecutableDirective &D,
+                                             StringRef Name,
+                                             const RegionCodeGenTy &CodeGen) {
+  // Generate the outlined function for the target directive.  Wrap it around
+  // the offload kernel.  The offload kernel includes NVPTX specific parameters.
+  SmallString<256> Buffer;
+  llvm::raw_svector_ostream Out(Buffer);
+  Out << Name << "_impl__";
+  llvm::Function *OutlinedFn =
+      CGOpenMPRuntime::outlineTargetDirective(D, Out.str(), CodeGen);
+  OutlinedFn->removeFnAttr(llvm::Attribute::NoInline);
+  OutlinedFn->addFnAttr(llvm::Attribute::AlwaysInline);
+  OutlinedFn->setLinkage(llvm::GlobalValue::InternalLinkage);
+
+  //
+  // Add device specific parameters to a target region's outlined function.
+  // These parameters are added to all target regions.  Arguments for these
+  // parameters are passed in by the offload library.
+  //
+  CodeGenFunction WrapperCGF(CGM, /*suppressNewContext=*/true);
+  auto &Ctx = WrapperCGF.getContext();
+  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  bool UseCapturedArgumentsOnly =
+      isOpenMPParallelDirective(D.getDirectiveKind()) ||
+      isOpenMPTeamsDirective(D.getDirectiveKind());
+  FunctionArgList Args;
+  WrapperCGF.GenerateOpenMPCapturedStmtParameters(
+      CS, UseCapturedArgumentsOnly, /*CaptureLevel=*/1, /*ImplicitParamStop=*/0,
+      CGM.getCodeGenOpts().OpenmpNonaliasedMaps, /*UIntPtrCastRequired=*/true,
+      Args);
+
+  // Pointer to a scratchpad location to store intermediate results of a
+  // teams reduction.
+  const VarDecl *ScratchpadArg = ImplicitParamDecl::Create(
+      Ctx, /*DC=*/nullptr, SourceLocation(), &Ctx.Idents.get("scratchpad_ptr"),
+      Ctx.VoidPtrTy, ImplicitParamDecl::Other);
+  Args.emplace_back(ScratchpadArg);
+
+  FunctionType::ExtInfo ExtInfo;
+  const CGFunctionInfo &FuncInfo =
+      CGM.getTypes().arrangeBuiltinFunctionDeclaration(Ctx.VoidTy, Args);
+  llvm::FunctionType *FuncLLVMTy = CGM.getTypes().GetFunctionType(FuncInfo);
+  llvm::Function *WrapperFn = llvm::Function::Create(
+      FuncLLVMTy, llvm::GlobalValue::InternalLinkage, Name, &CGM.getModule());
+  const CapturedDecl *CD = CS.getCapturedDecl();
+  CGM.SetInternalFunctionAttributes(CD, WrapperFn, FuncInfo);
+  if (CD->isNothrow())
+    WrapperFn->setDoesNotThrow();
+
+  WrapperCGF.StartFunction(CD, Ctx.VoidTy, WrapperFn, FuncInfo, Args,
+                           CS.getLocStart(), CD->getBody()->getLocStart());
+
+  // Initialize the teams reduction scratchpad.
+  const OMPExecutableDirective &TD = *getTeamsDirective(WrapperCGF.CGM, D);
+  if (isOpenMPTeamsDirective(TD.getDirectiveKind())) {
+    Address LocalAddr = WrapperCGF.GetAddrOfLocalVar(ScratchpadArg);
+    LValue ArgLVal = WrapperCGF.MakeAddrLValue(
+        LocalAddr, ScratchpadArg->getType(), AlignmentSource::Decl);
+    llvm::Value *Scratchpad =
+        WrapperCGF.EmitLoadOfLValue(ArgLVal, ScratchpadArg->getLocation())
+            .getScalarVal();
+    WrapperCGF.EmitRuntimeCall(
+        createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_kernel_init_params),
+        Scratchpad);
+  }
+
+  // Call the base outlined function to execute the target region.
+  llvm::SmallVector<llvm::Value *, 4> CallArgs;
+  for (FunctionArgList::const_iterator I = Args.begin(),
+                                       E = std::prev(Args.end());
+       I != E; ++I) {
+    auto *Arg = *I;
+    Address LocalAddr = WrapperCGF.GetAddrOfLocalVar(Arg);
+    LValue ArgLVal = WrapperCGF.MakeAddrLValue(LocalAddr, Arg->getType(),
+                                               AlignmentSource::Decl);
+    llvm::Value *Val =
+        WrapperCGF.EmitLoadOfLValue(ArgLVal, Arg->getLocation()).getScalarVal();
+    CallArgs.emplace_back(Val);
+  }
+  CGM.getOpenMPRuntime().emitCall(WrapperCGF, OutlinedFn, CallArgs,
+                                  CS.getLocStart());
+  WrapperCGF.FinishFunction();
+  return WrapperFn;
+}
+
 namespace {
 class ExecutionModeRAII {
 private:
@@ -2295,7 +2416,7 @@ void CGOpenMPRuntimeNVPTX::emitGenericKernel(const OMPExecutableDirective &D,
   ExecutionModeRAII ModeRAII(CurrMode,
                              CGOpenMPRuntimeNVPTX::ExecutionMode::GENERIC,
                              IsOrphaned, false);
-  EntryFunctionState EST(TP);
+  EntryFunctionState EST(CGM, TP);
   WorkerFunctionState WST(CGM, TP);
   Work.clear();
   WrapperFunctionsMap.clear();
@@ -2319,6 +2440,7 @@ void CGOpenMPRuntimeNVPTX::emitGenericKernel(const OMPExecutableDirective &D,
     }
   } Action(*this, EST, WST);
   CodeGen.setAction(Action);
+
   emitTargetOutlinedFunctionHelper(D, ParentName, OutlinedFn, OutlinedFnID,
                                    IsOffloadEntry, CodeGen,
                                    /* CaptureLevel = */ 1);
@@ -2342,7 +2464,7 @@ void CGOpenMPRuntimeNVPTX::emitSPMDKernel(const OMPExecutableDirective &D,
                                           const RegionCodeGenTy &CodeGen) {
   ExecutionModeRAII ModeRAII(
       CurrMode, CGOpenMPRuntimeNVPTX::ExecutionMode::SPMD, IsOrphaned, false);
-  EntryFunctionState EST(TP);
+  EntryFunctionState EST(CGM, TP);
 
   // Emit target region as a standalone region.
   class NVPTXPrePostActionTy : public PrePostActionTy {
@@ -2415,8 +2537,9 @@ void CGOpenMPRuntimeNVPTX::emitTargetOutlinedFunction(
         "Unknown programming model for OpenMP directive on NVPTX target.");
   }
 
-  SetPropertyExecutionMode(CGM, OutlinedFn->getName(), Mode);
-  SetPropertyReduction(CGM, OutlinedFn->getName(), TP.hasTeamsReduction());
+  SetTargetKernelProperties(CGM, OutlinedFn->getName(), Mode,
+                            TP.getReductionVariableCount(),
+                            TP.getReductionSizeInBytes());
 
   CGM.getContext().getDiagnostics().Report(
       D.getLocStart(),
@@ -2859,7 +2982,9 @@ void CGOpenMPRuntimeNVPTX::registerCtorDtorEntry(
     llvm::Function *Fn, bool IsDtor) {
   // On top of the default registration we create a new global to force the
   // region to be executed as SPMD.
-  SetPropertyExecutionMode(CGM, Fn->getName(), SPMD);
+  SetTargetKernelProperties(CGM, Fn->getName(), SPMD,
+                            /*ReductionVariableCount=*/0,
+                            /*ReductionSizeInBytes=*/0);
 
   CGOpenMPRuntime::registerCtorDtorEntry(DeviceID, FileID, RegionName, Line, Fn,
                                          IsDtor);

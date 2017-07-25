@@ -333,76 +333,45 @@ static llvm::Function *emitOutlinedFunctionPrologue(
   // Build the argument list.
   CodeGenModule &CGM = CGF.CGM;
   ASTContext &Ctx = CGM.getContext();
-  FunctionArgList TargetArgs;
-  unsigned ImplicitParamStop = FO.ImplicitParamStop;
-  if (ImplicitParamStop == 0)
-    ImplicitParamStop = CD->getContextParamPosition();
-  if (!FO.UseCapturedArgumentsOnly) {
-    Args.append(CD->param_begin(),
-                std::next(CD->param_begin(), ImplicitParamStop));
-    TargetArgs.append(CD->param_begin(),
-                      std::next(CD->param_begin(), ImplicitParamStop));
-  }
-  auto I = FO.S->captures().begin();
-  for (auto *FD : RD->fields()) {
-    QualType ArgType = FD->getType();
-    IdentifierInfo *II = nullptr;
-    VarDecl *CapVar = nullptr;
 
-    if (I->capturesVariable() || I->capturesVariableByCopy()) {
-      CapVar = I->getCapturedVar();
-      if (auto *C = dyn_cast<OMPCapturedExprDecl>(CapVar)) {
-        // Check to see if the capture is to be a parameter in the
-        // outlined function at this level.
-        if (C->getCaptureLevel() < FO.CaptureLevel) {
-          ++I;
-          continue;
+  CGF.GenerateOpenMPCapturedStmtParameters(
+      *(FO.S), FO.UseCapturedArgumentsOnly, FO.CaptureLevel,
+      FO.ImplicitParamStop, FO.NonAliasedMaps, FO.UIntPtrCastRequired, Args);
+
+  unsigned ImplicitParamStop = FO.ImplicitParamStop == 0
+                                   ? CD->getContextParamPosition()
+                                   : FO.ImplicitParamStop;
+  FunctionArgList TargetArgs;
+  if (FO.UIntPtrCastRequired) {
+    TargetArgs.append(Args.begin(), Args.end());
+  } else {
+    if (!FO.UseCapturedArgumentsOnly) {
+      TargetArgs.append(CD->param_begin(),
+                        std::next(CD->param_begin(), ImplicitParamStop));
+    }
+    auto I = FO.S->captures().begin();
+    unsigned Cnt = FO.UseCapturedArgumentsOnly ? 0 : ImplicitParamStop;
+    for (auto *FD : RD->fields()) {
+      if (I->capturesVariable() || I->capturesVariableByCopy()) {
+        VarDecl *CapVar = I->getCapturedVar();
+        if (auto *C = dyn_cast<OMPCapturedExprDecl>(CapVar)) {
+          // Check to see if the capture is to be a parameter in the
+          // outlined function at this level.
+          if (C->getCaptureLevel() < FO.CaptureLevel) {
+            ++I;
+            continue;
+          }
         }
       }
+      TargetArgs.emplace_back(
+          CGM.getOpenMPRuntime().translateParameter(FD, Args[Cnt]));
+      ++I;
+      ++Cnt;
     }
-
-    // If this is a capture by copy and the type is not a pointer, the outlined
-    // function argument type should be uintptr and the value properly casted to
-    // uintptr. This is necessary given that the runtime library is only able to
-    // deal with pointers. We can pass in the same way the VLA type sizes to the
-    // outlined function.
-    if ((I->capturesVariableByCopy() && !ArgType->isAnyPointerType()) ||
-        I->capturesVariableArrayType()) {
-      if (FO.UIntPtrCastRequired)
-        ArgType = Ctx.getUIntPtrType();
-    }
-
-    if (I->capturesVariable() || I->capturesVariableByCopy()) {
-      CapVar = I->getCapturedVar();
-      II = CapVar->getIdentifier();
-    } else if (I->capturesThis())
-      II = &Ctx.Idents.get("this");
-    else {
-      assert(I->capturesVariableArrayType());
-      II = &Ctx.Idents.get("vla");
-    }
-    if (ArgType->isVariablyModifiedType())
-      ArgType = getCanonicalParamType(Ctx, ArgType.getNonReferenceType());
-    if (FO.NonAliasedMaps &&
-        (ArgType->isAnyPointerType() || ArgType->isReferenceType()))
-      ArgType = ArgType.withRestrict();
-    auto *Arg =
-        ImplicitParamDecl::Create(Ctx, /*DC=*/nullptr, FD->getLocation(), II,
-                                  ArgType, ImplicitParamDecl::Other);
-    Args.emplace_back(Arg);
-    // Do not cast arguments if we emit function with non-original types.
-    TargetArgs.emplace_back(
-        FO.UIntPtrCastRequired
-            ? Arg
-            : CGM.getOpenMPRuntime().translateParameter(FD, Arg));
-    ++I;
+    TargetArgs.append(
+        std::next(CD->param_begin(), CD->getContextParamPosition() + 1),
+        CD->param_end());
   }
-  Args.append(
-      std::next(CD->param_begin(), CD->getContextParamPosition() + 1),
-      CD->param_end());
-  TargetArgs.append(
-      std::next(CD->param_begin(), CD->getContextParamPosition() + 1),
-      CD->param_end());
 
   // Create the function declaration.
   FunctionType::ExtInfo ExtInfo;
@@ -421,7 +390,7 @@ static llvm::Function *emitOutlinedFunctionPrologue(
   CGF.StartFunction(CD, Ctx.VoidTy, F, FuncInfo, TargetArgs,
                     FO.S->getLocStart(), CD->getBody()->getLocStart());
   unsigned Cnt = FO.UseCapturedArgumentsOnly ? 0 : ImplicitParamStop;
-  I = FO.S->captures().begin();
+  auto I = FO.S->captures().begin();
   for (auto *FD : RD->fields()) {
     if (I->capturesVariable() || I->capturesVariableByCopy()) {
       auto *Var = I->getCapturedVar();
@@ -595,6 +564,75 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
                                                   F, CallArgs);
   WrapperCGF.FinishFunction();
   return WrapperF;
+}
+
+void CodeGenFunction::GenerateOpenMPCapturedStmtParameters(
+    const CapturedStmt &S, bool UseCapturedArgumentsOnly, unsigned CaptureLevel,
+    unsigned ImplicitParamStop, bool NonAliasedMaps, bool UIntPtrCastRequired,
+    FunctionArgList &Args) {
+  const CapturedDecl *CD = S.getCapturedDecl();
+  const RecordDecl *RD = S.getCapturedRecordDecl();
+  assert(CD->hasBody() && "missing CapturedDecl body");
+
+  // Build the argument list.
+  ASTContext &Ctx = CGM.getContext();
+  if (ImplicitParamStop == 0)
+    ImplicitParamStop = CD->getContextParamPosition();
+  if (!UseCapturedArgumentsOnly) {
+    Args.append(CD->param_begin(),
+                std::next(CD->param_begin(), ImplicitParamStop));
+  }
+  auto I = S.captures().begin();
+  for (auto *FD : RD->fields()) {
+    QualType ArgType = FD->getType();
+    IdentifierInfo *II = nullptr;
+    VarDecl *CapVar = nullptr;
+
+    if (I->capturesVariable() || I->capturesVariableByCopy()) {
+      CapVar = I->getCapturedVar();
+      if (auto *C = dyn_cast<OMPCapturedExprDecl>(CapVar)) {
+        // Check to see if the capture is to be a parameter in the
+        // outlined function at this level.
+        if (C->getCaptureLevel() < CaptureLevel) {
+          ++I;
+          continue;
+        }
+      }
+    }
+
+    // If this is a capture by copy and the type is not a pointer, the outlined
+    // function argument type should be uintptr and the value properly casted to
+    // uintptr. This is necessary given that the runtime library is only able to
+    // deal with pointers. We can pass in the same way the VLA type sizes to the
+    // outlined function.
+    if ((I->capturesVariableByCopy() && !ArgType->isAnyPointerType()) ||
+        I->capturesVariableArrayType()) {
+      if (UIntPtrCastRequired)
+        ArgType = Ctx.getUIntPtrType();
+    }
+
+    if (I->capturesVariable() || I->capturesVariableByCopy()) {
+      CapVar = I->getCapturedVar();
+      II = CapVar->getIdentifier();
+    } else if (I->capturesThis())
+      II = &Ctx.Idents.get("this");
+    else {
+      assert(I->capturesVariableArrayType());
+      II = &Ctx.Idents.get("vla");
+    }
+    if (ArgType->isVariablyModifiedType())
+      ArgType = getCanonicalParamType(Ctx, ArgType.getNonReferenceType());
+    if (NonAliasedMaps &&
+        (ArgType->isAnyPointerType() || ArgType->isReferenceType()))
+      ArgType = ArgType.withRestrict();
+    auto *Arg =
+        ImplicitParamDecl::Create(Ctx, /*DC=*/nullptr, FD->getLocation(), II,
+                                  ArgType, ImplicitParamDecl::Other);
+    Args.emplace_back(Arg);
+    ++I;
+  }
+  Args.append(std::next(CD->param_begin(), CD->getContextParamPosition() + 1),
+              CD->param_end());
 }
 
 //===----------------------------------------------------------------------===//

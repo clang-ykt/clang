@@ -446,6 +446,15 @@ protected:
                                                 const RegionCodeGenTy &CodeGen,
                                                 unsigned CaptureLevel);
 
+  /// \brief Helper to emit outline 'target' directive.
+  /// \brief Returns a pointer to the outlined function.
+  /// \param D Directive to emit.
+  /// \param Name Name of the outlined function.
+  /// \param CodeGen Lambda codegen specific to an accelerator device.
+  virtual llvm::Function *
+  outlineTargetDirective(const OMPExecutableDirective &D, StringRef Name,
+                         const RegionCodeGenTy &CodeGen);
+
   /// \brief Emits object of ident_t type with info for source location.
   /// \param Flags Flags for OpenMP location.
   ///
