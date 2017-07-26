@@ -6822,10 +6822,17 @@ private:
     // whether we are dealing with a member of a declared struct.
     MemberExpr *EncounteredME = nullptr;
 
+    // Track whether we are processing a class member, i.e. the base is the
+    // "this" pointer. This is used to correctly process pointers which are
+    // members of classes, which is a slightly different case from pointers
+    // which are members of structs.
+    bool IsBaseThis = false;
+
     if (auto *ME = dyn_cast<MemberExpr>(I->getAssociatedExpression())) {
       // The base is the 'this' pointer. The content of the pointer is going
       // to be the base of the field being mapped.
       BP = CGF.EmitScalarExpr(ME->getBase());
+      IsBaseThis = true;
     } else {
       // The base is the reference to the variable.
       // BP = &Var.
@@ -6945,12 +6952,12 @@ private:
         uint64_t flags = getMapTypeBits(MapType, MapTypeModifier,
             !IsExpressionFirstInfo, IsCaptureFirstInfo);
 
-        if (!IsExpressionFirstInfo) {
+        if (!IsExpressionFirstInfo || IsBaseThis) {
           if (IsPointer)
             flags &=
                 ~(OMP_MAP_TO | OMP_MAP_FROM | OMP_MAP_ALWAYS | OMP_MAP_DELETE);
 
-          if (ShouldBeMemberOf) {
+          if (!IsBaseThis && ShouldBeMemberOf) {
             // Set placeholder value MEMBER_OF=FFFF to indicate that the flag
             // should be later updated with the correct value of MEMBER_OF.
             flags |= OMP_MAP_MEMBER_OF;
@@ -6958,6 +6965,9 @@ private:
             // marked as MEMBER_OF.
             ShouldBeMemberOf = false;
           }
+
+          if (IsBaseThis)
+            IsBaseThis = false;
         }
 
         Types.push_back(flags);
