@@ -1181,9 +1181,6 @@ public:
   // FIXME: Maybe this could be a stack of maps that is pushed/popped as we
   // enter/leave scopes.
   llvm::DenseMap<const Expr*, llvm::Value*> VLASizeMap;
-  // llvm::DenseMap<const Expr*, const VarDecl*> VLADeclMap;
-  // llvm::DenseMap<const Expr*, Address*> VLAAddressMap;
-  // llvm::DenseMap<const Expr*, llvm::Value*> VLAArgValueMap;
 
   /// A scope within which we are constructing the fields of an object which
   /// might use a CXXDefaultInitExpr. This stashes away a 'this' value to use

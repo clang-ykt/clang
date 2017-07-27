@@ -129,18 +129,12 @@ public:
     // being shared is a reference and not the variable original storage.
     llvm::SmallVector<std::pair<const VarDecl *, DataSharingType>, 8>
         CapturesValues;
-    // llvm::DenseMap<const Expr*, const VarDecl*> VLADeclMap;
     llvm::SmallVector<std::pair<const Expr*, const VarDecl *>, 8>
         VLADeclMap;
-    // llvm::SmallVector<const VariableArrayType *, 8>
-    //     CapturesVLASizes;
+
     void add(const VarDecl *VD, DataSharingType DST) {
       CapturesValues.push_back(std::make_pair(VD, DST));
     }
-
-    // void addVLASize(const VariableArrayType *VAT) {
-    //   CapturesVLASizes.push_back(VAT);
-    // }
 
     void addVLADecl(const Expr* VATExpr, const VarDecl *VD) {
       // VLADeclMap[VATExpr] = VD;

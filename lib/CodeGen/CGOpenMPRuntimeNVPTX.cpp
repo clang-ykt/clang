@@ -2964,24 +2964,6 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
 
       // Track the data sharing type.
       DataSharingInfo::DataSharingType DST = DataSharingInfo::DST_Val;
-      printf(" createDataSharingInfo <-----------------------------\n\n");
-
-      // if (CurField->hasCapturedVLAType()) {
-      //   auto VAT = CurField->getCapturedVLAType();
-      //   // CGF.VLADeclMap[VAT->getSizeExpr()];
-      //   //   CurVD->dump();
-      //   //   DST = DataSharingInfo::DST_Ref;
-      //   //   DST = DataSharingInfo::DST_Ref;
-      //   // Create a bogus var declaration for this VLA size.
-      //   ElemTy = Ctx.getSizeType();
-      //   CurVD = ImplicitParamDecl::Create(Ctx, Ctx.getSizeType(), ImplicitParamDecl::Other);
-      //   CGF.EmitVarDecl(*CurVD);
-      //   CGF.Builder.CreateAlignedStore(CGF.Builder.CreateIntCast(CGF.VLASizeMap[VAT->getSizeExpr()], CGM.SizeTy, false), CGF.GetAddrOfLocalVar(CurVD).getPointer(), CGF.getPointerAlign());
-      //   DST = DataSharingInfo::DST_Ref;
-      //   printf("After the implicit decl construction \n");
-      //   CGF.CurFn->dump();
-      //   // continue;
-      // } else
 
       if (CurCap->capturesThis()) {
         // We use null to indicate 'this'.
@@ -2994,11 +2976,14 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
           CurVD = ImplicitParamDecl::Create(Ctx, ElemTy,
               ImplicitParamDecl::Other);
           CGF.EmitVarDecl(*CurVD);
-          CGF.Builder.CreateAlignedStore(CGF.Builder.CreateIntCast(CGF.VLASizeMap[VAT->getSizeExpr()], CGM.SizeTy, false), CGF.GetAddrOfLocalVar(CurVD).getPointer(), CGF.getPointerAlign());
+          CGF.Builder.CreateAlignedStore(CGF.Builder.CreateIntCast(
+              CGF.VLASizeMap[VAT->getSizeExpr()], CGM.SizeTy, false),
+              CGF.GetAddrOfLocalVar(CurVD).getPointer(),
+              CGF.getPointerAlign());
           Info.addVLADecl(VAT->getSizeExpr(), CurVD);
-        } else {
+        } else
           CurVD = CurCap->getCapturedVar();
-        }
+
         // If this is an OpenMP capture declaration, we need to look at the
         // original declaration.
         const VarDecl *OrigVD = CurVD;
@@ -3223,31 +3208,6 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
     ++CapturesIt;
   }
 
-  // StringRef BaseName = "vla";
-  // int VLACounter = 0;
-  // for (unsigned i=0; i<EnclosingCGF.VLASizeMap.size(); i++) {
-  //   QualType ElemTy =  Ctx.getPointerType(
-  //       Ctx.getIntTypeForBitwidth(64, false));
-  //   QualType PtrElemTy =  Ctx.getPointerType(ElemTy);
-
-  //   std::string AddrName = BaseName;
-  //   AddrName += std::to_string(VLACounter) + ".addr";
-  //   auto &NameAddrID = Ctx.Idents.get(AddrName);
-  //   ArgImplDecls.push_back(ImplicitParamDecl(
-  //       Ctx, nullptr, SourceLocation(), &NameAddrID,
-  //       PtrElemTy, ImplicitParamDecl::Other));
-
-  //   std::string OrigName = BaseName;
-  //   OrigName += std::to_string(VLACounter) + ".orig";
-  //   auto &NameOrigID = Ctx.Idents.get(OrigName);
-  //   ArgImplDecls.push_back(ImplicitParamDecl(
-  //       Ctx, nullptr, SourceLocation(), &NameOrigID,
-  //       ElemTy, ImplicitParamDecl::Other));
-  //   VLACounter++;
-  // }
-  printf(" --------------------------> createDataSharingPerFunctionInfrastructure EnclosingCGF.CurFn: \n");
-  EnclosingCGF.CurFn->dump();
-
   FunctionArgList ArgList;
   int count = 0;
   for (auto &I : ArgImplDecls) {
@@ -3262,9 +3222,6 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
       EnclosingCGF.CurFn->getName() + ".data_share", &CGM.getModule());
   CGM.SetInternalFunctionAttributes(/*D=*/nullptr, Fn, CGFI);
   Fn->setLinkage(llvm::GlobalValue::InternalLinkage);
-
-  printf(" --------------------------> createDataSharingPerFunctionInfrastructure Fn: \n");
-  Fn->dump();
 
   CodeGenFunction CGF(CGM, /*suppressNewContext=*/true);
   CGF.StartFunction(GlobalDecl(), Ctx.VoidTy, Fn, CGFI, ArgList);
@@ -3477,13 +3434,6 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   emitParallelismLevelCode(CGF, ParallelLevelGen, L0ParallelGen, L1ParallelGen,
                            Sequential);
 
-  // Generate the values to replace.
-  //   %conv = bitcast i64* %n.addr to i32*
-  // This is a ref? 0
-  //   %2 = load i32*, i32** %A.addr, align 8
-  // This is a ref? 1
-  //  --------- Done ---------
-  printf(" ----------------------> Generate values to replace\n");
   auto FI = MasterRD->field_begin();
   for (unsigned i = 0; i < OrigAddresses.size(); ++i, ++FI) {
     llvm::Value *OriginalVal = nullptr;
@@ -3497,21 +3447,12 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
       OriginalVal = OriginalAddr.getPointer();
     } else
       OriginalVal = CGF.LoadCXXThis();
-    OriginalVal->dump();
-    printf("This is a ref? %d\n", (DSI.CapturesValues[i].second == DataSharingInfo::DST_Ref));
 
     assert(OriginalVal && "Can't obtain value to replace with??");
 
     EnclosingFuncInfo.ValuesToBeReplaced.push_back(std::make_pair(
         OriginalVal, DSI.CapturesValues[i].second == DataSharingInfo::DST_Ref));
   }
-
-  // // For VLAs
-  // for (auto ExprValPair : EnclosingCGF.VLAArgValueMap) {
-  //   // ExprValPair.second->dump();
-  //   EnclosingFuncInfo.ValuesToBeReplaced.push_back(std::make_pair(
-  //       ExprValPair.second, false));
-  // }
 
   CGF.EmitBlock(ExitBB);
   CGF.FinishFunction();
@@ -3532,7 +3473,6 @@ static void CreateAddressStoreForVariable(
     if (DSI.CapturesValues[Idx].first == VD)
       break;
   assert(Idx != DSI.CapturesValues.size() && "Capture must exist!");
-  printf(" ---------> Idx = %u\n", Idx);
 
   llvm::Value *Arg;
   if (LaneID) {
@@ -3559,7 +3499,6 @@ static void CreateAddressStoreForVariable(
 llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     llvm::Function &OutlinedParallelFn, const OMPExecutableDirective &D,
     const Decl *CurrentContext, bool IsSimd) {
-  printf(" ----------> Inside: createDataSharingParallelWrapper\n");
   auto &Ctx = CGM.getContext();
   const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
 

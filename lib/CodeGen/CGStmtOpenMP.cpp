@@ -219,8 +219,6 @@ void CodeGenFunction::GenerateOpenMPCapturedVars(
     if (CurField->hasCapturedVLAType()) {
       auto VAT = CurField->getCapturedVLAType();
       auto *Val = VLASizeMap[VAT->getSizeExpr()];
-      printf(" ----------- Val: \n");
-      Val->dump();
       CapturedVars.push_back(Val);
     } else if (CurCap->capturesThis())
       CapturedVars.push_back(CXXThisValue);
@@ -444,7 +442,6 @@ static std::pair<llvm::Function *, bool> emitOutlinedFunctionPrologue(
       continue;
     }
 
-    printf("------------>emitOutlinedFunctionPrologue\n");
     LValue ArgLVal =
         CGF.MakeAddrLValue(CGF.GetAddrOfLocalVar(Args[Cnt]),
                            Args[Cnt]->getType(), AlignmentSource::Decl);
@@ -528,22 +525,14 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
   bool HasUIntPtrArgs;
   std::tie(F, HasUIntPtrArgs) = emitOutlinedFunctionPrologue(
       *this, Args, LocalAddrs, VLASizes, CXXThisValue, FO);
-  CurFn->dump();
   for (const auto &LocalAddrPair : LocalAddrs) {
     if (LocalAddrPair.second.first) {
-      printf(" --------> GenerateOpenMPCapturedStmtFunction \n");
-      LocalAddrPair.second.first->dump();
       setAddrOfLocalVar(LocalAddrPair.second.first,
                         LocalAddrPair.second.second);
     }
   }
   for (const auto &VLASizePair : VLASizes) {
-    //VLASizePair.first->dump();
-    printf(" --------> for (const _ : VLASizes) { \n");
-    VLASizePair.second.first->dump();
-    VLASizePair.second.second->dump();
     VLASizeMap[VLASizePair.second.first] = VLASizePair.second.second;
-    // VLADeclMap[VLASizePair.second.first] = VLASizePair.first;
   }
   PGO.assignRegionCounters(GlobalDecl(CD), F);
   CapturedStmtInfo->EmitBody(*this, CD->getBody());
@@ -901,7 +890,6 @@ bool CodeGenFunction::EmitOMPFirstprivateClause(const OMPExecutableDirective &D,
                     // Clean up any temporaries needed by the initialization.
                     RunCleanupsScope InitScope(*this);
                     // Emit initialization for single element.
-                    printf(" --------> EmitOMPFirstprivateClause 1\n");
                     setAddrOfLocalVar(VDInit, SrcElement);
                     EmitAnyExprToMem(Init, DestElement,
                                      Init->getType().getQualifiers(),
@@ -918,7 +906,6 @@ bool CodeGenFunction::EmitOMPFirstprivateClause(const OMPExecutableDirective &D,
             // Remap temp VDInit variable to the address of the original
             // variable
             // (for proper handling of captured global variables).
-            printf(" --------> EmitOMPFirstprivateClause 2\n");
             setAddrOfLocalVar(VDInit, OriginalAddr);
             EmitDecl(*VD);
             LocalDeclMap.erase(VDInit);
@@ -4172,7 +4159,6 @@ static void emitCommonOMPTargetDirective(CodeGenFunction &CGF,
   CGM.getOpenMPRuntime().emitTargetNumIterationsCall(CGF, S, Device,
                                                      SizeEmitter);
   llvm::SmallVector<llvm::Value *, 16> CapturedVars;
-  CGF.CurFn->dump();
   CGF.GenerateOpenMPCapturedVars(CS, CapturedVars);
   CGM.getOpenMPRuntime().emitTargetCall(CGF, S, Fn, FnID, IfCond, Device,
                                         CapturedVars);
@@ -4678,7 +4664,6 @@ void CodeGenFunction::EmitOMPUseDevicePtrClause(
           getContext().getPointerType(OrigVD->getType().getNonReferenceType());
       llvm::Type *AddrTy = ConvertTypeForMem(AddrQTy);
       Address InitAddr = Builder.CreateBitCast(InitAddrIt->second, AddrTy);
-      printf(" --------> EmitOMPUseDevicePtrClause \n");
       setAddrOfLocalVar(InitVD, InitAddr);
 
       // Emit private declaration, it will be initialized by the value we
