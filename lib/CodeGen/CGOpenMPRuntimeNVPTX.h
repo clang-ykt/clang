@@ -151,6 +151,15 @@ public:
       return nullptr;
     }
 
+    bool isVLADecl(const VarDecl* VD) const {
+      for (auto ExprDeclPair : VLADeclMap) {
+        if (ExprDeclPair.second == VD) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     // The record type of the sharing region if shared by the master.
     QualType MasterRecordType;
     // The record type of the sharing region if shared by the worker warps.
