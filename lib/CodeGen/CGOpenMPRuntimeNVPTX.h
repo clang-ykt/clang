@@ -129,14 +129,32 @@ public:
     // being shared is a reference and not the variable original storage.
     llvm::SmallVector<std::pair<const VarDecl *, DataSharingType>, 8>
         CapturesValues;
-    llvm::SmallVector<const VariableArrayType *, 8>
-        CapturesVLASizes;
+    // llvm::DenseMap<const Expr*, const VarDecl*> VLADeclMap;
+    llvm::SmallVector<std::pair<const Expr*, const VarDecl *>, 8>
+        VLADeclMap;
+    // llvm::SmallVector<const VariableArrayType *, 8>
+    //     CapturesVLASizes;
     void add(const VarDecl *VD, DataSharingType DST) {
       CapturesValues.push_back(std::make_pair(VD, DST));
     }
 
-    void addVLASize(const VariableArrayType *VAT) {
-      CapturesVLASizes.push_back(VAT);
+    // void addVLASize(const VariableArrayType *VAT) {
+    //   CapturesVLASizes.push_back(VAT);
+    // }
+
+    void addVLADecl(const Expr* VATExpr, const VarDecl *VD) {
+      // VLADeclMap[VATExpr] = VD;
+      VLADeclMap.push_back(std::make_pair(VATExpr, VD));
+    }
+
+    const VarDecl *getVLADecl(const Expr* VATExpr) const {
+      for (auto ExprDeclPair : VLADeclMap) {
+        if (ExprDeclPair.first == VATExpr) {
+          return ExprDeclPair.second;
+        }
+      }
+      assert(false && "No VAT expression that matches the input");
+      return nullptr;
     }
 
     // The record type of the sharing region if shared by the master.
