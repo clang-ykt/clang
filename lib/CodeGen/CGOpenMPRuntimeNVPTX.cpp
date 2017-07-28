@@ -1689,7 +1689,6 @@ void CGOpenMPRuntimeNVPTX::emitSPMDEntryHeader(
     CodeGenFunction &CGF, EntryFunctionState &EST,
     const OMPExecutableDirective &D) {
   auto &Bld = CGF.Builder;
-
   // Setup BBs in entry function.
   llvm::BasicBlock *ExecuteBB = CGF.createBasicBlock(".execute");
   EST.ExitBB = CGF.createBasicBlock(".sleepy.hollow");

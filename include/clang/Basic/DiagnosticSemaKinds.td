@@ -8263,6 +8263,8 @@ def err_omp_expected_var_name_member_expr : Error<
   "expected variable name%select{| or data member of current class}0">;
 def err_omp_expected_var_name_member_expr_or_array_item : Error<
   "expected variable name%select{|, data member of current class}0, array element or array section">;
+def err_omp_expected_addressable_lvalue_or_array_item : Error<
+  "expected addressable lvalue expression, array element or array section">;
 def err_omp_expected_named_var_member_or_array_expression: Error<
   "expected expression containing only member accesses and/or array sections based on named variables">;
 def err_omp_bit_fields_forbidden_in_clause : Error<
@@ -8400,11 +8402,11 @@ def err_omp_unknown_reduction_identifier : Error<
 def err_omp_not_resolved_reduction_identifier : Error<
   "unable to resolve declare reduction construct for type %0">;
 def err_omp_reduction_ref_type_arg : Error<
-  "argument of OpenMP clause 'reduction' must reference the same object in all threads">;
+  "argument of OpenMP clause '%0' must reference the same object in all threads">;
 def err_omp_clause_not_arithmetic_type_arg : Error<
-  "arguments of OpenMP clause 'reduction' for 'min' or 'max' must be of %select{scalar|arithmetic}0 type">;
+  "arguments of OpenMP clause '%0' for 'min' or 'max' must be of %select{scalar|arithmetic}1 type">;
 def err_omp_clause_floating_type_arg : Error<
-  "arguments of OpenMP clause 'reduction' with bitwise operators cannot be of floating type">;
+  "arguments of OpenMP clause '%0' with bitwise operators cannot be of floating type">;
 def err_omp_once_referenced : Error<
   "variable can appear only once in OpenMP '%0' clause">;
 def err_omp_once_referenced_in_target_update : Error<
@@ -8415,6 +8417,12 @@ def err_omp_reduction_in_task : Error<
   "reduction variables may not be accessed in an explicit task">;
 def err_omp_reduction_id_not_compatible : Error<
   "list item of type %0 is not valid for specified reduction operation: unable to provide default initialization value">;
+def err_omp_in_reduction_not_task_reduction : Error<
+  "in_reduction variable must appear in a task_reduction clause">;
+def err_omp_reduction_identifier_mismatch : Error<
+  "in_reduction variable must have the same reduction operation as in a task_reduction clause">;
+def note_omp_previous_reduction_identifier : Note<
+  "previously marked as task_reduction with different reduction operation">;
 def err_omp_prohibited_region : Error<
   "region cannot be%select{| closely}0 nested inside '%1' region"
   "%select{|; perhaps you forget to enclose 'omp %3' directive into a parallel region?|"
@@ -8566,12 +8574,6 @@ def note_omp_critical_hint_here : Note<
   "%select{|previous }0'hint' clause with value '%1'">;
 def note_omp_critical_no_hint : Note<
   "%select{|previous }0directive with no 'hint' clause specified">;
-def err_omp_firstprivate_distribute_private_teams : Error<
-  "private variable in '#pragma omp teams' cannot be firstprivate in '#pragma omp distribute'">;
-def err_omp_firstprivate_and_lastprivate_in_distribute : Error<
-  "lastprivate variable cannot be firstprivate in '#pragma omp distribute'">;
-def err_omp_firstprivate_distribute_in_teams_reduction : Error<
-  "reduction variable in '#pragma omp teams' cannot be firstprivate in '#pragma omp distribute'">;
 def err_omp_depend_clause_thread_simd : Error<
   "'depend' clauses cannot be mixed with '%0' clause">;
 def err_omp_depend_sink_expected_loop_iteration : Error<
@@ -8612,6 +8614,10 @@ def warn_omp_nesting_simd : Warning<
 def err_omp_orphaned_device_directive : Error<
   "orphaned 'omp %0' directives are prohibited"
   "; perhaps you forget to enclose the directive into a %select{|||target |teams }1region?">;
+def err_omp_reduction_non_addressable_expression : Error<
+  "expected addressable reduction item for the task-based directives">;
+def err_omp_reduction_with_nogroup : Error<
+  "'reduction' clause cannot be used with 'nogroup' clause">;
 } // end of OpenMP category
 
 let CategoryName = "Related Result Type Issue" in {

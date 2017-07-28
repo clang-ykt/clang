@@ -2602,6 +2602,10 @@ void OMPClauseReader::VisitOMPInReductionClause(OMPInReductionClause *C) {
   for (unsigned i = 0; i != NumVars; ++i)
     Vars.push_back(Reader->Record.readSubExpr());
   C->setReductionOps(Vars);
+  Vars.clear();
+  for (unsigned I = 0; I != NumVars; ++I)
+    Vars.push_back(Reader->Record.readSubExpr());
+  C->setTaskgroupDescriptors(Vars);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2780,6 +2784,7 @@ void ASTStmtReader::VisitOMPTaskgroupDirective(OMPTaskgroupDirective *D) {
   // The NumClauses field was read in ReadStmtFromStream.
   Record.skipInts(1);
   VisitOMPExecutableDirective(D);
+  D->setReductionRef(Record.readSubExpr());
 }
 
 void ASTStmtReader::VisitOMPFlushDirective(OMPFlushDirective *D) {
