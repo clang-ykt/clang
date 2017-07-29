@@ -3778,7 +3778,8 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
 
       // If this is a value captured by reference in the outermost scope, we
       // have to load the address first.
-      assert(CapInfo->first == CapturedVar &&
+      assert((CI->capturesVariableArrayType() ||
+              CapInfo->first == CapturedVar) &&
              "Using info of wrong declaration.");
       if (CapInfo->second == DataSharingInfo::DST_Ref)
         CapturedTy = CapturedVar->getType();
