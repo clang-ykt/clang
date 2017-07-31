@@ -1320,14 +1320,18 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setMasterSharedDataSize() {
         ElemTy = (*I)->getType();
       const VarDecl *CurVD = nullptr;
 
-      if (CurField->hasCapturedVLAType()) {
-        continue;
-      } else if (CurCap->capturesThis()) {
+      if (CurCap->capturesThis()) {
         // We use null to indicate 'this'.
         CurVD = nullptr;
       } else {
         // Get the variable that is initializing the capture.
-        CurVD = CurCap->getCapturedVar();
+        if (CurField->hasCapturedVLAType()) {
+          ElemTy = C.getSizeType();
+          CurVD = ImplicitParamDecl::Create(C, ElemTy,
+              ImplicitParamDecl::Other);
+        } else {
+          CurVD = CurCap->getCapturedVar();
+        }
 
         // If this is an OpenMP capture declaration, we need to look at the
         // original declaration.
@@ -2942,6 +2946,7 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
   SharedWarpRD->startDefinition();
 
   llvm::SmallSet<const VarDecl *, 32> AlreadySharedDecls;
+  ASTContext &Ctx = CGF.getContext();
   for (auto *Dir : CapturedDirs) {
     const CapturedStmt *CS = cast<CapturedStmt>(Dir->getAssociatedStmt());
     const RecordDecl *RD = CS->getCapturedRecordDecl();
@@ -2959,14 +2964,24 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
       // Track the data sharing type.
       DataSharingInfo::DataSharingType DST = DataSharingInfo::DST_Val;
 
-      if (CurField->hasCapturedVLAType()) {
-        continue;
-      } else if (CurCap->capturesThis()) {
+      if (CurCap->capturesThis()) {
         // We use null to indicate 'this'.
         CurVD = nullptr;
       } else {
         // Get the variable that is initializing the capture.
-        CurVD = CurCap->getCapturedVar();
+        if (CurField->hasCapturedVLAType()) {
+          auto VAT = CurField->getCapturedVLAType();
+          ElemTy = Ctx.getSizeType();
+          CurVD = ImplicitParamDecl::Create(Ctx, ElemTy,
+              ImplicitParamDecl::Other);
+          CGF.EmitVarDecl(*CurVD);
+          CGF.Builder.CreateAlignedStore(CGF.Builder.CreateIntCast(
+              CGF.VLASizeMap[VAT->getSizeExpr()], CGM.SizeTy, false),
+              CGF.GetAddrOfLocalVar(CurVD).getPointer(),
+              CGF.getPointerAlign());
+          Info.addVLADecl(VAT->getSizeExpr(), CurVD);
+        } else
+          CurVD = CurCap->getCapturedVar();
 
         // If this is an OpenMP capture declaration, we need to look at the
         // original declaration.
@@ -3148,7 +3163,6 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   auto CapturesIt = DSI.CapturesValues.begin();
   for (auto *F : MasterRD->fields()) {
     QualType ArgTy = F->getType();
-
     if (ArgTy->isVariablyModifiedType()) {
       bool IsReference = ArgTy->isLValueReferenceType();
       ArgTy = Ctx.getCanonicalParamType(ArgTy.getNonReferenceType());
@@ -3243,7 +3257,9 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   SmallVector<Address, 32> NewAddressPtrs;
   SmallVector<Address, 32> OrigAddresses;
   // We iterate two by two.
-  for (auto CapturesIt = DSI.CapturesValues.begin(); ArgsIt != ArgList.end();
+  for (auto CapturesIt = DSI.CapturesValues.begin();
+       // !(CapturesIt == DSI.CapturesValues.end() || ArgsIt == ArgList.end());
+       ArgsIt != ArgList.end();
        ++ArgsIt, ++CapturesIt) {
     if (CapturesIt->second != DataSharingInfo::DST_Ref) {
       NewAddressPtrs.push_back(
@@ -3411,12 +3427,18 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   for (unsigned i = 0; i < OrigAddresses.size(); ++i, ++FI) {
     llvm::Value *OriginalVal = nullptr;
     if (const VarDecl *VD = DSI.CapturesValues[i].first) {
-      DeclRefExpr DRE(const_cast<VarDecl *>(VD),
+      if (DSI.isVLADecl(VD)) {
+        EnclosingCGF.EmitOMPHelperVar(VD);
+        Address OriginalAddr = EnclosingCGF.GetAddrOfLocalVar(VD);
+        OriginalVal = OriginalAddr.getPointer();
+      } else {
+        DeclRefExpr DRE(const_cast<VarDecl *>(VD),
                       /*RefersToEnclosingVariableOrCapture=*/false,
                       VD->getType().getNonReferenceType(), VK_LValue,
                       SourceLocation());
-      Address OriginalAddr = EnclosingCGF.EmitOMPHelperVar(&DRE).getAddress();
-      OriginalVal = OriginalAddr.getPointer();
+        Address OriginalAddr = EnclosingCGF.EmitOMPHelperVar(&DRE).getAddress();
+        OriginalVal = OriginalAddr.getPointer();
+      }
     } else
       OriginalVal = CGF.LoadCXXThis();
 
@@ -3518,37 +3540,32 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   // Create temporary variables to contain the new args.
   SmallVector<Address, 32> ArgsAddresses;
 
-  int NameIdx = 0;
+  // Get the data sharing information for the context that encloses the current
+  // one.
+  auto &DSI = getDataSharingInfo(CurrentContext);
+
   auto *RD = CS.getCapturedRecordDecl();
   auto CurField = RD->field_begin();
   for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
                                             CE = CS.capture_end();
        CI != CE; ++CI, ++CurField) {
     QualType ElemTy = CurField->getType();
-
-    if (CI->capturesVariableArrayType()){
-      ArgsAddresses.push_back(CGF.CreateMemTemp(ElemTy, "vla.addr." + std::to_string(NameIdx)));
-      NameIdx++;
-      continue;
-    }
-
     StringRef Name;
-    if (CI->capturesThis())
+
+    if (CI->capturesVariableArrayType())
+      Name = "vla";
+    else if (CI->capturesThis())
       Name = "this";
     else
       Name = CI->getCapturedVar()->getName();
 
     // If this is a capture by copy the element type has to be the pointer to
     // the data.
-    if (CI->capturesVariableByCopy())
+    if (CI->capturesVariableByCopy() || CI->capturesVariableArrayType())
       ElemTy = Ctx.getPointerType(ElemTy);
 
     ArgsAddresses.push_back(CGF.CreateMemTemp(ElemTy, Name + ".addr"));
   }
-
-  // Get the data sharing information for the context that encloses the current
-  // one.
-  auto &DSI = getDataSharingInfo(CurrentContext);
 
   // If this region is sharing loop bounds we need to create the local variables
   // to store the right addresses.
@@ -3578,17 +3595,23 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     // For each capture obtain the pointer by calculating the right offset in
     // the host record.
     unsigned ArgsIdx = 0;
+    auto CurField = RD->field_begin();
     auto FI =
         DSI.MasterRecordType->getAs<RecordType>()->getDecl()->field_begin();
     for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
                                               CE = CS.capture_end();
-         CI != CE; ++CI) {
+         CI != CE; ++CI, ++CurField) {
+      const VarDecl *VD;
+      if (CurField->hasCapturedVLAType() != CI->capturesVariableArrayType())
+        assert(false && "These values should match!");
+
       if (CI->capturesVariableArrayType()){
-        // Create Value store
-        ++ArgsIdx;
-        continue;
+        // Get declaration
+        auto VAT = CurField->getCapturedVLAType();
+        VD = DSI.getVLADecl(VAT->getSizeExpr());
+      } else {
+        VD = CI->capturesThis() ? nullptr : CI->getCapturedVar();
       }
-      const VarDecl *VD = CI->capturesThis() ? nullptr : CI->getCapturedVar();
       CreateAddressStoreForVariable(CGF, VD, FI->getType(), DSI, CastedDataAddr,
                                     ArgsAddresses[ArgsIdx]);
       ++FI;
@@ -3624,16 +3647,19 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     // For each capture obtain the pointer by calculating the right offset in
     // the host record.
     unsigned ArgsIdx = 0;
+    auto CurField = RD->field_begin();
     auto FI =
         DSI.MasterRecordType->getAs<RecordType>()->getDecl()->field_begin();
     for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
                                               CE = CS.capture_end();
-         CI != CE; ++CI, ++ArgsIdx) {
+         CI != CE; ++CI, ++ArgsIdx, ++CurField) {
+      const VarDecl *VD;
       if (CI->capturesVariableArrayType()){
-        // Create Value store
-        continue;
-      }
-      const VarDecl *VD = CI->capturesThis() ? nullptr : CI->getCapturedVar();
+        // Get declaration
+        auto VAT = CurField->getCapturedVLAType();
+        VD = DSI.getVLADecl(VAT->getSizeExpr());
+      } else
+        VD = CI->capturesThis() ? nullptr : CI->getCapturedVar();
       CreateAddressStoreForVariable(CGF, VD, FI->getType(), DSI, CastedDataAddr,
                                     ArgsAddresses[ArgsIdx], SourceLaneID);
       FI++;
@@ -3707,22 +3733,24 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   auto CI = CS.capture_begin();
   auto CurrentField = RD->field_begin();
   for (unsigned i = 0/*, ArgIdx = 0*/; i < CS.capture_size(); ++i, ++CI, ++CapInfo, ++CurrentField) {
-    if (CI->capturesVariableArrayType()) {
-      auto CapturedTy = CurrentField->getType();
-      auto *Arg = CGF.EmitLoadOfScalar(ArgsAddresses[i], /*Volatile=*/false,
-                                       Ctx.getPointerType(CapturedTy),
-                                       SourceLocation());
-      Args.push_back(Arg);
-      continue;
-    }
-
     auto *Arg = CGF.EmitLoadOfScalar(ArgsAddresses[i], /*Volatile=*/false,
                                      Ctx.getPointerType(FI->getType()),
                                      SourceLocation());
+
+    const VarDecl *CapturedVar;
+    if (CI->capturesVariableArrayType()) {
+      auto VAT = CurrentField->getCapturedVLAType();
+      CapturedVar = DSI.getVLADecl(VAT->getSizeExpr());
+      auto CapturedTy = FI->getType();
+      auto LV = CGF.MakeNaturalAlignAddrLValue(Arg, CapturedTy);
+      Arg = CGF.EmitLoadOfScalar(LV, SourceLocation());
+    } else if (CI->capturesVariableByCopy()) {
+      CapturedVar = CI->getCapturedVar();
+    }
+
     // If this is a capture by value, we need to load the data. Additionally, if
     // its not a pointer we may need to cast it to uintptr.
     if (CI->capturesVariableByCopy()) {
-      auto *CapturedVar = CI->getCapturedVar();
       auto CapturedTy = FI->getType();
       auto LV = CGF.MakeNaturalAlignAddrLValue(Arg, CapturedTy);
 
@@ -5911,13 +5939,6 @@ void CGOpenMPRuntimeNVPTX::emitReduction(
     OpenMPDirectiveKind ReductionKind) {
   if (!CGF.HaveInsertPoint())
     return;
-
-  if (SimpleReduction) {
-    CGOpenMPRuntime::emitReduction(CGF, Loc, Privates, LHSExprs, RHSExprs,
-                                   ReductionOps, WithNowait, SimpleReduction,
-                                   ReductionKind);
-    return;
-  }
 
   bool TeamsReduction = isOpenMPTeamsDirective(ReductionKind);
   bool ParallelReduction = isOpenMPParallelDirective(ReductionKind);
