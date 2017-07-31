@@ -456,8 +456,6 @@ static std::pair<llvm::Function *, bool> emitOutlinedFunctionPrologue(
           CGF.EmitLoadOfLValue(ArgLVal, SourceLocation()).getScalarVal();
       auto VAT = FD->getCapturedVLAType();
       VLASizes.insert({Args[Cnt], {VAT->getSizeExpr(), ExprArg}});
-      // Address ArgAddr = ArgLVal.getAddress();
-      // CGF.VLAArgValueMap[VAT->getSizeExpr()] = ArgAddr.getPointer();
     } else if (I->capturesVariable()) {
       auto *Var = I->getCapturedVar();
       QualType VarTy = Var->getType();
@@ -531,9 +529,8 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
                         LocalAddrPair.second.second);
     }
   }
-  for (const auto &VLASizePair : VLASizes) {
+  for (const auto &VLASizePair : VLASizes)
     VLASizeMap[VLASizePair.second.first] = VLASizePair.second.second;
-  }
   PGO.assignRegionCounters(GlobalDecl(CD), F);
   CapturedStmtInfo->EmitBody(*this, CD->getBody());
   FinishFunction(CD->getBodyRBrace());

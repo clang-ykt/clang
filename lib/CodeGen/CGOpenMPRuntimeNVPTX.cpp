@@ -3011,7 +3011,6 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
         }
       }
 
-      // if (!CurField->hasCapturedVLAType()) {
       // Do not insert the same declaration twice.
       if (AlreadySharedDecls.count(CurVD))
         continue;
@@ -3021,12 +3020,6 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
 
       if (DST == DataSharingInfo::DST_Ref)
         ElemTy = C.getPointerType(ElemTy);
-      // } else {
-      //   // auto VAT = CurField->getCapturedVLAType();
-      //   // auto *Val = CGF.VLASizeMap[VAT->getSizeExpr()];
-      //   ElemTy = Ctx.getPointerType(
-      //       Ctx.getIntTypeForBitwidth(64, false));
-      // }
 
       addFieldToRecordDecl(C, SharedMasterRD, ElemTy);
       llvm::APInt NumElems(C.getTypeSize(C.getUIntPtrType()),
@@ -3264,10 +3257,6 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   SmallVector<Address, 32> NewAddressPtrs;
   SmallVector<Address, 32> OrigAddresses;
   // We iterate two by two.
-  // DELETE: The VLA arguments should be at the end of the ArgList
-  // but those will not be taken into consideration here
-  // because they don't have equivalents in the CaputuredValues
-  // list.
   for (auto CapturesIt = DSI.CapturesValues.begin();
        // !(CapturesIt == DSI.CapturesValues.end() || ArgsIt == ArgList.end());
        ArgsIt != ArgList.end();
@@ -3433,6 +3422,7 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   emitParallelismLevelCode(CGF, ParallelLevelGen, L0ParallelGen, L1ParallelGen,
                            Sequential);
 
+  // Generate the values to replace.
   auto FI = MasterRD->field_begin();
   for (unsigned i = 0; i < OrigAddresses.size(); ++i, ++FI) {
     llvm::Value *OriginalVal = nullptr;
@@ -3563,14 +3553,9 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     QualType ElemTy = CurField->getType();
     StringRef Name;
 
-    if (CI->capturesVariableArrayType()){
+    if (CI->capturesVariableArrayType())
       Name = "vla";
-      // Address VLAAddress = CGF.CreateMemTemp(ElemTy,
-      //     "vla.addr." + std::to_string(NameIdx));
-      // ArgsAddresses.push_back(VLAAddress);
-      // NameIdx++;
-      // continue;
-    } else if (CI->capturesThis())
+    else if (CI->capturesThis())
       Name = "this";
     else
       Name = CI->getCapturedVar()->getName();
@@ -3749,15 +3734,6 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   auto CI = CS.capture_begin();
   auto CurrentField = RD->field_begin();
   for (unsigned i = 0/*, ArgIdx = 0*/; i < CS.capture_size(); ++i, ++CI, ++CapInfo, ++CurrentField) {
-    // if (CI->capturesVariableArrayType()) {
-    //   auto CapturedTy = CurrentField->getType();
-    //   auto *Arg = CGF.EmitLoadOfScalar(ArgsAddresses[i], /*Volatile=*/false,
-    //                                    Ctx.getPointerType(CapturedTy),
-    //                                    SourceLocation());
-    //   Args.push_back(Arg);
-    //   continue;
-    // }
-
     auto *Arg = CGF.EmitLoadOfScalar(ArgsAddresses[i], /*Volatile=*/false,
                                      Ctx.getPointerType(FI->getType()),
                                      SourceLocation());
