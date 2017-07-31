@@ -3544,7 +3544,6 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   // one.
   auto &DSI = getDataSharingInfo(CurrentContext);
 
-  // int NameIdx = 0;
   auto *RD = CS.getCapturedRecordDecl();
   auto CurField = RD->field_begin();
   for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
