@@ -3742,20 +3742,22 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     if (CI->capturesVariableArrayType()) {
       auto VAT = CurrentField->getCapturedVLAType();
       CapturedVar = DSI.getVLADecl(VAT->getSizeExpr());
+      auto CapturedTy = FI->getType();
+      auto LV = CGF.MakeNaturalAlignAddrLValue(Arg, CapturedTy);
+      Arg = CGF.EmitLoadOfScalar(LV, SourceLocation());
     } else if (CI->capturesVariableByCopy()) {
       CapturedVar = CI->getCapturedVar();
     }
 
     // If this is a capture by value, we need to load the data. Additionally, if
     // its not a pointer we may need to cast it to uintptr.
-    if (CI->capturesVariableByCopy() || CI->capturesVariableArrayType()) {
+    if (CI->capturesVariableByCopy()) {
       auto CapturedTy = FI->getType();
       auto LV = CGF.MakeNaturalAlignAddrLValue(Arg, CapturedTy);
 
       // If this is a value captured by reference in the outermost scope, we
       // have to load the address first.
-      assert((CI->capturesVariableArrayType() ||
-              CapInfo->first == CapturedVar) &&
+      assert(CapInfo->first == CapturedVar &&
              "Using info of wrong declaration.");
       if (CapInfo->second == DataSharingInfo::DST_Ref)
         CapturedTy = CapturedVar->getType();
