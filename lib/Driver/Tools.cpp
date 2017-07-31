@@ -55,32 +55,6 @@ using namespace clang::driver;
 using namespace clang::driver::tools;
 using namespace clang;
 using namespace llvm::opt;
-// using namespace llvm;
-// using namespace llvm::object;
-
-// namespace llvm {
-
-// static void error(Error Err) {
-//   if (Err) {
-//     logAllUnhandledErrors(std::move(Err), outs(), "Error reading file: ");
-//     outs().flush();
-//     exit(1);
-//   }
-// }
-
-// } // namespace llvm
-
-// static void reportError(StringRef Input, StringRef Message) {
-//   if (Input == "-")
-//     Input = "<stdin>";
-//   errs() << Input << ": " << Message << "\n";
-//   errs().flush();
-//   exit(1);
-// }
-
-// static void reportError(StringRef Input, std::error_code EC) {
-//   reportError(Input, EC.message());
-// }
 
 static void handleTargetFeaturesGroup(const ArgList &Args,
                                       std::vector<StringRef> &Features,
@@ -12288,7 +12262,6 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   const auto &TC =
       static_cast<const toolchains::CudaToolChain &>(getToolChain());
   assert(TC.getTriple().isNVPTX() && "Wrong platform");
-  // assert(false);
 
   ArgStringList CmdArgs;
 

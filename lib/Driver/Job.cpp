@@ -35,9 +35,8 @@ Command::Command(const Action &Source, const Tool &Creator,
     : Source(Source), Creator(Creator), Executable(Executable),
       Arguments(Arguments), ResponseFile(nullptr) {
   for (const auto &II : Inputs)
-    if (II.isFilename()) {
+    if (II.isFilename())
       InputFilenames.push_back(II.getFilename());
-    }
 }
 
 /// @brief Check if the compiler flag in question should be skipped when
