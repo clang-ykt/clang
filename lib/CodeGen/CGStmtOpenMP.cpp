@@ -537,11 +537,13 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
   if (!NeedWrapperFunction || !HasUIntPtrArgs)
     return F;
 
+  SmallString<256> Buffer;
+  llvm::raw_svector_ostream Out(Buffer);
+  Out << "__nondebug_wrapper_" << CapturedStmtInfo->getHelperName();
   FunctionOptions WrapperFO(&S, UseCapturedArgumentsOnly, CaptureLevel,
                             ImplicitParamStop, NonAliasedMaps,
                             /*UIntPtrCastRequired=*/true,
-                            /*RegisterCastedArgsOnly=*/true,
-                            ".nondebug_wrapper.");
+                            /*RegisterCastedArgsOnly=*/true, Out.str());
   CodeGenFunction WrapperCGF(CGM, /*suppressNewContext=*/true);
   WrapperCGF.disableDebugInfo();
   Args.clear();
