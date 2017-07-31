@@ -582,6 +582,10 @@ void OMPClauseProfiler::VisitOMPInReductionClause(
     if (E)
       Profiler->VisitStmt(E);
   }
+  for (auto *E : C->taskgroup_descriptors()) {
+    if (E)
+      Profiler->VisitStmt(E);
+  }
 }
 }
 
@@ -670,6 +674,8 @@ void StmtProfiler::VisitOMPTaskwaitDirective(const OMPTaskwaitDirective *S) {
 
 void StmtProfiler::VisitOMPTaskgroupDirective(const OMPTaskgroupDirective *S) {
   VisitOMPExecutableDirective(S);
+  if (const Expr *E = S->getReductionRef())
+    VisitStmt(E);
 }
 
 void StmtProfiler::VisitOMPFlushDirective(const OMPFlushDirective *S) {

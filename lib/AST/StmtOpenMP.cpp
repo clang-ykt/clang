@@ -567,14 +567,15 @@ OMPTaskwaitDirective *OMPTaskwaitDirective::CreateEmpty(const ASTContext &C,
 
 OMPTaskgroupDirective *OMPTaskgroupDirective::Create(
     const ASTContext &C, SourceLocation StartLoc, SourceLocation EndLoc,
-    ArrayRef<OMPClause *> Clauses, Stmt *AssociatedStmt) {
+    ArrayRef<OMPClause *> Clauses, Stmt *AssociatedStmt, Expr *ReductionRef) {
   unsigned Size =
       llvm::alignTo(sizeof(OMPTaskgroupDirective), alignof(OMPClause *));
-  void *Mem =
-      C.Allocate(Size + sizeof(OMPClause *) * Clauses.size() + sizeof(Stmt *));
+  void *Mem = C.Allocate(Size + sizeof(OMPClause *) * Clauses.size() +
+                         sizeof(Stmt *) + sizeof(Expr *));
   OMPTaskgroupDirective *Dir =
       new (Mem) OMPTaskgroupDirective(StartLoc, EndLoc, Clauses.size());
   Dir->setClauses(Clauses);
+  Dir->setReductionRef(ReductionRef);
   Dir->setAssociatedStmt(AssociatedStmt);
   return Dir;
 }
@@ -584,8 +585,8 @@ OMPTaskgroupDirective *OMPTaskgroupDirective::CreateEmpty(const ASTContext &C,
                                                           EmptyShell) {
   unsigned Size =
       llvm::alignTo(sizeof(OMPTaskgroupDirective), alignof(OMPClause *));
-  void *Mem =
-      C.Allocate(Size + sizeof(OMPClause *) * NumClauses + sizeof(Stmt *));
+  void *Mem = C.Allocate(Size + sizeof(OMPClause *) * NumClauses +
+                         sizeof(Stmt *) + sizeof(Expr *));
   return new (Mem) OMPTaskgroupDirective(NumClauses);
 }
 
