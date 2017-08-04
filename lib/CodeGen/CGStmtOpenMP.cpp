@@ -394,10 +394,7 @@ static std::pair<llvm::Function *, bool> emitOutlinedFunctionPrologue(
                                   ArgType, ImplicitParamDecl::Other);
     Args.emplace_back(Arg);
     // Do not cast arguments if we emit function with non-original types.
-    TargetArgs.emplace_back(
-        FO.UIntPtrCastRequired
-            ? Arg
-            : CGM.getOpenMPRuntime().translateParameter(FD, Arg));
+    TargetArgs.emplace_back(CGM.getOpenMPRuntime().translateParameter(FD, Arg));
     ++I;
   }
   Args.append(
@@ -533,16 +530,13 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
   FunctionArgList Args;
   llvm::DenseMap<const Decl *, std::pair<const VarDecl *, Address>> LocalAddrs;
   llvm::DenseMap<const Decl *, std::pair<const Expr *, llvm::Value *>> VLASizes;
-  FunctionOptions FO(
-      &S, UseCapturedArgumentsOnly, CaptureLevel, ImplicitParamStop,
-      NonAliasedMaps, !NeedWrapperFunction,
-      /*RegisterCastedArgsOnly=*/false, CapturedStmtInfo->getHelperName(),
-      [NeedWrapperFunction](CodeGenFunction &CGF, const VarDecl *VD,
-                            Address Addr) {
-        assert(NeedWrapperFunction && "Function should not be called if "
-                                      "wrapper function is not required.");
-        CGF.setAddrOfLocalVar(VD, Addr);
-      });
+  FunctionOptions FO(&S, UseCapturedArgumentsOnly, CaptureLevel,
+                     ImplicitParamStop, NonAliasedMaps, !NeedWrapperFunction,
+                     /*RegisterCastedArgsOnly=*/false,
+                     CapturedStmtInfo->getHelperName(),
+                     [](CodeGenFunction &CGF, const VarDecl *VD, Address Addr) {
+                       CGF.setAddrOfLocalVar(VD, Addr);
+                     });
   llvm::Function *F;
   bool HasUIntPtrArgs;
   std::tie(F, HasUIntPtrArgs) = emitOutlinedFunctionPrologue(
@@ -570,8 +564,7 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
       /*UIntPtrCastRequired=*/true,
       /*RegisterCastedArgsOnly=*/true, Out.str(),
       [](CodeGenFunction &CGF, const VarDecl *VD, Address Addr) {
-        // CGF.setAddrOfLocalVar(VD, Addr);
-        llvm_unreachable("Function should not be called");
+        CGF.setAddrOfLocalVar(VD, Addr);
       });
   CodeGenFunction WrapperCGF(CGM, /*suppressNewContext=*/true);
   WrapperCGF.disableDebugInfo();
