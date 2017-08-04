@@ -2688,7 +2688,7 @@ void CGOpenMPRuntime::emitParallelCall(CodeGenFunction &CGF, SourceLocation Loc,
     OutlinedFnArgs.push_back(ThreadIDAddr.getPointer());
     OutlinedFnArgs.push_back(ZeroAddr.getPointer());
     OutlinedFnArgs.append(CapturedVars.begin(), CapturedVars.end());
-    CGF.EmitCallOrInvoke(OutlinedFn, OutlinedFnArgs);
+    RT.emitOutlinedFunctionCall(CGF, OutlinedFn, OutlinedFnArgs);
 
     // __kmpc_end_serialized_parallel(&Loc, GTid);
     llvm::Value *EndArgs[] = {RT.emitUpdateLocation(CGF, Loc), ThreadID};
@@ -4327,7 +4327,7 @@ emitProxyTaskFunction(CodeGenModule &CGM, SourceLocation Loc,
   }
   CallArgs.push_back(SharedsParam);
 
-  CGF.EmitCallOrInvoke(TaskFunction, CallArgs);
+  CGM.getOpenMPRuntime().emitOutlinedFunctionCall(CGF, TaskFunction, CallArgs);
   CGF.EmitStoreThroughLValue(
       RValue::get(CGF.Builder.getInt32(/*C=*/0)),
       CGF.MakeAddrLValue(CGF.ReturnValue, KmpInt32Ty));
@@ -5017,7 +5017,8 @@ void CGOpenMPRuntime::emitTaskCall(CodeGenFunction &CGF, SourceLocation Loc,
         CodeGenFunction &CGF, PrePostActionTy &Action) {
       Action.Enter(CGF);
       llvm::Value *OutlinedFnArgs[] = {ThreadID, NewTaskNewTaskTTy};
-      CGF.EmitCallOrInvoke(TaskEntry, OutlinedFnArgs);
+      CGF.CGM.getOpenMPRuntime().emitOutlinedFunctionCall(CGF, TaskEntry,
+                                                          OutlinedFnArgs);
     };
 
     // Build void __kmpc_omp_task_begin_if0(ident_t *, kmp_int32 gtid,
@@ -6166,8 +6167,7 @@ void CGOpenMPRuntime::emitTargetOutlinedFunctionHelper(
       isOpenMPParallelDirective(D.getDirectiveKind()) ||
       isOpenMPTeamsDirective(D.getDirectiveKind());
   OutlinedFn = CGF.GenerateOpenMPCapturedStmtFunction(
-      CS, UseCapturedArgumentsOnly,
-      /*CaptureLevel=*/1, /*ImplicitParamStop=*/0,
+      CS, UseCapturedArgumentsOnly, /*CaptureLevel=*/1, /*ImplicitParamStop=*/0,
       CGM.getCodeGenOpts().OpenmpNonaliasedMaps);
 
   // If this target outline function is not an offload entry, we don't need to
@@ -7882,7 +7882,7 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
   CGF.Builder.CreateCondBr(Failed, OffloadFailedBlock, OffloadContBlock);
 
   CGF.EmitBlock(OffloadFailedBlock);
-  CGF.Builder.CreateCall(OutlinedFn, KernelArgs);
+  emitOutlinedFunctionCall(CGF, OutlinedFn, KernelArgs);
   CGF.EmitBranch(OffloadContBlock);
 
   CGF.EmitBlock(OffloadContBlock, /*IsFinished=*/true);
@@ -9098,4 +9098,16 @@ void CGOpenMPRuntime::addTrackedFunction(StringRef MangledName, GlobalDecl GD) {
 void CGOpenMPRuntime::registerTrackedFunction() {
   for (auto &GD : TrackedDecls)
     registerTargetFunctionDefinition(GD.second);
+}
+
+void CGOpenMPRuntime::emitOutlinedFunctionCall(
+    CodeGenFunction &CGF, llvm::Value *OutlinedFn,
+    ArrayRef<llvm::Value *> Args) const {
+  if (auto *Fn = dyn_cast<llvm::Function>(OutlinedFn)) {
+    if (Fn->doesNotThrow()) {
+      CGF.EmitNounwindRuntimeCall(OutlinedFn, Args);
+      return;
+    }
+  }
+  CGF.EmitRuntimeCall(OutlinedFn, Args);
 }
