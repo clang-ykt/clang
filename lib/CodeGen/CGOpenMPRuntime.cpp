@@ -6822,17 +6822,10 @@ private:
     // whether we are dealing with a member of a declared struct.
     MemberExpr *EncounteredME = nullptr;
 
-    // Track whether we are processing a class member, i.e. the base is the
-    // "this" pointer. This is used to correctly process pointers which are
-    // members of classes, which is a slightly different case from pointers
-    // which are members of structs.
-    bool IsBaseThis = false;
-
     if (auto *ME = dyn_cast<MemberExpr>(I->getAssociatedExpression())) {
       // The base is the 'this' pointer. The content of the pointer is going
       // to be the base of the field being mapped.
       BP = CGF.EmitScalarExpr(ME->getBase());
-      IsBaseThis = true;
     } else {
       // The base is the reference to the variable.
       // BP = &Var.
@@ -6927,50 +6920,51 @@ private:
           auto *LI = cast<llvm::LoadInst>(LB);
           auto *RefAddr = LI->getPointerOperand();
 
-          BasePointers.push_back(BP);
-          Pointers.push_back(RefAddr);
-          Sizes.push_back(CGF.getTypeSize(CGF.getContext().VoidPtrTy));
-          Types.push_back(getMapTypeBits(
-              /*MapType*/ OMPC_MAP_alloc, /*MapTypeModifier=*/OMPC_MAP_unknown,
-              !IsExpressionFirstInfo, IsCaptureFirstInfo));
-
           IsExpressionFirstInfo = false;
           IsCaptureFirstInfo = false;
           // The reference will be the next base address.
           BP = RefAddr;
         }
 
-        BasePointers.push_back(BP);
-        Pointers.push_back(LB);
-        Sizes.push_back(Size);
+        // If this component is a pointer inside the base struct then we don't
+        // need to create any entry for it - it will be combined with the object
+        // it is pointing to into a single PTR_AND_OBJ entry..
+        bool IsMemberPointer = IsPointer && EncounteredME &&
+            (dyn_cast<MemberExpr>(I->getAssociatedExpression()) ==
+                EncounteredME);
+        if (!IsMemberPointer) {
+          BasePointers.push_back(BP);
+          Pointers.push_back(LB);
+          Sizes.push_back(Size);
 
-        // We need to add a pointer flag for each map that comes from the
-        // same expression except for the first one. Such pointers must have
-        // their TO/FROM/ALWAYS/DELETE flags reset. We also need to signal
-        // this map is the first one that relates with the current capture
-        // (there is a set of entries for each capture).
-        uint64_t flags = getMapTypeBits(MapType, MapTypeModifier,
-            !IsExpressionFirstInfo, IsCaptureFirstInfo);
+          // We need to add a pointer flag for each map that comes from the
+          // same expression except for the first one. We also need to signal
+          // this map is the first one that relates with the current capture
+          // (there is a set of entries for each capture).
+          uint64_t flags = getMapTypeBits(MapType, MapTypeModifier,
+              !IsExpressionFirstInfo, IsCaptureFirstInfo);
 
-        if (!IsExpressionFirstInfo || IsBaseThis) {
-          if (IsPointer)
-            flags &=
-                ~(OMP_MAP_TO | OMP_MAP_FROM | OMP_MAP_ALWAYS | OMP_MAP_DELETE);
+          if (!IsExpressionFirstInfo) {
+            // If we have a PTR_AND_OBJ pair where the OBJ is a pointer as well,
+            // then we reset the To/FROM/ALWAYS/DELETE flags.
+            if (IsPointer) {
+              flags &=
+                  ~(OMP_MAP_TO | OMP_MAP_FROM | OMP_MAP_ALWAYS |
+                      OMP_MAP_DELETE);
+            }
 
-          if (!IsBaseThis && ShouldBeMemberOf) {
-            // Set placeholder value MEMBER_OF=FFFF to indicate that the flag
-            // should be later updated with the correct value of MEMBER_OF.
-            flags |= OMP_MAP_MEMBER_OF;
-            // From now on, all subsequent PTR_AND_OBJ entries should not be
-            // marked as MEMBER_OF.
-            ShouldBeMemberOf = false;
+            if (ShouldBeMemberOf) {
+              // Set placeholder value MEMBER_OF=FFFF to indicate that the flag
+              // should be later updated with the correct value of MEMBER_OF.
+              flags |= OMP_MAP_MEMBER_OF;
+              // From now on, all subsequent PTR_AND_OBJ entries should not be
+              // marked as MEMBER_OF.
+              ShouldBeMemberOf = false;
+            }
           }
 
-          if (IsBaseThis)
-            IsBaseThis = false;
+          Types.push_back(flags);
         }
-
-        Types.push_back(flags);
 
         // If we have encountered a member expression so far, keep track of the
         // mapped member. If the parent is "*this", then the value declaration
@@ -7711,10 +7705,9 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
            CurBasePointers.size() == CurMapTypes.size() &&
            "Inconsistent map information sizes!");
 
-    // If there is an entry in PartialStructs and we have generated more than 1
-    // entry, it means we have a struct with multiple members mapped. Emit an
-    // extra combined entry.
-    if (PartialStructs.size() > 0 && CurBasePointers.size() > 1) {
+    // If there is an entry in PartialStructs it means we have a struct with
+    // individual members mapped. Emit an extra combined entry.
+    if (PartialStructs.size() > 0) {
       // Base is the base of the struct
       KernelArgs.push_back(PartialStructs.begin()->second.Base);
       BasePointers.push_back(PartialStructs.begin()->second.Base);
@@ -8457,7 +8450,7 @@ static void TranslateStructEntries(CodeGenFunction &CGF,
 
     if (PSIt != PartialStructs.end() &&
         TmpBasePointersIdx == StructIndices[StructIndicesIdx].first) {
-      // We have a struct with multiple elements mapped.
+      // We have a struct with individual elements mapped.
       NumOfEntries = StructIndices[StructIndicesIdx].second;
 
       // Base is the base of the struct
