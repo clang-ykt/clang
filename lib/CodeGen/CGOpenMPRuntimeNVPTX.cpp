@@ -2393,7 +2393,8 @@ public:
 void CGOpenMPRuntimeNVPTX::emitTargetOutlinedFunction(
     const OMPExecutableDirective &D, StringRef ParentName,
     llvm::Function *&OutlinedFn, llvm::Constant *&OutlinedFnID,
-    bool IsOffloadEntry, const RegionCodeGenTy &CodeGen, unsigned CaptureLevel) {
+    bool IsOffloadEntry, const RegionCodeGenTy &CodeGen,
+    unsigned CaptureLevel) {
   if (!IsOffloadEntry) // Nothing to do.
     return;
 

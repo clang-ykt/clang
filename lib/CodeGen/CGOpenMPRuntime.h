@@ -294,12 +294,11 @@ public:
   // generated alongside the number of those arguments. Elements in
   // StructRangeMapTy and StructIndicesTy are meant to be inserted in the same
   // order.
-  typedef SmallVector<std::pair<unsigned, unsigned>, 16>
-      StructIndicesTy;
+  typedef SmallVector<std::pair<unsigned, unsigned>, 16> StructIndicesTy;
 
   static uint64_t getMemberOfFlag(unsigned Position) {
     // Member of is given by the 16 MSB of the flag, so rotate by 48 bits.
-    return ((uint64_t)Position+1) << 48;
+    return ((uint64_t)Position + 1) << 48;
   }
 
 private:
@@ -337,8 +336,8 @@ private:
   /// bits for the provided map type, map modifier, and expression components.
   /// \a IsFirstComponent should be set to true if the provided set of
   /// components is the first associated with a capture.
-  void generateInfoForComponentList(OpenMPMapClauseKind MapType,
-      OpenMPMapClauseKind MapTypeModifier,
+  void generateInfoForComponentList(
+      OpenMPMapClauseKind MapType, OpenMPMapClauseKind MapTypeModifier,
       OMPClauseMappableExprCommon::MappableExprComponentListRef Components,
       MapBaseValuesArrayTy &BasePointers, MapValuesArrayTy &Pointers,
       MapValuesArrayTy &Sizes, MapFlagsArrayTy &Types,
@@ -382,8 +381,7 @@ public:
   /// index where it occurs is appended to the device pointers info array.
   void generateAllInfo(MapBaseValuesArrayTy &BasePointers,
                        MapValuesArrayTy &Pointers, MapValuesArrayTy &Sizes,
-                       MapFlagsArrayTy &Types,
-                       StructRangeMapTy &PartialStructs,
+                       MapFlagsArrayTy &Types, StructRangeMapTy &PartialStructs,
                        StructIndicesTy &StructIndices) const;
 
   /// \brief Generate the base pointers, section pointers, sizes and map types
@@ -392,8 +390,7 @@ public:
                               llvm::Value *Arg,
                               MapBaseValuesArrayTy &BasePointers,
                               MapValuesArrayTy &Pointers,
-                              MapValuesArrayTy &Sizes,
-                              MapFlagsArrayTy &Types,
+                              MapValuesArrayTy &Sizes, MapFlagsArrayTy &Types,
                               StructRangeMapTy &PartialStructs) const;
 
   /// \brief Generate the default map information for a given capture \a CI,
@@ -1626,14 +1623,12 @@ public:
   /// \param Device Expression evaluated in device clause associated with the
   /// target directive, or null if no device clause is used.
   /// \param CapturedVars Values captured in the current region.
-  virtual void emitTargetCall(CodeGenFunction &CGF,
-                              const OMPExecutableDirective &D,
-                              llvm::Value *OutlinedFn,
-                              llvm::Value *OutlinedFnID, const Expr *IfCond,
-                              const Expr *Device,
-                              ArrayRef<llvm::Value *> CapturedVars,
-                              OMPMapArrays &MapArrays,
-                              const OMPTaskDataTy *Data = nullptr);
+  virtual void
+  emitTargetCall(CodeGenFunction &CGF, const OMPExecutableDirective &D,
+                 llvm::Value *OutlinedFn, llvm::Value *OutlinedFnID,
+                 const Expr *IfCond, const Expr *Device,
+                 ArrayRef<llvm::Value *> CapturedVars, OMPMapArrays &MapArrays,
+                 const OMPTaskDataTy *Data = nullptr);
 
   /// \brief Emit the target regions enclosed in \a GD function definition or
   /// the function itself in case it is a valid device function. Returns true if
@@ -1790,12 +1785,13 @@ public:
 
   /// Generate arrays for later emission of code to implement target map clause
   OMPMapArrays generateMapArrays(CodeGenFunction &CGF,
-      const OMPExecutableDirective &D, ArrayRef<llvm::Value *> CapturedVars);
+                                 const OMPExecutableDirective &D,
+                                 ArrayRef<llvm::Value *> CapturedVars);
 
   // Generate arguments for target outlined function when executed on host
-  void generateKernelArgs(CodeGenFunction &CGF,
-      const OMPExecutableDirective &D, ArrayRef<llvm::Value *> CapturedVars,
-      MappableExprsHandler::MapValuesArrayTy &KernelArgs);
+  void generateKernelArgs(CodeGenFunction &CGF, const OMPExecutableDirective &D,
+                          ArrayRef<llvm::Value *> CapturedVars,
+                          MappableExprsHandler::MapValuesArrayTy &KernelArgs);
 
   /// Emit map arrays
   TargetDataInfo emitMapArrays(CodeGenFunction &CGF, OMPMapArrays &Maps);
