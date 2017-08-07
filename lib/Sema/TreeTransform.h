@@ -7253,6 +7253,7 @@ StmtResult TreeTransform<Derived>::TransformOMPExecutableDirective(
   llvm::SmallVector<OMPClause *, 16> TClauses;
   ArrayRef<OMPClause *> Clauses = D->clauses();
   TClauses.reserve(Clauses.size());
+  bool HasDependClause = D->getSingleClause<OMPDependClause>() != nullptr;
   for (ArrayRef<OMPClause *>::iterator I = Clauses.begin(), E = Clauses.end();
        I != E; ++I) {
     if (*I) {
@@ -7268,7 +7269,8 @@ StmtResult TreeTransform<Derived>::TransformOMPExecutableDirective(
   StmtResult AssociatedStmt;
   if (D->hasAssociatedStmt() && D->getAssociatedStmt()) {
     getDerived().getSema().ActOnOpenMPRegionStart(D->getDirectiveKind(),
-                                                  /*CurScope=*/nullptr);
+                                                  /*CurScope=*/nullptr,
+                                                  HasDependClause);
     StmtResult Body;
     {
       Sema::CompoundScopeRAII CompoundScope(getSema());

@@ -2038,7 +2038,8 @@ public:
 };
 } // namespace
 
-void Sema::ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope) {
+void Sema::ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope,
+    bool HasDependClause) {
   switch (DKind) {
   case OMPD_parallel:
   case OMPD_parallel_for:
@@ -2097,15 +2098,36 @@ void Sema::ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope) {
   }
   case OMPD_target: {
     if (HasDependClause) {
-      // special handling for depend clause
-
+    // special handling for depend clause
+     QualType KmpInt32Ty = Context.getIntTypeForBitwidth(32, 1);
+     QualType Args[] = {Context.VoidPtrTy.withConst().withRestrict()};
+     FunctionProtoType::ExtProtoInfo EPI;
+     EPI.Variadic = true;
+     QualType CopyFnType = Context.getFunctionType(Context.VoidTy, Args, EPI);
+     Sema::CapturedParamNameType Params[] = {
+         std::make_pair(".global_tid.", KmpInt32Ty),
+         std::make_pair(".part_id.", Context.getPointerType(KmpInt32Ty)),
+         std::make_pair(".privates.", Context.VoidPtrTy.withConst()),
+         std::make_pair(".copy_fn.",
+                        Context.getPointerType(CopyFnType).withConst()),
+         std::make_pair(".task_t.", Context.VoidPtrTy.withConst()),
+         std::make_pair(StringRef(), QualType()) // __context with shared vars
+     };
+     ActOnCapturedRegionStart(DSAStack->getConstructLoc(), CurScope, CR_OpenMP,
+                              Params);
+     // Mark this captured region as inlined, because we don't use outlined
+     // function directly.
+     getCurCapturedRegion()->TheCapturedDecl->addAttr(
+         AlwaysInlineAttr::CreateImplicit(
+             Context, AlwaysInlineAttr::Keyword_forceinline, SourceRange()));
     } else {
       Sema::CapturedParamNameType Params[] = {
           std::make_pair(StringRef(), QualType()) // __context with shared vars
       };
+
+      ActOnCapturedRegionStart(DSAStack->getConstructLoc(), CurScope, CR_OpenMP,
+          Params);
     }
-    ActOnCapturedRegionStart(DSAStack->getConstructLoc(), CurScope, CR_OpenMP,
-                             Params);
     break;
   }
 
