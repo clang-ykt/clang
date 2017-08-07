@@ -969,6 +969,7 @@ StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective(
     ParseScope OMPDirectiveScope(this, ScopeFlags);
     Actions.StartOpenMPDSABlock(DKind, DirName, Actions.getCurScope(), Loc);
 
+    bool hasDependClause = false;
     while (Tok.isNot(tok::annot_pragma_openmp_end)) {
       OpenMPClauseKind CKind =
           Tok.isAnnotation()
@@ -984,6 +985,11 @@ StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective(
         FirstClauses[CKind].setPointer(Clause);
         Clauses.push_back(Clause);
       }
+
+      // remember if you have seen a depend clause, and pass it
+      // to the ActOnOpenMPRegionStart in case you are on a target directive
+      if (CKind == OMPC_depend)
+        hasDependClause = true;
 
       // Skip ',' if any.
       if (Tok.is(tok::comma))
@@ -1011,7 +1017,7 @@ StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective(
     if (HasAssociatedStatement) {
       // The body is a block scope like in Lambdas and Blocks.
       Sema::CompoundScopeRAII CompoundScope(Actions);
-      Actions.ActOnOpenMPRegionStart(DKind, getCurScope());
+      Actions.ActOnOpenMPRegionStart(DKind, getCurScope(), hasDependClause);
       Actions.ActOnStartOfCompoundStmt();
       // Parse statement
       AssociatedStmt = ParseStatement();
