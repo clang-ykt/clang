@@ -3999,7 +3999,8 @@ static void emitCommonOMPTargetDirective(CodeGenFunction &CGF,
   // Emit target region as a standalone region.
   unsigned CaptureLevel = HasDependClause ? 2 : 1;
   CGM.getOpenMPRuntime().emitTargetOutlinedFunction(S, ParentName, Fn, FnID,
-                                                    IsOffloadEntry, CodeGen);
+                                                    IsOffloadEntry, CodeGen,
+                                                    CaptureLevel);
   OMPLexicalScope Scope(CGF, S);
   auto &&SizeEmitter = [](CodeGenFunction &CGF,
                           const OMPLoopDirective &D) -> llvm::Value * {
@@ -4037,7 +4038,8 @@ void CodeGenFunction::EmitOMPTargetDeviceFunction(CodeGenModule &CGM,
   llvm::Constant *Addr;
   // Emit target region as a standalone region.
   CGM.getOpenMPRuntime().emitTargetOutlinedFunction(
-      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen);
+      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen,
+      /* CaptureLevel = */ 1);
   assert(Fn && Addr && "Target device function emission failed.");
 }
 
@@ -4100,7 +4102,7 @@ void CodeGenFunction::EmitOMPTargetDirective(const OMPTargetDirective &S) {
       MapArrays.DeviceExpr = Device;
 
       CGF.CGM.getOpenMPRuntime().emitTaskCall(CGF, S.getLocStart(), S, OutlinedFn, SharedsTy,
-          CapturedStruct, /* IfCond = */nullptr, Data, MapArrays);
+          CapturedStruct, /* IfCond = */nullptr, Data, &MapArrays);
     };
 
     EmitOMPTaskBasedDirective(S, TargetTaskBodyGen, TargetTaskGen, Data,
@@ -4138,7 +4140,8 @@ void CodeGenFunction::EmitOMPTargetParallelDeviceFunction(
   llvm::Constant *Addr;
   // Emit target region as a standalone region.
   CGM.getOpenMPRuntime().emitTargetOutlinedFunction(
-      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen);
+      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen,
+      /* CaptureLevel = */ 1);
   assert(Fn && Addr && "Target device function emission failed.");
 }
 
@@ -4178,7 +4181,8 @@ void CodeGenFunction::EmitOMPTargetSimdDeviceFunction(
   llvm::Constant *Addr;
   // Emit target region as a standalone region.
   CGM.getOpenMPRuntime().emitTargetOutlinedFunction(
-      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen);
+      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen,
+      /* CaptureLevel = */ 1);
   assert(Fn && Addr && "Target device function emission failed.");
 }
 
@@ -4206,7 +4210,8 @@ void CodeGenFunction::EmitOMPTargetParallelForDeviceFunction(
   llvm::Constant *Addr;
   // Emit target region as a standalone region.
   CGM.getOpenMPRuntime().emitTargetOutlinedFunction(
-      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen);
+      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen,
+      /* CaptureLevel = */ 1);
   assert(Fn && Addr && "Target device function emission failed.");
 }
 
@@ -4247,7 +4252,8 @@ void CodeGenFunction::EmitOMPTargetParallelForSimdDeviceFunction(
   llvm::Constant *Addr;
   // Emit target region as a standalone region.
   CGM.getOpenMPRuntime().emitTargetOutlinedFunction(
-      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen);
+      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen,
+      /* CaptureLevel = */ 1);
   assert(Fn && Addr && "Target device function emission failed.");
 }
 
@@ -4302,7 +4308,8 @@ void CodeGenFunction::EmitOMPTargetTeamsDistributeParallelForDeviceFunction(
   llvm::Constant *Addr;
   // Emit target region as a standalone region.
   CGM.getOpenMPRuntime().emitTargetOutlinedFunction(
-      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen);
+      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen,
+      /* CaptureLevel = */ 1);
   assert(Fn && Addr && "Target device function emission failed.");
 }
 
@@ -4359,7 +4366,8 @@ void CodeGenFunction::EmitOMPTargetTeamsDistributeParallelForSimdDeviceFunction(
   llvm::Constant *Addr;
   // Emit target region as a standalone region.
   CGM.getOpenMPRuntime().emitTargetOutlinedFunction(
-      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen);
+      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen,
+      /* CaptureLevel = */ 1);
   assert(Fn && Addr && "Target device function emission failed.");
 }
 
@@ -4418,7 +4426,8 @@ void CodeGenFunction::EmitOMPTargetTeamsDeviceFunction(
   llvm::Constant *Addr;
   // Emit target region as a standalone region.
   CGM.getOpenMPRuntime().emitTargetOutlinedFunction(
-      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen);
+      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen,
+      /* CaptureLevel = */ 1);
   assert(Fn && Addr && "Target device function emission failed.");
 }
 
@@ -4466,7 +4475,8 @@ void CodeGenFunction::EmitOMPTargetTeamsDistributeDeviceFunction(
   llvm::Constant *Addr;
   // Emit target region as a standalone region.
   CGM.getOpenMPRuntime().emitTargetOutlinedFunction(
-      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen);
+      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen,
+      /* CaptureLevel = */ 1);
   assert(Fn && Addr && "Target device function emission failed.");
 }
 
@@ -4519,7 +4529,8 @@ void CodeGenFunction::EmitOMPTargetTeamsDistributeSimdDeviceFunction(
   llvm::Constant *Addr;
   // Emit target region as a standalone region.
   CGM.getOpenMPRuntime().emitTargetOutlinedFunction(
-      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen);
+      S, ParentName, Fn, Addr, /*IsOffloadEntry=*/true, CodeGen,
+      /* CaptureLevel = */ 1);
   assert(Fn && Addr && "Target device function emission failed.");
 }
 
