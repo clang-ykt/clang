@@ -4735,7 +4735,7 @@ CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
                               const OMPExecutableDirective &D,
                               llvm::Value *TaskFunction, QualType SharedsTy,
                               Address Shareds, const OMPTaskDataTy &Data,
-                              const OMPMapArrays &MapArrays,
+                              const OMPMapArrays *MapArrays,
                               TargetDataInfo *Info) {
   auto &C = CGM.getContext();
   llvm::SmallVector<PrivateDataTy, 4> Privates;
@@ -4879,8 +4879,8 @@ CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
   if (Data.HasImplicitTargetArrays) {
     // Emit device ID if any.
     llvm::Value *DeviceID;
-    if (MapArrays.DeviceExpr)
-      DeviceID = CGF.Builder.CreateIntCast(CGF.EmitScalarExpr(MapArrays.DeviceExpr),
+    if (MapArrays->DeviceExpr)
+      DeviceID = CGF.Builder.CreateIntCast(CGF.EmitScalarExpr(MapArrays->DeviceExpr),
                                            CGF.Int64Ty, /*isSigned=*/true);
     else
       DeviceID = CGF.Builder.getInt64(OMP_DEVICEID_UNDEF);
@@ -4924,7 +4924,7 @@ CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
   if (!Privates.empty()) {
     emitPrivatesInit(CGF, D, KmpTaskSharedsPtr, Base, KmpTaskTWithPrivatesQTyRD,
                      SharedsTy, SharedsPtrTy, Data, Privates,
-                     /*ForDup=*/false, &Info);
+                     /*ForDup=*/false, Info);
     if (isOpenMPTaskLoopDirective(D.getDirectiveKind()) &&
         (!Data.LastprivateVars.empty() || checkInitIsRequired(CGF, Privates))) {
       Result.TaskDupFn = emitTaskDupFunction(
@@ -6453,7 +6453,7 @@ emitOffloadingArrays(CodeGenFunction &CGF,
 
     // The map types are always constant so we don't need to generate code to
     // fill arrays. Instead, we create an array constant.
-    emitMapTypesArray((CGF, MapTypes, Info);
+    emitMapTypesArray(CGF, MapTypes, Info);
 
     for (unsigned i = 0; i < Info.NumberOfPtrs; ++i) {
       llvm::Value *BPVal = *BasePointers[i];
@@ -6916,7 +6916,7 @@ void CGOpenMPRuntime::generateKernelArgs(CodeGenFunction &CGF,
 }
 
 CGOpenMPRuntime::TargetDataInfo
-CGOpenMPRuntime::emitMapArrays(CodeGenFunction &CGF, OMPMapArrays Maps) {
+CGOpenMPRuntime::emitMapArrays(CodeGenFunction &CGF, OMPMapArrays &Maps) {
   CGOpenMPRuntime::TargetDataInfo Info;
   emitOffloadingArrays(CGF, Maps.BasePointers, Maps.Pointers, Maps.Sizes,
       Maps.MapTypes, Info);
@@ -6931,7 +6931,8 @@ void CGOpenMPRuntime::emitTaskCall(CodeGenFunction &CGF, SourceLocation Loc,
                                    llvm::Value *TaskFunction,
                                    QualType SharedsTy, Address Shareds,
                                    const Expr *IfCond,
-                                   const OMPTaskDataTy &Data, const OMPMapArrays *MapArrays) {
+                                   const OMPTaskDataTy &Data,
+                                   OMPMapArrays *MapArrays) {
   if (!CGF.HaveInsertPoint())
     return;
 
@@ -6939,16 +6940,12 @@ void CGOpenMPRuntime::emitTaskCall(CodeGenFunction &CGF, SourceLocation Loc,
   // arrays upfront in the task caller and pass them to the task region.
   TargetDataInfo Info;
   if (D.hasClausesOfKind<OMPDependClause>()) {
-//    llvm::SmallVector<llvm::Value *, 16> CapturedVars;
-//    const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
-//    CGF.GenerateOpenMPCapturedVars(CS, CapturedVars);
-//    MappableExprsHandler::MapValuesArrayTy KernelArgs;
-//    Info = emitMapArrays(CGF, D, CapturedVars, KernelArgs);
-    Info = emitMapArrays(CGF, MapArrays);
+    Info = emitMapArrays(CGF, *MapArrays);
   }
 
   TaskResultTy Result =
-      emitTaskInit(CGF, Loc, D, TaskFunction, SharedsTy, Shareds, Data, MapArrays, Info);
+      emitTaskInit(CGF, Loc, D, TaskFunction, SharedsTy, Shareds, Data,
+          MapArrays, &Info);
 //, Info);
   llvm::Value *NewTask = Result.NewTask;
   llvm::Value *TaskEntry = Result.TaskEntry;
@@ -7135,7 +7132,7 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
                                      llvm::Value *OutlinedFnID,
                                      const Expr *IfCond, const Expr *Device,
                                      ArrayRef<llvm::Value *> CapturedVars,
-                                     const OMPMapArrays &MapArrays,
+                                     OMPMapArrays &MapArrays,
                                      const OMPTaskDataTy *Data) {
   if (!CGF.HaveInsertPoint())
     return;

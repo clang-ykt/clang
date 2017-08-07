@@ -1415,7 +1415,8 @@ public:
                             const OMPExecutableDirective &D,
                             llvm::Value *TaskFunction, QualType SharedsTy,
                             Address Shareds, const Expr *IfCond,
-                            const OMPTaskDataTy &Data, const OMPMapArrays *MapArrays = nullptr);
+                            const OMPTaskDataTy &Data,
+                            OMPMapArrays *MapArrays = nullptr);
 
   /// Emit task region for the taskloop directive. The taskloop region is
   /// emitted in several steps:
@@ -1631,7 +1632,7 @@ public:
                               llvm::Value *OutlinedFnID, const Expr *IfCond,
                               const Expr *Device,
                               ArrayRef<llvm::Value *> CapturedVars,
-                              const OMPMapArrays &MapArrays,
+                              OMPMapArrays &MapArrays,
                               const OMPTaskDataTy *Data = nullptr);
 
   /// \brief Emit the target regions enclosed in \a GD function definition or
@@ -1784,6 +1785,7 @@ public:
                             const OMPExecutableDirective &D,
                             llvm::Value *TaskFunction, QualType SharedsTy,
                             Address Shareds, const OMPTaskDataTy &Data,
+                            const OMPMapArrays *MapArrays = nullptr,
                             TargetDataInfo *Info = nullptr);
 
   /// Generate arrays for later emission of code to implement target map clause
@@ -1796,7 +1798,7 @@ public:
       MappableExprsHandler::MapValuesArrayTy &KernelArgs);
 
   /// Emit map arrays
-  TargetDataInfo emitMapArrays(CodeGenFunction &CGF, OMPMapArrays Maps);
+  TargetDataInfo emitMapArrays(CodeGenFunction &CGF, OMPMapArrays &Maps);
 
   /// \brief Emit the target data mapping code associated with \a D.
   /// \param D Directive to emit.

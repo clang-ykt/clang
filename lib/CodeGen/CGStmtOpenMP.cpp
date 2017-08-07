@@ -4150,7 +4150,11 @@ void CodeGenFunction::EmitOMPTargetParallelDirective(
   auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &Action) {
     TargetParallelCodegen(CGF, Action, S);
   };
-  emitCommonOMPTargetDirective(*this, S, OMPD_target_parallel, CodeGen);
+  llvm::SmallVector<llvm::Value *, 16> CapturedVars;
+  OMPMapArrays MapArrays;
+  generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
+  emitCommonOMPTargetDirective(*this, S, OMPD_target_parallel, CodeGen,
+      CapturedVars, MapArrays);
 }
 
 static void TargetSimdCodegen(CodeGenFunction &CGF, PrePostActionTy &Action,
@@ -4169,7 +4173,11 @@ void CodeGenFunction::EmitOMPTargetSimdDirective(
   auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &Action) {
     TargetSimdCodegen(CGF, Action, S);
   };
-  emitCommonOMPTargetDirective(*this, S, OMPD_target_simd, CodeGen);
+  llvm::SmallVector<llvm::Value *, 16> CapturedVars;
+  OMPMapArrays MapArrays;
+  generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
+  emitCommonOMPTargetDirective(*this, S, OMPD_target_simd, CodeGen,
+      CapturedVars, MapArrays);
 }
 
 void CodeGenFunction::EmitOMPTargetSimdDeviceFunction(
