@@ -6087,12 +6087,16 @@ void CGOpenMPRuntime::emitTargetOutlinedFunctionHelper(
   CGOpenMPTargetRegionInfo CGInfo(CS, CodeGen, EntryFnName);
   CodeGenFunction::CGCapturedStmtRAII CapInfoRAII(CGF, &CGInfo);
 
+  // When a target region has a depend clause, generate a new task
+  // that contains the target region invocation, instead of generating it in
+  // place. The task will take care of the depend logic.
+  bool HasDependClause = D.getSingleClause<OMPDependClause>() != nullptr;
   bool UseCapturedArgumentsOnly =
       isOpenMPParallelDirective(D.getDirectiveKind()) ||
-      isOpenMPTeamsDirective(D.getDirectiveKind());
+      isOpenMPTeamsDirective(D.getDirectiveKind()) || HasDependClause;
   OutlinedFn = CGF.GenerateOpenMPCapturedStmtFunction(
       CS, UseCapturedArgumentsOnly,
-      /*CaptureLevel=*/1, /*ImplicitParamStop=*/0,
+      /*CaptureLevel=*/CaptureLevel, /*ImplicitParamStop=*/0,
       CGM.getCodeGenOpts().OpenmpNonaliasedMaps);
 
   // If this target outline function is not an offload entry, we don't need to
