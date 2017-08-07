@@ -3952,6 +3952,9 @@ static void emitCommonOMPTargetDirective(CodeGenFunction &CGF,
   llvm::Function *Fn = nullptr;
   llvm::Constant *FnID = nullptr;
 
+  // check if we have a depend clause
+  bool HasDependClause = S.hasClausesOfKind<OMPDependClause>();
+
   // Check if we have any if clause associated with the directive.
   const Expr *IfCond = nullptr;
 
@@ -3994,6 +3997,7 @@ static void emitCommonOMPTargetDirective(CodeGenFunction &CGF,
         CGM.getMangledName(GlobalDecl(cast<FunctionDecl>(CGF.CurFuncDecl)));
 
   // Emit target region as a standalone region.
+  unsigned CaptureLevel = HasDependClause ? 2 : 1;
   CGM.getOpenMPRuntime().emitTargetOutlinedFunction(S, ParentName, Fn, FnID,
                                                     IsOffloadEntry, CodeGen);
   OMPLexicalScope Scope(CGF, S);
