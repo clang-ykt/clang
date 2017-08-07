@@ -445,7 +445,8 @@ protected:
                                                 llvm::Function *&OutlinedFn,
                                                 llvm::Constant *&OutlinedFnID,
                                                 bool IsOffloadEntry,
-                                                const RegionCodeGenTy &CodeGen);
+                                                const RegionCodeGenTy &CodeGen,
+                                                unsigned CaptureLevel);
 
   /// \brief Emits object of ident_t type with info for source location.
   /// \param Flags Flags for OpenMP location.
