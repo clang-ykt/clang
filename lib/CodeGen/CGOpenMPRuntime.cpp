@@ -6049,17 +6049,17 @@ static void getTargetEntryUniqueInfo(ASTContext &C, SourceLocation Loc,
 void CGOpenMPRuntime::emitTargetOutlinedFunction(
     const OMPExecutableDirective &D, StringRef ParentName,
     llvm::Function *&OutlinedFn, llvm::Constant *&OutlinedFnID,
-    bool IsOffloadEntry, const RegionCodeGenTy &CodeGen) {
+    bool IsOffloadEntry, const RegionCodeGenTy &CodeGen, unsigned CaptureLevel) {
   assert(!ParentName.empty() && "Invalid target region parent name!");
 
   emitTargetOutlinedFunctionHelper(D, ParentName, OutlinedFn, OutlinedFnID,
-                                   IsOffloadEntry, CodeGen);
+                                   IsOffloadEntry, CodeGen, CaptureLevel);
 }
 
 void CGOpenMPRuntime::emitTargetOutlinedFunctionHelper(
     const OMPExecutableDirective &D, StringRef ParentName,
     llvm::Function *&OutlinedFn, llvm::Constant *&OutlinedFnID,
-    bool IsOffloadEntry, const RegionCodeGenTy &CodeGen) {
+    bool IsOffloadEntry, const RegionCodeGenTy &CodeGen, unsigned CaptureLevel) {
   // Create a unique name for the entry function using the source location
   // information of the current target region. The name will be something like:
   //
