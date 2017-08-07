@@ -420,7 +420,7 @@ struct OMPMapArrays final {
   MappableExprsHandler::MapValuesArrayTy KernelArgs;
   const Expr *DeviceExpr;
   OMPMapArrays() {}
-}
+};
 
 class CGOpenMPRuntime {
 protected:
@@ -1600,7 +1600,8 @@ public:
                                           llvm::Function *&OutlinedFn,
                                           llvm::Constant *&OutlinedFnID,
                                           bool IsOffloadEntry,
-                                          const RegionCodeGenTy &CodeGen);
+                                          const RegionCodeGenTy &CodeGen,
+                                          unsigned CaptureLevel);
 
   /// Emit code that pushes the trip count of loops associated with constructs
   /// 'target teams distribute parallel for' and 'teams distribute parallel
