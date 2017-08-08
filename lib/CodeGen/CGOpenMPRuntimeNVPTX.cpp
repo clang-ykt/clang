@@ -6135,10 +6135,10 @@ CGOpenMPRuntimeNVPTX::translateParameter(const FieldDecl *FD,
       NativeParam->getIdentifier(), ArgType, ImplicitParamDecl::Other);
 }
 
-void CGOpenMPRuntimeNVPTX::mapParameterAddress(
-    CodeGenFunction &CGF, const FieldDecl *FD, const VarDecl *NativeParam,
-    const VarDecl *TargetParam,
-    const CGOpenMPRuntime::MappingFnType MapFn) const {
+Address
+CGOpenMPRuntimeNVPTX::getParameterAddress(CodeGenFunction &CGF,
+                                          const VarDecl *NativeParam,
+                                          const VarDecl *TargetParam) const {
   assert(NativeParam != TargetParam &&
          NativeParam->getType()->isReferenceType() &&
          "Native arg must not be the same as target arg.");
@@ -6163,7 +6163,7 @@ void CGOpenMPRuntimeNVPTX::mapParameterAddress(
   Address NativeParamAddr = CGF.CreateMemTemp(NativeParamType);
   CGF.EmitStoreOfScalar(TargetAddr, NativeParamAddr, /*Volatile=*/false,
                         NativeParam->getType());
-  MapFn(CGF, NativeParam, NativeParamAddr);
+  return NativeParamAddr;
 }
 
 void CGOpenMPRuntimeNVPTX::emitOutlinedFunctionCall(

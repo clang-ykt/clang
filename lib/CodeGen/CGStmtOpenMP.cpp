@@ -286,42 +286,39 @@ namespace {
     /// Captured statement for which the function is generated.
     const CapturedStmt *S = nullptr;
     /// Should function use only captured fields for codegen.
-    bool UseCapturedArgumentsOnly = false;
+    const bool UseCapturedArgumentsOnly = false;
     /// Level of captured function.
-    unsigned CaptureLevel = 0;
+    const unsigned CaptureLevel = 0;
     /// Index of the implicit parameter.
-    unsigned ImplicitParamStop = 0;
+    const unsigned ImplicitParamStop = 0;
     /// Arguments are not aliased.
-    bool NonAliasedMaps = true;
+    const bool NonAliasedMaps = true;
     /// true if cast to/from  UIntPtr is required for variables captured by
     /// value.
-    bool UIntPtrCastRequired = true;
+    const bool UIntPtrCastRequired = true;
     /// true if only casted argumefnts must be registered as local args or VLA
     /// sizes.
-    bool RegisterCastedArgsOnly = false;
+    const bool RegisterCastedArgsOnly = false;
     /// Name of the generated function.
-    StringRef FunctionName;
-    /// Function that maps given variable declaration to the specified address.
-    const CGOpenMPRuntime::MappingFnType MapFn;
+    const StringRef FunctionName;
     explicit FunctionOptions(const CapturedStmt *S,
                              bool UseCapturedArgumentsOnly,
                              unsigned CaptureLevel, unsigned ImplicitParamStop,
                              bool NonAliasedMaps, bool UIntPtrCastRequired,
                              bool RegisterCastedArgsOnly,
-                             StringRef FunctionName,
-                             const CGOpenMPRuntime::MappingFnType MapFn)
+                             StringRef FunctionName)
         : S(S), UseCapturedArgumentsOnly(UseCapturedArgumentsOnly),
           CaptureLevel(CaptureLevel), ImplicitParamStop(ImplicitParamStop),
           NonAliasedMaps(NonAliasedMaps),
           UIntPtrCastRequired(UIntPtrCastRequired),
           RegisterCastedArgsOnly(UIntPtrCastRequired && RegisterCastedArgsOnly),
-          FunctionName(FunctionName), MapFn(MapFn) {}
+          FunctionName(FunctionName) {}
   };
 }
 
 static std::pair<llvm::Function *, bool> emitOutlinedFunctionPrologue(
     CodeGenFunction &CGF, FunctionArgList &Args,
-    llvm::DenseMap<const Decl *, std::pair<const VarDecl *, Address>>
+    llvm::MapVector<const Decl *, std::pair<const VarDecl *, Address>>
         &LocalAddrs,
     llvm::DenseMap<const Decl *, std::pair<const Expr *, llvm::Value *>>
         &VLASizes,
@@ -439,11 +436,13 @@ static std::pair<llvm::Function *, bool> emitOutlinedFunctionPrologue(
     }
 
     // Do not map arguments if we emit function with non-original types.
+    Address LocalAddr(Address::invalid());
     if (!FO.UIntPtrCastRequired && Args[Cnt] != TargetArgs[Cnt]) {
-      CGM.getOpenMPRuntime().mapParameterAddress(CGF, FD, Args[Cnt],
-                                                 TargetArgs[Cnt], FO.MapFn);
+      LocalAddr = CGM.getOpenMPRuntime().getParameterAddress(CGF, Args[Cnt],
+                                                             TargetArgs[Cnt]);
+    } else {
+      LocalAddr = CGF.GetAddrOfLocalVar(Args[Cnt]);
     }
-    Address LocalAddr = CGF.GetAddrOfLocalVar(Args[Cnt]);
     // If we are capturing a pointer by copy we don't need to do anything, just
     // use the value that we get from the arguments.
     if (I->capturesVariableByCopy() && FD->getType()->isAnyPointerType()) {
@@ -533,18 +532,12 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
       getDebugInfo() &&
       CGM.getCodeGenOpts().getDebugInfo() >= codegenoptions::LimitedDebugInfo;
   FunctionArgList Args;
-  llvm::DenseMap<const Decl *, std::pair<const VarDecl *, Address>> LocalAddrs;
+  llvm::MapVector<const Decl *, std::pair<const VarDecl *, Address>> LocalAddrs;
   llvm::DenseMap<const Decl *, std::pair<const Expr *, llvm::Value *>> VLASizes;
-  FunctionOptions FO(
-      &S, UseCapturedArgumentsOnly, CaptureLevel, ImplicitParamStop,
-      NonAliasedMaps, !NeedWrapperFunction,
-      /*RegisterCastedArgsOnly=*/false, CapturedStmtInfo->getHelperName(),
-      [NeedWrapperFunction](CodeGenFunction &CGF, const VarDecl *VD,
-                            Address Addr) {
-        assert(NeedWrapperFunction && "Function should not be called if "
-                                      "wrapper function is not required.");
-        CGF.setAddrOfLocalVar(VD, Addr);
-      });
+  FunctionOptions FO(&S, UseCapturedArgumentsOnly, CaptureLevel,
+                     ImplicitParamStop, NonAliasedMaps, !NeedWrapperFunction,
+                     /*RegisterCastedArgsOnly=*/false,
+                     CapturedStmtInfo->getHelperName());
   llvm::Function *F;
   bool HasUIntPtrArgs;
   std::tie(F, HasUIntPtrArgs) = emitOutlinedFunctionPrologue(
@@ -569,10 +562,7 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
   FunctionOptions WrapperFO(&S, UseCapturedArgumentsOnly, CaptureLevel,
                             ImplicitParamStop, NonAliasedMaps,
                             /*UIntPtrCastRequired=*/true,
-                            /*RegisterCastedArgsOnly=*/true, Out.str(),
-                            [](CodeGenFunction &, const VarDecl *, Address) {
-                              llvm_unreachable("Function should not be called");
-                            });
+                            /*RegisterCastedArgsOnly=*/true, Out.str());
   CodeGenFunction WrapperCGF(CGM, /*suppressNewContext=*/true);
   WrapperCGF.disableDebugInfo();
   Args.clear();
