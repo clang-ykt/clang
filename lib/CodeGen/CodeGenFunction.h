@@ -1055,7 +1055,7 @@ private:
         auto IP = CGF.Builder.saveAndClearIP();
         CGF.EmitBlock(Stack.back().ExitBlock.getBlock());
         CodeGen(CGF);
-        CGF.EmitBranchThroughCleanup(Stack.back().ContBlock);
+        CGF.EmitBranch(Stack.back().ContBlock.getBlock());
         CGF.Builder.restoreIP(IP);
         Stack.back().HasBeenEmitted = true;
       }
@@ -1160,14 +1160,6 @@ private:
   llvm::DenseMap<const OpaqueValueExpr *, LValue> OpaqueLValues;
   llvm::DenseMap<const OpaqueValueExpr *, RValue> OpaqueRValues;
 
-  // VLASizeMap - This keeps track of the associated size for each VLA type.
-  // We track this by the size expression rather than the type itself because
-  // in certain situations, like a const qualifier applied to an VLA typedef,
-  // multiple VLA types can share the same size expression.
-  // FIXME: Maybe this could be a stack of maps that is pushed/popped as we
-  // enter/leave scopes.
-  llvm::DenseMap<const Expr*, llvm::Value*> VLASizeMap;
-
   /// A block containing a single 'unreachable' instruction.  Created
   /// lazily by getUnreachableBlock().
   llvm::BasicBlock *UnreachableBlock;
@@ -1182,6 +1174,14 @@ private:
   SourceLocation LastStopPoint;
 
 public:
+  // VLASizeMap - This keeps track of the associated size for each VLA type.
+  // We track this by the size expression rather than the type itself because
+  // in certain situations, like a const qualifier applied to an VLA typedef,
+  // multiple VLA types can share the same size expression.
+  // FIXME: Maybe this could be a stack of maps that is pushed/popped as we
+  // enter/leave scopes.
+  llvm::DenseMap<const Expr*, llvm::Value*> VLASizeMap;
+
   /// A scope within which we are constructing the fields of an object which
   /// might use a CXXDefaultInitExpr. This stashes away a 'this' value to use
   /// if we need to evaluate a CXXDefaultInitExpr within the evaluation.

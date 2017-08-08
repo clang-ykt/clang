@@ -2691,7 +2691,7 @@ void CGOpenMPRuntime::emitParallelCall(CodeGenFunction &CGF, SourceLocation Loc,
     OutlinedFnArgs.push_back(ThreadIDAddr.getPointer());
     OutlinedFnArgs.push_back(ZeroAddr.getPointer());
     OutlinedFnArgs.append(CapturedVars.begin(), CapturedVars.end());
-    CGF.EmitCallOrInvoke(OutlinedFn, OutlinedFnArgs);
+    RT.emitOutlinedFunctionCall(CGF, OutlinedFn, OutlinedFnArgs);
 
     // __kmpc_end_serialized_parallel(&Loc, GTid);
     llvm::Value *EndArgs[] = {RT.emitUpdateLocation(CGF, Loc), ThreadID};
@@ -4330,7 +4330,7 @@ emitProxyTaskFunction(CodeGenModule &CGM, SourceLocation Loc,
   }
   CallArgs.push_back(SharedsParam);
 
-  CGF.EmitCallOrInvoke(TaskFunction, CallArgs);
+  CGM.getOpenMPRuntime().emitOutlinedFunctionCall(CGF, TaskFunction, CallArgs);
   CGF.EmitStoreThroughLValue(
       RValue::get(CGF.Builder.getInt32(/*C=*/0)),
       CGF.MakeAddrLValue(CGF.ReturnValue, KmpInt32Ty));
@@ -5020,7 +5020,8 @@ void CGOpenMPRuntime::emitTaskCall(CodeGenFunction &CGF, SourceLocation Loc,
         CodeGenFunction &CGF, PrePostActionTy &Action) {
       Action.Enter(CGF);
       llvm::Value *OutlinedFnArgs[] = {ThreadID, NewTaskNewTaskTTy};
-      CGF.EmitCallOrInvoke(TaskEntry, OutlinedFnArgs);
+      CGF.CGM.getOpenMPRuntime().emitOutlinedFunctionCall(CGF, TaskEntry,
+                                                          OutlinedFnArgs);
     };
 
     // Build void __kmpc_omp_task_begin_if0(ident_t *, kmp_int32 gtid,
@@ -6169,8 +6170,7 @@ void CGOpenMPRuntime::emitTargetOutlinedFunctionHelper(
       isOpenMPParallelDirective(D.getDirectiveKind()) ||
       isOpenMPTeamsDirective(D.getDirectiveKind());
   OutlinedFn = CGF.GenerateOpenMPCapturedStmtFunction(
-      CS, UseCapturedArgumentsOnly,
-      /*CaptureLevel=*/1, /*ImplicitParamStop=*/0,
+      CS, UseCapturedArgumentsOnly, /*CaptureLevel=*/1, /*ImplicitParamStop=*/0,
       CGM.getCodeGenOpts().OpenmpNonaliasedMaps);
 
   // If this target outline function is not an offload entry, we don't need to
@@ -6923,47 +6923,51 @@ private:
           auto *LI = cast<llvm::LoadInst>(LB);
           auto *RefAddr = LI->getPointerOperand();
 
-          BasePointers.push_back(BP);
-          Pointers.push_back(RefAddr);
-          Sizes.push_back(CGF.getTypeSize(CGF.getContext().VoidPtrTy));
-          Types.push_back(getMapTypeBits(
-              /*MapType*/ OMPC_MAP_alloc, /*MapTypeModifier=*/OMPC_MAP_unknown,
-              !IsExpressionFirstInfo, IsCaptureFirstInfo));
-
           IsExpressionFirstInfo = false;
           IsCaptureFirstInfo = false;
           // The reference will be the next base address.
           BP = RefAddr;
         }
 
-        BasePointers.push_back(BP);
-        Pointers.push_back(LB);
-        Sizes.push_back(Size);
+        // If this component is a pointer inside the base struct then we don't
+        // need to create any entry for it - it will be combined with the object
+        // it is pointing to into a single PTR_AND_OBJ entry..
+        bool IsMemberPointer = IsPointer && EncounteredME &&
+            (dyn_cast<MemberExpr>(I->getAssociatedExpression()) ==
+                EncounteredME);
+        if (!IsMemberPointer) {
+          BasePointers.push_back(BP);
+          Pointers.push_back(LB);
+          Sizes.push_back(Size);
 
-        // We need to add a pointer flag for each map that comes from the
-        // same expression except for the first one. Such pointers must have
-        // their TO/FROM/ALWAYS/DELETE flags reset. We also need to signal
-        // this map is the first one that relates with the current capture
-        // (there is a set of entries for each capture).
-        uint64_t flags = getMapTypeBits(MapType, MapTypeModifier,
-            !IsExpressionFirstInfo, IsCaptureFirstInfo);
+          // We need to add a pointer flag for each map that comes from the
+          // same expression except for the first one. We also need to signal
+          // this map is the first one that relates with the current capture
+          // (there is a set of entries for each capture).
+          uint64_t flags = getMapTypeBits(MapType, MapTypeModifier,
+              !IsExpressionFirstInfo, IsCaptureFirstInfo);
 
-        if (!IsExpressionFirstInfo) {
-          if (IsPointer)
-            flags &=
-                ~(OMP_MAP_TO | OMP_MAP_FROM | OMP_MAP_ALWAYS | OMP_MAP_DELETE);
+          if (!IsExpressionFirstInfo) {
+            // If we have a PTR_AND_OBJ pair where the OBJ is a pointer as well,
+            // then we reset the To/FROM/ALWAYS/DELETE flags.
+            if (IsPointer) {
+              flags &=
+                  ~(OMP_MAP_TO | OMP_MAP_FROM | OMP_MAP_ALWAYS |
+                      OMP_MAP_DELETE);
+            }
 
-          if (ShouldBeMemberOf) {
-            // Set placeholder value MEMBER_OF=FFFF to indicate that the flag
-            // should be later updated with the correct value of MEMBER_OF.
-            flags |= OMP_MAP_MEMBER_OF;
-            // From now on, all subsequent PTR_AND_OBJ entries should not be
-            // marked as MEMBER_OF.
-            ShouldBeMemberOf = false;
+            if (ShouldBeMemberOf) {
+              // Set placeholder value MEMBER_OF=FFFF to indicate that the flag
+              // should be later updated with the correct value of MEMBER_OF.
+              flags |= OMP_MAP_MEMBER_OF;
+              // From now on, all subsequent PTR_AND_OBJ entries should not be
+              // marked as MEMBER_OF.
+              ShouldBeMemberOf = false;
+            }
           }
-        }
 
-        Types.push_back(flags);
+          Types.push_back(flags);
+        }
 
         // If we have encountered a member expression so far, keep track of the
         // mapped member. If the parent is "*this", then the value declaration
@@ -7704,10 +7708,9 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
            CurBasePointers.size() == CurMapTypes.size() &&
            "Inconsistent map information sizes!");
 
-    // If there is an entry in PartialStructs and we have generated more than 1
-    // entry, it means we have a struct with multiple members mapped. Emit an
-    // extra combined entry.
-    if (PartialStructs.size() > 0 && CurBasePointers.size() > 1) {
+    // If there is an entry in PartialStructs it means we have a struct with
+    // individual members mapped. Emit an extra combined entry.
+    if (PartialStructs.size() > 0) {
       // Base is the base of the struct
       KernelArgs.push_back(PartialStructs.begin()->second.Base);
       BasePointers.push_back(PartialStructs.begin()->second.Base);
@@ -7882,7 +7885,7 @@ void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
   CGF.Builder.CreateCondBr(Failed, OffloadFailedBlock, OffloadContBlock);
 
   CGF.EmitBlock(OffloadFailedBlock);
-  CGF.Builder.CreateCall(OutlinedFn, KernelArgs);
+  emitOutlinedFunctionCall(CGF, OutlinedFn, KernelArgs);
   CGF.EmitBranch(OffloadContBlock);
 
   CGF.EmitBlock(OffloadContBlock, /*IsFinished=*/true);
@@ -8450,7 +8453,7 @@ static void TranslateStructEntries(CodeGenFunction &CGF,
 
     if (PSIt != PartialStructs.end() &&
         TmpBasePointersIdx == StructIndices[StructIndicesIdx].first) {
-      // We have a struct with multiple elements mapped.
+      // We have a struct with individual elements mapped.
       NumOfEntries = StructIndices[StructIndicesIdx].second;
 
       // Base is the base of the struct
@@ -9098,4 +9101,16 @@ void CGOpenMPRuntime::addTrackedFunction(StringRef MangledName, GlobalDecl GD) {
 void CGOpenMPRuntime::registerTrackedFunction() {
   for (auto &GD : TrackedDecls)
     registerTargetFunctionDefinition(GD.second);
+}
+
+void CGOpenMPRuntime::emitOutlinedFunctionCall(
+    CodeGenFunction &CGF, llvm::Value *OutlinedFn,
+    ArrayRef<llvm::Value *> Args) const {
+  if (auto *Fn = dyn_cast<llvm::Function>(OutlinedFn)) {
+    if (Fn->doesNotThrow()) {
+      CGF.EmitNounwindRuntimeCall(OutlinedFn, Args);
+      return;
+    }
+  }
+  CGF.EmitRuntimeCall(OutlinedFn, Args);
 }

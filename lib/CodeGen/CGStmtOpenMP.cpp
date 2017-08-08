@@ -301,18 +301,21 @@ namespace {
     bool RegisterCastedArgsOnly = false;
     /// Name of the generated function.
     StringRef FunctionName;
+    /// Function that maps given variable declaration to the specified address.
+    const CGOpenMPRuntime::MappingFnType MapFn;
     explicit FunctionOptions(const CapturedStmt *S,
                              bool UseCapturedArgumentsOnly,
                              unsigned CaptureLevel, unsigned ImplicitParamStop,
                              bool NonAliasedMaps, bool UIntPtrCastRequired,
                              bool RegisterCastedArgsOnly,
-                             StringRef FunctionName)
+                             StringRef FunctionName,
+                             const CGOpenMPRuntime::MappingFnType MapFn)
         : S(S), UseCapturedArgumentsOnly(UseCapturedArgumentsOnly),
           CaptureLevel(CaptureLevel), ImplicitParamStop(ImplicitParamStop),
           NonAliasedMaps(NonAliasedMaps),
           UIntPtrCastRequired(UIntPtrCastRequired),
           RegisterCastedArgsOnly(UIntPtrCastRequired && RegisterCastedArgsOnly),
-          FunctionName(FunctionName) {}
+          FunctionName(FunctionName), MapFn(MapFn) {}
   };
 }
 
@@ -331,13 +334,17 @@ static std::pair<llvm::Function *, bool> emitOutlinedFunctionPrologue(
   // Build the argument list.
   CodeGenModule &CGM = CGF.CGM;
   ASTContext &Ctx = CGM.getContext();
+  FunctionArgList TargetArgs;
   unsigned ImplicitParamStop = FO.ImplicitParamStop;
   bool HasUIntPtrArgs = false;
   if (ImplicitParamStop == 0)
     ImplicitParamStop = CD->getContextParamPosition();
-  if (!FO.UseCapturedArgumentsOnly)
+  if (!FO.UseCapturedArgumentsOnly) {
     Args.append(CD->param_begin(),
                 std::next(CD->param_begin(), ImplicitParamStop));
+    TargetArgs.append(CD->param_begin(),
+                      std::next(CD->param_begin(), ImplicitParamStop));
+  }
   auto I = FO.S->captures().begin();
   for (auto *FD : RD->fields()) {
     QualType ArgType = FD->getType();
@@ -382,19 +389,28 @@ static std::pair<llvm::Function *, bool> emitOutlinedFunctionPrologue(
     if (FO.NonAliasedMaps &&
         (ArgType->isAnyPointerType() || ArgType->isReferenceType()))
       ArgType = ArgType.withRestrict();
-    Args.push_back(ImplicitParamDecl::Create(Ctx, /*DC=*/nullptr,
-                                             FD->getLocation(), II, ArgType,
-                                             ImplicitParamDecl::Other));
+    auto *Arg =
+        ImplicitParamDecl::Create(Ctx, /*DC=*/nullptr, FD->getLocation(), II,
+                                  ArgType, ImplicitParamDecl::Other);
+    Args.emplace_back(Arg);
+    // Do not cast arguments if we emit function with non-original types.
+    TargetArgs.emplace_back(
+        FO.UIntPtrCastRequired
+            ? Arg
+            : CGM.getOpenMPRuntime().translateParameter(FD, Arg));
     ++I;
   }
   Args.append(
+      std::next(CD->param_begin(), CD->getContextParamPosition() + 1),
+      CD->param_end());
+  TargetArgs.append(
       std::next(CD->param_begin(), CD->getContextParamPosition() + 1),
       CD->param_end());
 
   // Create the function declaration.
   FunctionType::ExtInfo ExtInfo;
   const CGFunctionInfo &FuncInfo =
-      CGM.getTypes().arrangeBuiltinFunctionDeclaration(Ctx.VoidTy, Args);
+      CGM.getTypes().arrangeBuiltinFunctionDeclaration(Ctx.VoidTy, TargetArgs);
   llvm::FunctionType *FuncLLVMTy = CGM.getTypes().GetFunctionType(FuncInfo);
 
   llvm::Function *F =
@@ -402,10 +418,10 @@ static std::pair<llvm::Function *, bool> emitOutlinedFunctionPrologue(
                              FO.FunctionName, &CGM.getModule());
   CGM.SetInternalFunctionAttributes(CD, F, FuncInfo);
   if (CD->isNothrow())
-    F->addFnAttr(llvm::Attribute::NoUnwind);
+    F->setDoesNotThrow();
 
   // Generate the function.
-  CGF.StartFunction(CD, Ctx.VoidTy, F, FuncInfo, Args, CD->getLocation(),
+  CGF.StartFunction(CD, Ctx.VoidTy, F, FuncInfo, TargetArgs, CD->getLocation(),
                     CD->getBody()->getLocStart());
   unsigned Cnt = FO.UseCapturedArgumentsOnly ? 0 : ImplicitParamStop;
   I = FO.S->captures().begin();
@@ -422,11 +438,16 @@ static std::pair<llvm::Function *, bool> emitOutlinedFunctionPrologue(
       }
     }
 
+    // Do not map arguments if we emit function with non-original types.
+    if (!FO.UIntPtrCastRequired && Args[Cnt] != TargetArgs[Cnt]) {
+      CGM.getOpenMPRuntime().mapParameterAddress(CGF, FD, Args[Cnt],
+                                                 TargetArgs[Cnt], FO.MapFn);
+    }
+    Address LocalAddr = CGF.GetAddrOfLocalVar(Args[Cnt]);
     // If we are capturing a pointer by copy we don't need to do anything, just
     // use the value that we get from the arguments.
     if (I->capturesVariableByCopy() && FD->getType()->isAnyPointerType()) {
       const VarDecl *CurVD = I->getCapturedVar();
-      Address LocalAddr = CGF.GetAddrOfLocalVar(Args[Cnt]);
       // If the variable is a reference we need to materialize it here.
       if (CurVD->getType()->isReferenceType()) {
         Address RefAddr = CGF.CreateMemTemp(
@@ -442,9 +463,8 @@ static std::pair<llvm::Function *, bool> emitOutlinedFunctionPrologue(
       continue;
     }
 
-    LValue ArgLVal =
-        CGF.MakeAddrLValue(CGF.GetAddrOfLocalVar(Args[Cnt]),
-                           Args[Cnt]->getType(), AlignmentSource::Decl);
+    LValue ArgLVal = CGF.MakeAddrLValue(LocalAddr, Args[Cnt]->getType(),
+                                        AlignmentSource::Decl);
     if (FD->hasCapturedVLAType()) {
       if (FO.UIntPtrCastRequired) {
         ArgLVal = CGF.MakeAddrLValue(castValueFromUintptr(CGF, FD->getType(),
@@ -515,10 +535,16 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
   FunctionArgList Args;
   llvm::DenseMap<const Decl *, std::pair<const VarDecl *, Address>> LocalAddrs;
   llvm::DenseMap<const Decl *, std::pair<const Expr *, llvm::Value *>> VLASizes;
-  FunctionOptions FO(&S, UseCapturedArgumentsOnly, CaptureLevel,
-                     ImplicitParamStop, NonAliasedMaps, !NeedWrapperFunction,
-                     /*RegisterCastedArgsOnly=*/false,
-                     CapturedStmtInfo->getHelperName());
+  FunctionOptions FO(
+      &S, UseCapturedArgumentsOnly, CaptureLevel, ImplicitParamStop,
+      NonAliasedMaps, !NeedWrapperFunction,
+      /*RegisterCastedArgsOnly=*/false, CapturedStmtInfo->getHelperName(),
+      [NeedWrapperFunction](CodeGenFunction &CGF, const VarDecl *VD,
+                            Address Addr) {
+        assert(NeedWrapperFunction && "Function should not be called if "
+                                      "wrapper function is not required.");
+        CGF.setAddrOfLocalVar(VD, Addr);
+      });
   llvm::Function *F;
   bool HasUIntPtrArgs;
   std::tie(F, HasUIntPtrArgs) = emitOutlinedFunctionPrologue(
@@ -537,11 +563,16 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
   if (!NeedWrapperFunction || !HasUIntPtrArgs)
     return F;
 
+  SmallString<256> Buffer;
+  llvm::raw_svector_ostream Out(Buffer);
+  Out << "__nondebug_wrapper_" << CapturedStmtInfo->getHelperName();
   FunctionOptions WrapperFO(&S, UseCapturedArgumentsOnly, CaptureLevel,
                             ImplicitParamStop, NonAliasedMaps,
                             /*UIntPtrCastRequired=*/true,
-                            /*RegisterCastedArgsOnly=*/true,
-                            ".nondebug_wrapper.");
+                            /*RegisterCastedArgsOnly=*/true, Out.str(),
+                            [](CodeGenFunction &, const VarDecl *, Address) {
+                              llvm_unreachable("Function should not be called");
+                            });
   CodeGenFunction WrapperCGF(CGM, /*suppressNewContext=*/true);
   WrapperCGF.disableDebugInfo();
   Args.clear();
@@ -571,7 +602,7 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
     }
     CallArgs.emplace_back(CallArg);
   }
-  WrapperCGF.Builder.CreateCall(F, CallArgs);
+  CGM.getOpenMPRuntime().emitOutlinedFunctionCall(WrapperCGF, F, CallArgs);
   WrapperCGF.FinishFunction();
   return WrapperF;
 }
@@ -1743,11 +1774,8 @@ void CodeGenFunction::EmitOMPSimdLoop(const OMPLoopDirective &S,
 }
 
 void CodeGenFunction::EmitOMPSimdDirective(const OMPSimdDirective &S) {
-#if 0
   bool OutlinedSimd =
       CGM.getLangOpts().OpenMPIsDevice && CGM.getTriple().isNVPTX();
-#endif
-  bool OutlinedSimd = false;
   EmitOMPSimdLoop(S, OutlinedSimd);
 }
 
@@ -2953,7 +2981,57 @@ void CodeGenFunction::EmitOMPTaskBasedDirective(const OMPExecutableDirective &S,
                                                            RedCG, Cnt);
       }
     }
+    // Privatize all private variables except for in_reduction items.
     (void)Scope.Privatize();
+    SmallVector<const Expr *, 4> InRedVars;
+    SmallVector<const Expr *, 4> InRedPrivs;
+    SmallVector<const Expr *, 4> InRedOps;
+    SmallVector<const Expr *, 4> TaskgroupDescriptors;
+    for (const auto *C : S.getClausesOfKind<OMPInReductionClause>()) {
+      auto IPriv = C->privates().begin();
+      auto IRed = C->reduction_ops().begin();
+      auto ITD = C->taskgroup_descriptors().begin();
+      for (const auto *Ref : C->varlists()) {
+        InRedVars.emplace_back(Ref);
+        InRedPrivs.emplace_back(*IPriv);
+        InRedOps.emplace_back(*IRed);
+        TaskgroupDescriptors.emplace_back(*ITD);
+        std::advance(IPriv, 1);
+        std::advance(IRed, 1);
+        std::advance(ITD, 1);
+      }
+    }
+    // Privatize in_reduction items here, because taskgroup descriptors must be
+    // privatized earlier.
+    OMPPrivateScope InRedScope(CGF);
+    if (!InRedVars.empty()) {
+      ReductionCodeGen RedCG(InRedVars, InRedPrivs, InRedOps);
+      for (unsigned Cnt = 0, E = InRedVars.size(); Cnt < E; ++Cnt) {
+        RedCG.emitSharedLValue(CGF, Cnt);
+        RedCG.emitAggregateType(CGF, Cnt);
+        // The taskgroup descriptor variable is always implicit firstprivate and
+        // privatized already during procoessing of the firstprivates.
+        llvm::Value *ReductionsPtr = CGF.EmitLoadOfScalar(
+            CGF.EmitLValue(TaskgroupDescriptors[Cnt]), SourceLocation());
+        Address Replacement = CGF.CGM.getOpenMPRuntime().getTaskReductionItem(
+            CGF, S.getLocStart(), ReductionsPtr, RedCG.getSharedLValue(Cnt));
+        Replacement = Address(
+            CGF.EmitScalarConversion(
+                Replacement.getPointer(), CGF.getContext().VoidPtrTy,
+                CGF.getContext().getPointerType(InRedPrivs[Cnt]->getType()),
+                SourceLocation()),
+            Replacement.getAlignment());
+        Replacement = RedCG.adjustPrivateAddress(CGF, Cnt, Replacement);
+        InRedScope.addPrivate(RedCG.getBaseDecl(Cnt),
+                              [Replacement]() { return Replacement; });
+        // FIXME: This must removed once the runtime library is fixed.
+        // Emit required threadprivate variables for
+        // initilizer/combiner/finalizer.
+        CGF.CGM.getOpenMPRuntime().emitTaskReductionFixups(CGF, S.getLocStart(),
+                                                           RedCG, Cnt);
+      }
+    }
+    (void)InRedScope.Privatize();
 
     Action.Enter(CGF);
     BodyGen(CGF);
@@ -3013,6 +3091,35 @@ void CodeGenFunction::EmitOMPTaskgroupDirective(
     const OMPTaskgroupDirective &S) {
   auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &Action) {
     Action.Enter(CGF);
+    if (const Expr *E = S.getReductionRef()) {
+      SmallVector<const Expr *, 4> LHSs;
+      SmallVector<const Expr *, 4> RHSs;
+      OMPTaskDataTy Data;
+      for (const auto *C : S.getClausesOfKind<OMPTaskReductionClause>()) {
+        auto IPriv = C->privates().begin();
+        auto IRed = C->reduction_ops().begin();
+        auto ILHS = C->lhs_exprs().begin();
+        auto IRHS = C->rhs_exprs().begin();
+        for (const auto *Ref : C->varlists()) {
+          Data.ReductionVars.emplace_back(Ref);
+          Data.ReductionCopies.emplace_back(*IPriv);
+          Data.ReductionOps.emplace_back(*IRed);
+          LHSs.emplace_back(*ILHS);
+          RHSs.emplace_back(*IRHS);
+          std::advance(IPriv, 1);
+          std::advance(IRed, 1);
+          std::advance(ILHS, 1);
+          std::advance(IRHS, 1);
+        }
+      }
+      llvm::Value *ReductionDesc =
+          CGF.CGM.getOpenMPRuntime().emitTaskReductionInit(CGF, S.getLocStart(),
+                                                           LHSs, RHSs, Data);
+      const auto *VD = cast<VarDecl>(cast<DeclRefExpr>(E)->getDecl());
+      CGF.EmitVarDecl(*VD);
+      CGF.EmitStoreOfScalar(ReductionDesc, CGF.GetAddrOfLocalVar(VD),
+                            /*Volatile=*/false, E->getType());
+    }
     CGF.EmitStmt(cast<CapturedStmt>(S.getAssociatedStmt())->getCapturedStmt());
   };
   OMPLexicalScope Scope(*this, S, /*AsInlined=*/true);
@@ -3349,7 +3456,8 @@ void CodeGenFunction::EmitOMPOrderedDirective(const OMPOrderedDirective &S) {
       llvm::SmallVector<llvm::Value *, 16> CapturedVars;
       CGF.GenerateOpenMPCapturedVars(*CS, CapturedVars);
       auto *OutlinedFn = emitOutlinedOrderedFunction(CGM, CS);
-      CGF.EmitNounwindRuntimeCall(OutlinedFn, CapturedVars);
+      CGM.getOpenMPRuntime().emitOutlinedFunctionCall(CGF, OutlinedFn,
+                                                      CapturedVars);
     } else {
       Action.Enter(CGF);
       CGF.EmitStmt(
