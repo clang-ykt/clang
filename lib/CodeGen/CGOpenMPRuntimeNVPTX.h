@@ -770,6 +770,25 @@ public:
                              ArrayRef<const Expr *> ReductionOps,
                              bool WithNowait, bool SimpleReduction,
                              OpenMPDirectiveKind ReductionKind) override;
+
+  /// Translates the native parameter of outlined function if this is required
+  /// for target.
+  /// \param FD Field decl from captured record for the paramater.
+  /// \param NativeParam Parameter itself.
+  const VarDecl *translateParameter(const FieldDecl *FD,
+                                    const VarDecl *NativeParam) const override;
+
+  /// Gets the address of the native argument basing on the address of the
+  /// target-specific parameter.
+  /// \param NativeParam Parameter itself.
+  /// \param TargetParam Corresponding target-specific parameter.
+  Address getParameterAddress(CodeGenFunction &CGF, const VarDecl *NativeParam,
+                              const VarDecl *TargetParam) const override;
+
+  /// Emits call of the outlined function with the provided arguments.
+  void emitOutlinedFunctionCall(
+      CodeGenFunction &CGF, llvm::Value *OutlinedFn,
+      ArrayRef<llvm::Value *> Args = llvm::None) const override;
 };
 
 } // CodeGen namespace.
