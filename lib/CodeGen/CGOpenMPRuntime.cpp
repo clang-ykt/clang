@@ -4754,6 +4754,14 @@ checkDestructorsRequired(const RecordDecl *KmpTaskTWithPrivatesQTyRD) {
 CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
     CodeGenFunction &CGF, SourceLocation Loc, const OMPExecutableDirective &D,
     llvm::Value *TaskFunction, QualType SharedsTy, Address Shareds,
+    const OMPTaskDataTy &Data) {
+  return emitTaskInit(CGF, Loc, D, TaskFunction, SharedsTy, Shareds, Data,
+      /* MapArrays = */ nullptr, /* Info = */ nullptr);
+}
+
+CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
+    CodeGenFunction &CGF, SourceLocation Loc, const OMPExecutableDirective &D,
+    llvm::Value *TaskFunction, QualType SharedsTy, Address Shareds,
     const OMPTaskDataTy &Data, const OMPMapArrays *MapArrays,
     TargetDataInfo *Info) {
   auto &C = CGM.getContext();
@@ -6704,22 +6712,6 @@ void CGOpenMPRuntime::emitTargetNumIterationsCall(
     }
   }
 }
-//
-// void CGOpenMPRuntime::emitTargetCall(CodeGenFunction &CGF,
-//                                     const OMPExecutableDirective &D,
-//                                     llvm::Value *OutlinedFn,
-//                                     llvm::Value *OutlinedFnID,
-//                                     const Expr *IfCond, const Expr *Device,
-//                                     ArrayRef<llvm::Value *> CapturedVars) {
-//  if (!CGF.HaveInsertPoint())
-//    return;
-//
-//  assert(OutlinedFn && "Invalid outlined function!");
-//
-//  // Check if directive has nowait clause
-//  bool hasNowait = D.hasClausesOfKind<OMPNowaitClause>();
-//
-//  auto &Ctx = CGF.getContext();
 
 OMPMapArrays
 CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
@@ -7169,7 +7161,7 @@ void CGOpenMPRuntime::emitTargetCall(
     CodeGenFunction &CGF, const OMPExecutableDirective &D,
     llvm::Value *OutlinedFn, llvm::Value *OutlinedFnID, const Expr *IfCond,
     const Expr *Device, ArrayRef<llvm::Value *> CapturedVars,
-    OMPMapArrays &MapArrays, const OMPTaskDataTy *Data) {
+    OMPMapArrays &MapArrays, const OMPTaskDataTy &Data) {
   if (!CGF.HaveInsertPoint())
     return;
 
@@ -7209,28 +7201,28 @@ void CGOpenMPRuntime::emitTargetCall(
       Info = emitMapArrays(CGF, MapArrays);
     else {
       Address BasePtrAddr = CGF.GetAddrOfLocalVar(
-          Data->FirstprivateRefsSimpleArrayImplicit
+          Data.FirstprivateRefsSimpleArrayImplicit
               [OMPTaskDataTy::ImplicitMapArray::OMP_BASE_PTRS]);
       Address PtrsAddr = CGF.GetAddrOfLocalVar(
-          Data->FirstprivateRefsSimpleArrayImplicit
+          Data.FirstprivateRefsSimpleArrayImplicit
               [OMPTaskDataTy::ImplicitMapArray::OMP_PTRS]);
       Address SizesAddr = CGF.GetAddrOfLocalVar(
-          Data->FirstprivateRefsSimpleArrayImplicit
+          Data.FirstprivateRefsSimpleArrayImplicit
               [OMPTaskDataTy::ImplicitMapArray::OMP_SIZES]);
       auto PointerToBases =
           Address(CGF.Builder.CreateLoad(BasePtrAddr),
                   CGF.getContext().getDeclAlign(
-                      Data->FirstprivateRefsSimpleArrayImplicit
+                      Data.FirstprivateRefsSimpleArrayImplicit
                           [OMPTaskDataTy::ImplicitMapArray::OMP_BASE_PTRS]));
       auto PointerToPtrs =
           Address(CGF.Builder.CreateLoad(PtrsAddr),
                   CGF.getContext().getDeclAlign(
-                      Data->FirstprivateRefsSimpleArrayImplicit
+                      Data.FirstprivateRefsSimpleArrayImplicit
                           [OMPTaskDataTy::ImplicitMapArray::OMP_PTRS]));
       auto PointerToSizes =
           Address(CGF.Builder.CreateLoad(SizesAddr),
                   CGF.getContext().getDeclAlign(
-                      Data->FirstprivateRefsSimpleArrayImplicit
+                      Data.FirstprivateRefsSimpleArrayImplicit
                           [OMPTaskDataTy::ImplicitMapArray::OMP_SIZES]));
 
       Info.BasePointersArray =

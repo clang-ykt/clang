@@ -7253,7 +7253,7 @@ StmtResult TreeTransform<Derived>::TransformOMPExecutableDirective(
   llvm::SmallVector<OMPClause *, 16> TClauses;
   ArrayRef<OMPClause *> Clauses = D->clauses();
   TClauses.reserve(Clauses.size());
-  bool HasDependClause = D->getSingleClause<OMPDependClause>() != nullptr;
+  bool HasDependClause = D->hasClausesOfKind<OMPDependClause>();
   for (ArrayRef<OMPClause *>::iterator I = Clauses.begin(), E = Clauses.end();
        I != E; ++I) {
     if (*I) {

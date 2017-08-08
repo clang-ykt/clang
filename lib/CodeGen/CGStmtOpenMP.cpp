@@ -2917,7 +2917,7 @@ void CodeGenFunction::EmitOMPTaskBasedDirective(const OMPExecutableDirective &S,
         const ImplicitParamDecl *BasePtrsParam =
             Data.FirstprivateSimpleArrayImplicit
                 [OMPTaskDataTy::ImplicitMapArray::OMP_BASE_PTRS];
-        ImplicitParamDecl *PointerToBasePtrsParam = ImplicitParamDecl::Create(
+        auto *PointerToBasePtrsParam = ImplicitParamDecl::Create(
             Context, Context.getPointerType(BasePtrsParam->getType()),
             ImplicitParamDecl::ImplicitParamKind::Other);
         Data.FirstprivateRefsSimpleArrayImplicit
@@ -2927,7 +2927,7 @@ void CodeGenFunction::EmitOMPTaskBasedDirective(const OMPExecutableDirective &S,
         const ImplicitParamDecl *PtrsParam =
             Data.FirstprivateSimpleArrayImplicit
                 [OMPTaskDataTy::ImplicitMapArray::OMP_PTRS];
-        ImplicitParamDecl *PointerToPtrsParam = ImplicitParamDecl::Create(
+        auto *PointerToPtrsParam = ImplicitParamDecl::Create(
             Context, Context.getPointerType(PtrsParam->getType()),
             ImplicitParamDecl::ImplicitParamKind::Other);
         Data.FirstprivateRefsSimpleArrayImplicit
@@ -2936,7 +2936,7 @@ void CodeGenFunction::EmitOMPTaskBasedDirective(const OMPExecutableDirective &S,
         const ImplicitParamDecl *SizesParam =
             Data.FirstprivateSimpleArrayImplicit
                 [OMPTaskDataTy::ImplicitMapArray::OMP_SIZES];
-        ImplicitParamDecl *PointerToSizesParam = ImplicitParamDecl::Create(
+        auto *PointerToSizesParam = ImplicitParamDecl::Create(
             Context, Context.getPointerType(SizesParam->getType()),
             ImplicitParamDecl::ImplicitParamKind::Other);
         Data.FirstprivateRefsSimpleArrayImplicit
@@ -4035,7 +4035,7 @@ static void emitCommonOMPTargetDirective(CodeGenFunction &CGF,
   CGM.getOpenMPRuntime().emitTargetNumIterationsCall(CGF, S, Device,
                                                      SizeEmitter);
   CGM.getOpenMPRuntime().emitTargetCall(CGF, S, Fn, FnID, IfCond, Device,
-                                        CapturedVars, MapArrays, Data);
+                                        CapturedVars, MapArrays, *Data);
 }
 
 void TargetCodegen(CodeGenFunction &CGF, PrePostActionTy &Action,
@@ -4090,9 +4090,9 @@ void CodeGenFunction::EmitOMPTargetDirective(const OMPTargetDirective &S) {
     QualType BasesAndPtrsType = Context.getConstantArrayType(
         Context.VoidPtrTy, llvm::APInt(32, MapArrays.BasePointers.size()),
         ArrayType::Normal, /* IndexTypeQuals = */ 0);
-    ImplicitParamDecl *BasesDecl = ImplicitParamDecl::Create(
+    auto *BasesDecl = ImplicitParamDecl::Create(
         Context, BasesAndPtrsType, ImplicitParamDecl::ImplicitParamKind::Other);
-    ImplicitParamDecl *PtrsDecl = ImplicitParamDecl::Create(
+    auto *PtrsDecl = ImplicitParamDecl::Create(
         Context, BasesAndPtrsType, ImplicitParamDecl::ImplicitParamKind::Other);
     Data.FirstprivateSimpleArrayImplicit[OMPTaskDataTy::OMP_BASE_PTRS] =
         BasesDecl;
@@ -4100,7 +4100,7 @@ void CodeGenFunction::EmitOMPTargetDirective(const OMPTargetDirective &S) {
     QualType SizesType = Context.getConstantArrayType(
         Context.getSizeType(), llvm::APInt(32, MapArrays.Sizes.size()),
         ArrayType::Normal, /* IndexTypeQuals = */ 0);
-    ImplicitParamDecl *SizesDecl = ImplicitParamDecl::Create(
+    auto *SizesDecl = ImplicitParamDecl::Create(
         Context, SizesType, ImplicitParamDecl::ImplicitParamKind::Other);
     Data.FirstprivateSimpleArrayImplicit[OMPTaskDataTy::OMP_SIZES] = SizesDecl;
     Data.HasImplicitTargetArrays = true;
