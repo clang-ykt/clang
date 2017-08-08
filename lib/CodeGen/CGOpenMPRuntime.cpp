@@ -757,7 +757,7 @@ enum OpenMPRTLFunction {
   // *arg_types);
   OMPRTL__tgt_target_data_end_nowait,
   // Call to void __tgt_target_data_update(int64_t device_id, int32_t arg_num,
-  // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+   // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
   OMPRTL__tgt_target_data_update,
   // Call to void __tgt_target_data_update_nowait(int64_t device_id, int32_t
   // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
@@ -2709,7 +2709,7 @@ void CGOpenMPRuntime::emitParallelCall(CodeGenFunction &CGF, SourceLocation Loc,
     OutlinedFnArgs.push_back(ThreadIDAddr.getPointer());
     OutlinedFnArgs.push_back(ZeroAddr.getPointer());
     OutlinedFnArgs.append(CapturedVars.begin(), CapturedVars.end());
-    CGF.EmitCallOrInvoke(OutlinedFn, OutlinedFnArgs);
+    RT.emitOutlinedFunctionCall(CGF, OutlinedFn, OutlinedFnArgs);
 
     // __kmpc_end_serialized_parallel(&Loc, GTid);
     llvm::Value *EndArgs[] = {RT.emitUpdateLocation(CGF, Loc), ThreadID};
@@ -4354,7 +4354,7 @@ emitProxyTaskFunction(CodeGenModule &CGM, SourceLocation Loc,
   }
   CallArgs.push_back(SharedsParam);
 
-  CGF.EmitCallOrInvoke(TaskFunction, CallArgs);
+  CGM.getOpenMPRuntime().emitOutlinedFunctionCall(CGF, TaskFunction, CallArgs);
   CGF.EmitStoreThroughLValue(
       RValue::get(CGF.Builder.getInt32(/*C=*/0)),
       CGF.MakeAddrLValue(CGF.ReturnValue, KmpInt32Ty));
@@ -6833,15 +6833,6 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
     Maps.MapTypes.append(CurMapTypes.begin(), CurMapTypes.end());
   }
 
-  //  // Keep track on whether the host function has to be executed.
-  //  auto OffloadErrorQType =
-  //      Ctx.getIntTypeForBitwidth(/*DestWidth=*/32, /*Signed=*/true);
-  //  auto OffloadError = CGF.MakeAddrLValue(
-  //      CGF.CreateMemTemp(OffloadErrorQType, ".run_host_version"),
-  //      OffloadErrorQType);
-  //  CGF.EmitStoreOfScalar(llvm::Constant::getNullValue(CGM.Int32Ty),
-  //                        OffloadError);
-
   return Maps;
 }
 
@@ -7188,14 +7179,8 @@ void CGOpenMPRuntime::emitTargetCall(
   auto &&ThenGen = [this, &Ctx, Device, OutlinedFnID, OffloadError,
                     OffloadErrorQType, &D, hasNowait, &MapArrays, hasDepend,
                     &Data](CodeGenFunction &CGF, PrePostActionTy &) {
-
-    //  auto &&ThenGen = [&Ctx, &BasePointers, &Pointers, &Sizes, &MapTypes,
-    //  Device,
-    //                    OutlinedFnID, OffloadError, OffloadErrorQType, &D,
-    //                    hasNowait](CodeGenFunction &CGF, PrePostActionTy &) {
     auto &RT = CGF.CGM.getOpenMPRuntime();
     // Emit the offloading arrays.
-
     TargetDataInfo Info;
     if (!hasDepend)
       Info = emitMapArrays(CGF, MapArrays);
@@ -7312,6 +7297,7 @@ void CGOpenMPRuntime::emitTargetCall(
         Return = CGF.EmitRuntimeCall(
             RT.createRuntimeFunction(OMPRTL__tgt_target), OffloadingArgs);
     }
+
     CGF.EmitStoreOfScalar(Return, OffloadError);
   };
 
@@ -9283,4 +9269,16 @@ void CGOpenMPRuntime::addTrackedFunction(StringRef MangledName, GlobalDecl GD) {
 void CGOpenMPRuntime::registerTrackedFunction() {
   for (auto &GD : TrackedDecls)
     registerTargetFunctionDefinition(GD.second);
+}
+
+void CGOpenMPRuntime::emitOutlinedFunctionCall(
+    CodeGenFunction &CGF, llvm::Value *OutlinedFn,
+    ArrayRef<llvm::Value *> Args) const {
+  if (auto *Fn = dyn_cast<llvm::Function>(OutlinedFn)) {
+    if (Fn->doesNotThrow()) {
+      CGF.EmitNounwindRuntimeCall(OutlinedFn, Args);
+      return;
+    }
+  }
+  CGF.EmitRuntimeCall(OutlinedFn, Args);
 }

@@ -714,7 +714,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createKernelInitializerFunction(
 
     CGF.EmitBlock(WorkerBB);
     initializeDataSharing(CGF, /*IsMaster=*/false);
-    Bld.CreateCall(WorkerFunction);
+    emitOutlinedFunctionCall(CGF, WorkerFunction);
     CGF.EmitBranch(ExitBB);
   } else {
     // Initialize the state of the OpenMP runtime library on the GPU.
@@ -734,7 +734,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createKernelInitializerFunction(
     Bld.CreateCondBr(IsWorker, WorkerBB, ExitBB);
 
     CGF.EmitBlock(WorkerBB);
-    Bld.CreateCall(WorkerFunction);
+    emitOutlinedFunctionCall(CGF, WorkerFunction);
     CGF.EmitBranch(ExitBB);
   }
 
@@ -3775,7 +3775,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     ++FI;
   }
 
-  CGF.EmitCallOrInvoke(&OutlinedParallelFn, Args);
+  emitOutlinedFunctionCall(CGF, &OutlinedParallelFn, Args);
   CGF.FinishFunction();
   return Fn;
 }
@@ -4003,7 +4003,7 @@ void CGOpenMPRuntimeNVPTX::emitGenericParallelCall(
     OutlinedFnArgs.push_back(
         llvm::Constant::getNullValue(CGM.Int32Ty->getPointerTo()));
     OutlinedFnArgs.append(CapturedVars.begin(), CapturedVars.end());
-    CGF.EmitCallOrInvoke(Fn, OutlinedFnArgs);
+    emitOutlinedFunctionCall(CGF, Fn, OutlinedFnArgs);
 
     // __kmpc_end_serialized_parallel(&Loc, GTid);
     llvm::Value *EndArgs[] = {emitUpdateLocation(CGF, Loc), ThreadID};
@@ -4049,7 +4049,7 @@ void CGOpenMPRuntimeNVPTX::emitSPMDParallelCall(
     OutlinedFnArgs.push_back(ThreadIDAddr.getPointer());
     OutlinedFnArgs.push_back(ZeroAddr.getPointer());
     OutlinedFnArgs.append(CapturedVars.begin(), CapturedVars.end());
-    CGF.EmitCallOrInvoke(OutlinedFn, OutlinedFnArgs);
+    emitOutlinedFunctionCall(CGF, OutlinedFn, OutlinedFnArgs);
   } else {
     emitGenericParallelCall(CGF, Loc, OutlinedFn, CapturedVars, IfCond);
   }
@@ -4184,7 +4184,8 @@ void CGOpenMPRuntimeNVPTX::emitSimdCall(CodeGenFunction &CGF,
     OutlinedFnArgs.push_back(LaneId.getPointer());
     OutlinedFnArgs.push_back(NumLanes.getPointer());
     OutlinedFnArgs.append(CapturedVars.begin(), CapturedVars.end());
-    CGF.EmitCallOrInvoke(Fn, OutlinedFnArgs);
+    CGF.CGM.getOpenMPRuntime().emitOutlinedFunctionCall(CGF, Fn,
+                                                        OutlinedFnArgs);
   };
 
   CodeGenFunction::RunCleanupsScope Scope(CGF);
@@ -4457,7 +4458,7 @@ void CGOpenMPRuntimeNVPTX::emitTeamsCall(CodeGenFunction &CGF,
     OutlinedFnArgs.push_back(ThreadIDAddr.getPointer());
     OutlinedFnArgs.push_back(ZeroAddr.getPointer());
     OutlinedFnArgs.append(CapturedVars.begin(), CapturedVars.end());
-    CGF.EmitCallOrInvoke(OutlinedFn, OutlinedFnArgs);
+    emitOutlinedFunctionCall(CGF, OutlinedFn, OutlinedFnArgs);
   } else if (D.getDirectiveKind() == OMPD_teams_distribute ||
              D.getDirectiveKind() == OMPD_target_teams_distribute) {
     // This code generation is a duplication of the one in CGStmtOpenMP.cpp
@@ -6112,3 +6113,80 @@ void CGOpenMPRuntimeNVPTX::emitReduction(
   CGF.EmitBlock(DefaultBB, /*IsFinished=*/true);
 }
 
+const VarDecl *
+CGOpenMPRuntimeNVPTX::translateParameter(const FieldDecl *FD,
+                                         const VarDecl *NativeParam) const {
+  if (!NativeParam->getType()->isReferenceType())
+    return NativeParam;
+  QualType ArgType = NativeParam->getType();
+  QualifierCollector QC;
+  const Type *NonQualTy = QC.strip(ArgType);
+  QualType PointeeTy = cast<ReferenceType>(NonQualTy)->getPointeeType();
+  if (const auto *Attr = FD->getAttr<OMPCaptureKindAttr>()) {
+    if (Attr->getCaptureKind() == OMPC_map) {
+      PointeeTy = CGM.getContext().getAddrSpaceQualType(PointeeTy,
+                                                        LangAS::opencl_global);
+    }
+  }
+  ArgType = CGM.getContext().getPointerType(PointeeTy);
+  QC.addRestrict();
+  enum { NVPTX_local_addr = 5 };
+  QC.addAddressSpace(NVPTX_local_addr);
+  ArgType = QC.apply(CGM.getContext(), ArgType);
+  return ImplicitParamDecl::Create(
+      CGM.getContext(), /*DC=*/nullptr, NativeParam->getLocation(),
+      NativeParam->getIdentifier(), ArgType, ImplicitParamDecl::Other);
+}
+
+void CGOpenMPRuntimeNVPTX::mapParameterAddress(
+    CodeGenFunction &CGF, const FieldDecl *FD, const VarDecl *NativeParam,
+    const VarDecl *TargetParam,
+    const CGOpenMPRuntime::MappingFnType MapFn) const {
+  assert(NativeParam != TargetParam &&
+         NativeParam->getType()->isReferenceType() &&
+         "Native arg must not be the same as target arg.");
+  Address LocalAddr = CGF.GetAddrOfLocalVar(TargetParam);
+  QualType NativeParamType = NativeParam->getType();
+  QualifierCollector QC;
+  const Type *NonQualTy = QC.strip(NativeParamType);
+  QualType NativePointeeTy = cast<ReferenceType>(NonQualTy)->getPointeeType();
+  unsigned NativePointeeAddrSpace =
+      NativePointeeTy.getQualifiers().getAddressSpace();
+  QualType TargetPointeeTy = TargetParam->getType()->getPointeeType();
+  llvm::Value *TargetAddr = CGF.EmitLoadOfScalar(
+      LocalAddr, /*Volatile=*/false, TargetPointeeTy, SourceLocation());
+  // First cast to generic.
+  TargetAddr = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
+      TargetAddr, TargetAddr->getType()->getPointerElementType()->getPointerTo(
+                      /*AddrSpace=*/0));
+  // Cast from generic to native address space.
+  TargetAddr = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
+      TargetAddr, TargetAddr->getType()->getPointerElementType()->getPointerTo(
+                      NativePointeeAddrSpace));
+  Address NativeParamAddr = CGF.CreateMemTemp(NativeParamType);
+  CGF.EmitStoreOfScalar(TargetAddr, NativeParamAddr, /*Volatile=*/false,
+                        NativeParam->getType());
+  MapFn(CGF, NativeParam, NativeParamAddr);
+}
+
+void CGOpenMPRuntimeNVPTX::emitOutlinedFunctionCall(
+    CodeGenFunction &CGF, llvm::Value *OutlinedFn,
+    ArrayRef<llvm::Value *> Args) const {
+  SmallVector<llvm::Value *, 4> TargetArgs;
+  auto *FnType =
+      cast<llvm::FunctionType>(OutlinedFn->getType()->getPointerElementType());
+  for (unsigned I = 0, E = Args.size(); I < E; ++I) {
+    llvm::Type *TargetType = FnType->getParamType(I);
+    llvm::Value *NativeArg = Args[I];
+    if (!TargetType->isPointerTy()) {
+      TargetArgs.emplace_back(NativeArg);
+      continue;
+    }
+    llvm::Value *TargetArg = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
+        NativeArg, NativeArg->getType()->getPointerElementType()->getPointerTo(
+                       /*AddrSpace=*/0));
+    TargetArgs.emplace_back(
+        CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(TargetArg, TargetType));
+  }
+  CGOpenMPRuntime::emitOutlinedFunctionCall(CGF, OutlinedFn, TargetArgs);
+}
