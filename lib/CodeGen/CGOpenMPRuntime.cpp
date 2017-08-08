@@ -7159,7 +7159,7 @@ public:
           BasePointers.push_back({Ptr, VD});
           Pointers.push_back(Ptr);
           Sizes.push_back(llvm::Constant::getNullValue(this->CGF.SizeTy));
-          Types.push_back(OMP_MAP_RETURN_PARAM);
+          Types.push_back(OMP_MAP_RETURN_PARAM | OMP_MAP_TARGET_PARAM);
         }
       }
     }
