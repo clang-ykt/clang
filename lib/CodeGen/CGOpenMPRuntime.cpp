@@ -757,7 +757,7 @@ enum OpenMPRTLFunction {
   // *arg_types);
   OMPRTL__tgt_target_data_end_nowait,
   // Call to void __tgt_target_data_update(int64_t device_id, int32_t arg_num,
-   // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
+  // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
   OMPRTL__tgt_target_data_update,
   // Call to void __tgt_target_data_update_nowait(int64_t device_id, int32_t
   // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
@@ -4751,12 +4751,13 @@ checkDestructorsRequired(const RecordDecl *KmpTaskTWithPrivatesQTyRD) {
   return NeedsCleanup;
 }
 
-CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
-    CodeGenFunction &CGF, SourceLocation Loc, const OMPExecutableDirective &D,
-    llvm::Value *TaskFunction, QualType SharedsTy, Address Shareds,
-    const OMPTaskDataTy &Data) {
+CGOpenMPRuntime::TaskResultTy
+CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
+                              const OMPExecutableDirective &D,
+                              llvm::Value *TaskFunction, QualType SharedsTy,
+                              Address Shareds, const OMPTaskDataTy &Data) {
   return emitTaskInit(CGF, Loc, D, TaskFunction, SharedsTy, Shareds, Data,
-      /* MapArrays = */ nullptr, /* Info = */ nullptr);
+                      /* MapArrays = */ nullptr, /* Info = */ nullptr);
 }
 
 CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(

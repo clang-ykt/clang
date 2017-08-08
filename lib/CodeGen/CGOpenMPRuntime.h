@@ -1807,7 +1807,8 @@ public:
                             const OMPExecutableDirective &D,
                             llvm::Value *TaskFunction, QualType SharedsTy,
                             Address Shareds, const OMPTaskDataTy &Data,
-                            const OMPMapArrays *MapArrays, TargetDataInfo *Info);
+                            const OMPMapArrays *MapArrays,
+                            TargetDataInfo *Info);
 
   /// Generate arrays for later emission of code to implement target map clause
   OMPMapArrays generateMapArrays(CodeGenFunction &CGF,
