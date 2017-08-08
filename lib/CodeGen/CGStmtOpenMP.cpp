@@ -582,7 +582,6 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
       emitOutlinedFunctionPrologue(WrapperCGF, Args, LocalAddrs, VLASizes,
                                    WrapperCGF.CXXThisValue, WrapperFO).first;
   llvm::SmallVector<llvm::Value *, 4> CallArgs;
-  unsigned Cnt = 0;
   for (const auto *Arg : Args) {
     llvm::Value *CallArg;
     auto I = LocalAddrs.find(Arg);
@@ -602,7 +601,6 @@ llvm::Function *CodeGenFunction::GenerateOpenMPCapturedStmtFunction(
       }
     }
     CallArgs.emplace_back(CallArg);
-    ++Cnt;
   }
   CGM.getOpenMPRuntime().emitOutlinedFunctionCall(WrapperCGF, F, CallArgs);
   WrapperCGF.FinishFunction();
