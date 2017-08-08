@@ -1482,8 +1482,11 @@ llvm::Value *CGOpenMPRuntime::emitUpdateLocation(CodeGenFunction &CGF,
   Flags |= OMP_IDENT_KMPC;
   // If no debug info is generated - return global default location.
   if (CGM.getCodeGenOpts().getDebugInfo() == codegenoptions::NoDebugInfo ||
-      Loc.isInvalid())
+      Loc.isInvalid()) {
+    llvm::errs() << "emitUpdateLocation\n";
+    llvm::errs() << (CGM.getCodeGenOpts().getDebugInfo() == codegenoptions::NoDebugInfo) << " or " <<  Loc.isInvalid() << '\n';
     return getOrCreateDefaultLocation(Flags).getPointer();
+  }
 
   assert(CGF.CurFn && "No function in current CodeGenFunction.");
 

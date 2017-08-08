@@ -58,7 +58,10 @@ namespace frontend {
     RewriteTest,            ///< Rewriter playground
     RunAnalysis,            ///< Run one or more source code analyses.
     MigrateSource,          ///< Run migrator.
-    RunPreprocessorOnly     ///< Just lex, no output.
+    RunPreprocessorOnly,     ///< Just lex, no output.
+
+    // XXX-FEATURE
+    StaticFeatureCollect   ///< collect static features
   };
 }
 
