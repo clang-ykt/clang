@@ -6963,7 +6963,8 @@ void CGOpenMPRuntime::emitTaskCall(
   // When calling a target task, we need to generate the offloading mapping
   // arrays upfront in the task caller and pass them to the task region.
   TargetDataInfo Info;
-  if (D.hasClausesOfKind<OMPDependClause>()) {
+  if (isOpenMPTargetExecutionDirective(D.getDirectiveKind()) &&
+      D.hasClausesOfKind<OMPDependClause>()) {
     Info = emitMapArrays(CGF, *MapArrays);
   }
 

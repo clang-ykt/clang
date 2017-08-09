@@ -1395,9 +1395,12 @@ public:
                                            OpenMPDirectiveKind CancelRegion,
                                            ArrayRef<OMPClause *> Clauses,
                                            Stmt *AStmt, SourceLocation StartLoc,
-                                           SourceLocation EndLoc) {
+                                           SourceLocation EndLoc,
+                                           bool HasDependClause) {
+    bool requiresImplicitMaps = (Kind == OMPD_target && HasDependClause);
     return getSema().ActOnOpenMPExecutableDirective(
-        Kind, DirName, CancelRegion, Clauses, AStmt, StartLoc, EndLoc);
+        Kind, DirName, CancelRegion, Clauses, AStmt, StartLoc, EndLoc,
+        requiresImplicitMaps);
   }
 
   /// \brief Build a new OpenMP 'if' clause.
@@ -7302,7 +7305,7 @@ StmtResult TreeTransform<Derived>::TransformOMPExecutableDirective(
 
   return getDerived().RebuildOMPExecutableDirective(
       D->getDirectiveKind(), DirName, CancelRegion, TClauses,
-      AssociatedStmt.get(), D->getLocStart(), D->getLocEnd());
+      AssociatedStmt.get(), D->getLocStart(), D->getLocEnd(), HasDependClause);
 }
 
 template <typename Derived>

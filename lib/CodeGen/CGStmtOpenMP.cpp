@@ -4108,6 +4108,7 @@ void CodeGenFunction::EmitOMPTargetDirective(const OMPTargetDirective &S) {
     TargetCodegen(CGF, Action, S);
   };
 
+  OMPLexicalScope TaskScope(*this, S, true);
   llvm::SmallVector<llvm::Value *, 16> CapturedVars;
   OMPMapArrays MapArrays;
   generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);

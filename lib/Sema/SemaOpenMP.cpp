@@ -1946,6 +1946,8 @@ class DSAAttrChecker : public StmtVisitor<DSAAttrChecker, void> {
   CapturedStmt *CS;
   llvm::SmallVector<Expr *, 8> ImplicitFirstprivate;
   llvm::DenseMap<ValueDecl *, Expr *> VarsWithInheritedDSA;
+  llvm::SmallVector<Expr *, 8> ImplicitlyMappedVars;
+  bool RequiresImplicitMaps;
 
 public:
   void VisitDeclRefExpr(DeclRefExpr *E) {
@@ -1956,6 +1958,16 @@ public:
       // Skip internally declared variables.
       if (VD->isLocalVarDecl() && !CS->capturesVariable(VD))
         return;
+      if (RequiresImplicitMaps) {
+        if (!(Stack->checkMappableExprComponentListsForDecl(VD,
+            /* CurrentRegionOnly = */ true, [](
+                OMPClauseMappableExprCommon::MappableExprComponentListRef,
+                                  OpenMPClauseKind) { return true; }))) {
+          ImplicitlyMappedVars.emplace_back(SemaRef.BuildDeclRefExpr(VD,
+              E->getType(), E->getValueKind(), E->getExprLoc()).get());
+          return;
+        }
+      }
 
       auto DVar = Stack->getTopDSA(VD, false);
       // Check if the variable has explicit DSA set and stop analysis if it so.
@@ -2006,6 +2018,14 @@ public:
       return;
     if (isa<CXXThisExpr>(E->getBase()->IgnoreParens())) {
       if (auto *FD = dyn_cast<FieldDecl>(E->getMemberDecl())) {
+        if (!(Stack->checkMappableExprComponentListsForDecl(FD,
+            /* CurrentRegionOnly = */ true, [](OMPClauseMappableExprCommon::MappableExprComponentListRef,
+                                  OpenMPClauseKind) { return true; }))) {
+          ImplicitlyMappedVars.emplace_back(E);
+          return;
+      }
+
+
         auto DVar = Stack->getTopDSA(FD, false);
         // Check if the variable has explicit DSA set and stop analysis if it
         // so.
@@ -2062,12 +2082,15 @@ public:
 
   bool isErrorFound() { return ErrorFound; }
   ArrayRef<Expr *> getImplicitFirstprivate() { return ImplicitFirstprivate; }
+  ArrayRef<Expr *> getImplicitlyMappedVars() { return ImplicitlyMappedVars; }
   llvm::DenseMap<ValueDecl *, Expr *> &getVarsWithInheritedDSA() {
     return VarsWithInheritedDSA;
   }
 
-  DSAAttrChecker(DSAStackTy *S, Sema &SemaRef, CapturedStmt *CS)
-      : Stack(S), SemaRef(SemaRef), ErrorFound(false), CS(CS) {}
+  DSAAttrChecker(DSAStackTy *S, Sema &SemaRef, CapturedStmt *CS,
+      bool RequiresImplicitMaps)
+      : Stack(S), SemaRef(SemaRef), ErrorFound(false), CS(CS),
+        RequiresImplicitMaps(RequiresImplicitMaps) {}
 };
 } // namespace
 
@@ -2722,7 +2745,7 @@ static bool checkIfClauses(Sema &S, OpenMPDirectiveKind Kind,
 StmtResult Sema::ActOnOpenMPExecutableDirective(
     OpenMPDirectiveKind Kind, const DeclarationNameInfo &DirName,
     OpenMPDirectiveKind CancelRegion, ArrayRef<OMPClause *> Clauses,
-    Stmt *AStmt, SourceLocation StartLoc, SourceLocation EndLoc) {
+    Stmt *AStmt, SourceLocation StartLoc, SourceLocation EndLoc, bool HasDependClause) {
   StmtResult Res = StmtError();
   if (CheckNestingOfRegions(*this, DSAStack, Kind, DirName, CancelRegion,
                             StartLoc))
@@ -2735,14 +2758,21 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
   if (AStmt) {
     assert(isa<CapturedStmt>(AStmt) && "Captured statement expected");
 
+    // do we need to create implicit maps for all implicitly captured vars?
+    bool requiresImplicitMaps = (Kind == OMPD_target && HasDependClause);
+
     // Check default data sharing attributes for referenced variables.
-    DSAAttrChecker DSAChecker(DSAStack, *this, cast<CapturedStmt>(AStmt));
+    DSAAttrChecker DSAChecker(DSAStack, *this, cast<CapturedStmt>(AStmt),
+        requiresImplicitMaps);
     DSAChecker.Visit(cast<CapturedStmt>(AStmt)->getCapturedStmt());
     if (DSAChecker.isErrorFound())
       return StmtError();
     // Generate list of implicitly defined firstprivate variables.
     VarsWithInheritedDSA = DSAChecker.getVarsWithInheritedDSA();
 
+    SmallVector<Expr *, 4> ImplicitlyMappedVars(
+            DSAChecker.getImplicitlyMappedVars().begin(),
+            DSAChecker.getImplicitlyMappedVars().end());
     SmallVector<Expr *, 4> ImplicitFirstprivates(
         DSAChecker.getImplicitFirstprivate().begin(),
         DSAChecker.getImplicitFirstprivate().end());
@@ -2761,6 +2791,18 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
         ClausesWithImplicit.push_back(Implicit);
         ErrorFound = cast<OMPFirstprivateClause>(Implicit)->varlist_size() !=
                      ImplicitFirstprivates.size();
+      } else
+        ErrorFound = true;
+    }
+    // TODO: add combined constructs
+    if (requiresImplicitMaps && !ImplicitlyMappedVars.empty()) {
+      if (OMPClause *Implicit = ActOnOpenMPMapClause(OMPC_MAP_unknown,
+          OMPC_MAP_tofrom, /* IsMapTypeImplicit = */ true, SourceLocation(),
+          SourceLocation(), ImplicitlyMappedVars, SourceLocation(),
+          SourceLocation(), SourceLocation())) {
+        ClausesWithImplicit.push_back(Implicit);
+        ErrorFound |= cast<OMPMapClause>(Implicit)->varlist_size() !=
+                     ImplicitlyMappedVars.size();
       } else
         ErrorFound = true;
     }
