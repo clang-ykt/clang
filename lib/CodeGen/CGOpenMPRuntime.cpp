@@ -6914,7 +6914,9 @@ private:
         // If we have a member expression and the current component is a
         // reference, we have to map the reference too. Whenever we have a
         // reference, the section that reference refers to is going to be a
-        // load instruction from the storage assigned to the reference.
+        // load instruction from the storage assigned to the reference. Cache
+        // the original base to be stored in the partial struct info.
+        llvm::Value *OrigBP = BP;
         if (isa<MemberExpr>(I->getAssociatedExpression()) &&
             I->getAssociatedDeclaration()->getType()->isReferenceType()) {
           auto *LI = cast<llvm::LoadInst>(LB);
@@ -6979,7 +6981,7 @@ private:
           if (PartialStructs.find(VDecl) == PartialStructs.end()) {
             PartialStructs[VDecl].LowestElem = {FieldIndex, LB, Size};
             PartialStructs[VDecl].HighestElem = {FieldIndex, LB, Size};
-            PartialStructs[VDecl].Base = BP;
+            PartialStructs[VDecl].Base = OrigBP;
           } else {
             if (FieldIndex < PartialStructs[VDecl].LowestElem.FieldIndex) {
               PartialStructs[VDecl].LowestElem = {FieldIndex, LB, Size};
