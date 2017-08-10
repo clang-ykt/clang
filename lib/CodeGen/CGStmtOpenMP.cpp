@@ -4113,7 +4113,7 @@ void CodeGenFunction::EmitOMPTargetDirective(const OMPTargetDirective &S) {
   OMPMapArrays MapArrays;
   generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
 
-  if (const auto *C = S.getSingleClause<OMPDependClause>()) {
+  if (S.hasClausesOfKind<OMPDependClause>()) {
     OMPTaskDataTy Data;
 
     // Build implicit parameters in case we are implementing a target task

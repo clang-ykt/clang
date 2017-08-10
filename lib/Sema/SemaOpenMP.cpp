@@ -33,6 +33,7 @@
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/SemaInternal.h"
 #include "llvm/ADT/PointerEmbeddedInt.h"
+
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
@@ -1958,21 +1959,22 @@ public:
       // Skip internally declared variables.
       if (VD->isLocalVarDecl() && !CS->capturesVariable(VD))
         return;
-      if (RequiresImplicitMaps) {
-        if (!(Stack->checkMappableExprComponentListsForDecl(VD,
-            /* CurrentRegionOnly = */ true, [](
-                OMPClauseMappableExprCommon::MappableExprComponentListRef,
-                                  OpenMPClauseKind) { return true; }))) {
-          ImplicitlyMappedVars.emplace_back(SemaRef.BuildDeclRefExpr(VD,
-              E->getType(), E->getValueKind(), E->getExprLoc()).get());
-          return;
-        }
-      }
 
       auto DVar = Stack->getTopDSA(VD, false);
       // Check if the variable has explicit DSA set and stop analysis if it so.
       if (DVar.RefExpr)
         return;
+
+      if (RequiresImplicitMaps) {
+          if (!(Stack->checkMappableExprComponentListsForDecl(VD,
+              /* CurrentRegionOnly = */ true, [](
+                  OMPClauseMappableExprCommon::MappableExprComponentListRef,
+                                    OpenMPClauseKind) { return true; }))) {
+            ImplicitlyMappedVars.emplace_back(SemaRef.BuildDeclRefExpr(VD,
+                E->getType(), E->getValueKind(), E->getExprLoc()).get());
+            return;
+          }
+      }
 
       auto ELoc = E->getExprLoc();
       auto DKind = Stack->getCurrentDirective();
