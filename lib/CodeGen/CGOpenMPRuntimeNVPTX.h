@@ -777,17 +777,14 @@ public:
   /// \param NativeParam Parameter itself.
   const VarDecl *translateParameter(const FieldDecl *FD,
                                     const VarDecl *NativeParam) const override;
-  /// Maps the native argument to the address of the corresponding
-  /// target-specific argument.
-  /// \param FD Field decl from captured record for the paramater.
+
+  /// Gets the address of the native argument basing on the address of the
+  /// target-specific parameter.
   /// \param NativeParam Parameter itself.
   /// \param TargetParam Corresponding target-specific parameter.
-  /// \param MapFn Function that maps the native parameter to the address of the
-  /// target-specific.
-  void mapParameterAddress(CodeGenFunction &CGF, const FieldDecl *FD,
-                           const VarDecl *NativeParam,
-                           const VarDecl *TargetParam,
-                           const MappingFnType MapFn) const override;
+  Address getParameterAddress(CodeGenFunction &CGF, const VarDecl *NativeParam,
+                              const VarDecl *TargetParam) const override;
+
   /// Emits call of the outlined function with the provided arguments.
   void emitOutlinedFunctionCall(
       CodeGenFunction &CGF, llvm::Value *OutlinedFn,

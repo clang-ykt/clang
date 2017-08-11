@@ -496,6 +496,7 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
                        .Case("gdb", unsigned(llvm::DebuggerKind::GDB))
                        .Case("lldb", unsigned(llvm::DebuggerKind::LLDB))
                        .Case("sce", unsigned(llvm::DebuggerKind::SCE))
+                       .Case("cuda-gdb", unsigned(llvm::DebuggerKind::CudaGDB))
                        .Default(~0U);
     if (Val == ~0U)
       Diags.Report(diag::err_drv_invalid_value) << A->getAsString(Args)

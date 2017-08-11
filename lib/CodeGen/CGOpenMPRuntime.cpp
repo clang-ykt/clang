@@ -7052,29 +7052,18 @@ public:
     Types.clear();
 
     struct MapInfo {
-      /// Kind that defines how a device pointer has to be returned.
-      enum ReturnPointerKind {
-        // Don't have to return any pointer.
-        RPK_None,
-        // Pointer is the base of the declaration.
-        RPK_Base,
-        // Pointer is a member of the base declaration - 'this'
-        RPK_Member,
-        // Pointer is a reference and a member of the base declaration - 'this'
-        RPK_MemberReference,
-      };
       OMPClauseMappableExprCommon::MappableExprComponentListRef Components;
       OpenMPMapClauseKind MapType;
       OpenMPMapClauseKind MapTypeModifier;
-      ReturnPointerKind ReturnDevicePointer;
+      bool ReturnDevicePointer;
 
       MapInfo()
           : MapType(OMPC_MAP_unknown), MapTypeModifier(OMPC_MAP_unknown),
-            ReturnDevicePointer(RPK_None) {}
+            ReturnDevicePointer(false) {}
       MapInfo(
           OMPClauseMappableExprCommon::MappableExprComponentListRef Components,
           OpenMPMapClauseKind MapType, OpenMPMapClauseKind MapTypeModifier,
-          ReturnPointerKind ReturnDevicePointer)
+          bool ReturnDevicePointer)
           : Components(Components), MapType(MapType),
             MapTypeModifier(MapTypeModifier),
             ReturnDevicePointer(ReturnDevicePointer) {}
@@ -7091,7 +7080,7 @@ public:
         const ValueDecl *D,
         OMPClauseMappableExprCommon::MappableExprComponentListRef L,
         OpenMPMapClauseKind MapType, OpenMPMapClauseKind MapModifier,
-        MapInfo::ReturnPointerKind ReturnDevicePointer) {
+        bool ReturnDevicePointer = false) {
       const ValueDecl *VD =
           D ? cast<ValueDecl>(D->getCanonicalDecl()) : nullptr;
       Info[VD].push_back({L, MapType, MapModifier, ReturnDevicePointer});
@@ -7100,23 +7089,29 @@ public:
     // FIXME: MSVC 2013 seems to require this-> to find member CurDir.
     for (auto *C : this->CurDir.getClausesOfKind<OMPMapClause>())
       for (auto L : C->component_lists())
-        InfoGen(L.first, L.second, C->getMapType(), C->getMapTypeModifier(),
-                MapInfo::RPK_None);
+        InfoGen(L.first, L.second, C->getMapType(), C->getMapTypeModifier());
     for (auto *C : this->CurDir.getClausesOfKind<OMPToClause>())
       for (auto L : C->component_lists())
-        InfoGen(L.first, L.second, OMPC_MAP_to, OMPC_MAP_unknown,
-                MapInfo::RPK_None);
+        InfoGen(L.first, L.second, OMPC_MAP_to, OMPC_MAP_unknown);
     for (auto *C : this->CurDir.getClausesOfKind<OMPFromClause>())
       for (auto L : C->component_lists())
-        InfoGen(L.first, L.second, OMPC_MAP_from, OMPC_MAP_unknown,
-                MapInfo::RPK_None);
+        InfoGen(L.first, L.second, OMPC_MAP_from, OMPC_MAP_unknown);
 
     // Look at the use_device_ptr clause information and mark the existing map
     // entries as such. If there is no map information for an entry in the
     // use_device_ptr list, we create one with map type 'alloc' and zero size
-    // section. It is the user fault if that was not mapped before.
+    // section. It is the user fault if that was not mapped before. If there is
+    // no map information and the pointer is a struct member, then we defer the
+    // emission of that entry until the whole struct has been processed.
+    struct DeferredEntry {
+      const Expr *IE;
+      const ValueDecl *VD;
+    };
+    llvm::MapVector<const ValueDecl *, SmallVector<DeferredEntry, 8>>
+        DeferredInfo;
+
     // FIXME: MSVC 2013 seems to require this-> to find member CurDir.
-    for (auto *C : this->CurDir.getClausesOfKind<OMPUseDevicePtrClause>())
+    for (auto *C : this->CurDir.getClausesOfKind<OMPUseDevicePtrClause>()) {
       for (auto L : C->component_lists()) {
         assert(!L.second.empty() && "Not expecting empty list of components!");
         const ValueDecl *VD = L.second.back().getAssociatedDeclaration();
@@ -7137,27 +7132,37 @@ public:
           // If we found a map entry, signal that the pointer has to be returned
           // and move on to the next declaration.
           if (CI != It->second.end()) {
-            CI->ReturnDevicePointer = isa<MemberExpr>(IE)
-                                          ? (VD->getType()->isReferenceType()
-                                                 ? MapInfo::RPK_MemberReference
-                                                 : MapInfo::RPK_Member)
-                                          : MapInfo::RPK_Base;
+            CI->ReturnDevicePointer = true;
             continue;
           }
         }
 
         // We didn't find any match in our map information - generate a zero
-        // size array section.
+        // size array section - if the pointer is a struct member we defer this
+        // action until the whole struct has been processed.
         // FIXME: MSVC 2013 seems to require this-> to find member CGF.
-        llvm::Value *Ptr =
-            this->CGF
-                .EmitLoadOfLValue(this->CGF.EmitLValue(IE), SourceLocation())
-                .getScalarVal();
-        BasePointers.push_back({Ptr, VD});
-        Pointers.push_back(Ptr);
-        Sizes.push_back(llvm::Constant::getNullValue(this->CGF.SizeTy));
-        Types.push_back(OMP_MAP_RETURN_PARAM | OMP_MAP_TARGET_PARAM);
+        if (isa<MemberExpr>(IE)) {
+          // Insert the pointer into Info to be processed by
+          // generateInfoForComponentList. Because it is a member pointer
+          // without a pointee, no entry will be generated for it, therefore
+          // we need to generate one after the whole struct has been processed.
+          // Nonetheless, generateInfoForComponentList must be called to take
+          // the pointer into account for the calculation of the range of the
+          // partial struct.
+          InfoGen(nullptr, L.second, OMPC_MAP_unknown, OMPC_MAP_unknown);
+          DeferredInfo[nullptr].push_back({IE, VD});
+        } else {
+          llvm::Value *Ptr =
+              this->CGF
+                  .EmitLoadOfLValue(this->CGF.EmitLValue(IE), SourceLocation())
+                  .getScalarVal();
+          BasePointers.push_back({Ptr, VD});
+          Pointers.push_back(Ptr);
+          Sizes.push_back(llvm::Constant::getNullValue(this->CGF.SizeTy));
+          Types.push_back(OMP_MAP_RETURN_PARAM | OMP_MAP_TARGET_PARAM);
+        }
       }
+    }
 
     for (auto &M : Info) {
       // We need to know when we generate information for the first component
@@ -7179,16 +7184,7 @@ public:
 
         // If this entry relates with a device pointer, set the relevant
         // declaration and add the 'return pointer' flag.
-        if (IsFirstComponentList &&
-            L.ReturnDevicePointer != MapInfo::RPK_None) {
-          // If the pointer is not the base of the map, we need to skip the
-          // base. If it is a reference in a member field, we also need to skip
-          // the map of the reference.
-          if (L.ReturnDevicePointer != MapInfo::RPK_Base) {
-            ++CurrentBasePointersIdx;
-            if (L.ReturnDevicePointer == MapInfo::RPK_MemberReference)
-              ++CurrentBasePointersIdx;
-          }
+        if (L.ReturnDevicePointer) {
           assert(BasePointers.size() > CurrentBasePointersIdx &&
                  "Unexpected number of mapped base pointers.");
 
@@ -7199,7 +7195,28 @@ public:
           BasePointers[CurrentBasePointersIdx].setDevicePtrDecl(RelevantVD);
           Types[CurrentBasePointersIdx] |= OMP_MAP_RETURN_PARAM;
         }
+
         IsFirstComponentList = false;
+      }
+
+      // Append any pending zero-length pointers which are struct members and
+      // used with use_device_ptr.
+      auto CI = DeferredInfo.find(M.first);
+      if (CI != DeferredInfo.end()) {
+        for (DeferredEntry &L : CI->second) {
+          llvm::Value *BasePtr, *Ptr;
+          BasePtr = this->CGF.EmitLValue(L.IE).getPointer();
+          Ptr = this->CGF.EmitLoadOfLValue(this->CGF.EmitLValue(L.IE),
+              SourceLocation()).getScalarVal();
+          BasePointers.push_back({BasePtr, L.VD});
+          Pointers.push_back(Ptr);
+          Sizes.push_back(llvm::Constant::getNullValue(this->CGF.SizeTy));
+          // Entry is PTR_AND_OBJ and RETURN_PARAM. Also, set the placeholder
+          // value MEMBER_OF=FFFF so that the entry is later updated with the
+          // correct value of MEMBER_OF.
+          Types.push_back(OMP_MAP_PTR_AND_OBJ | OMP_MAP_RETURN_PARAM |
+              OMP_MAP_MEMBER_OF);
+        }
       }
 
       if (PartialStructs.size() > InitialNumOfPartialStructs) {
@@ -8451,6 +8468,7 @@ static void TranslateStructEntries(CodeGenFunction &CGF,
     if (PSIt != PartialStructs.end() &&
         TmpBasePointersIdx == StructIndices[StructIndicesIdx].first) {
       // We have a struct with individual elements mapped.
+      // Create a combined entry.
       NumOfEntries = StructIndices[StructIndicesIdx].second;
 
       // Base is the base of the struct
@@ -9110,4 +9128,10 @@ void CGOpenMPRuntime::emitOutlinedFunctionCall(
     }
   }
   CGF.EmitRuntimeCall(OutlinedFn, Args);
+}
+
+Address CGOpenMPRuntime::getParameterAddress(CodeGenFunction &CGF,
+                                             const VarDecl *NativeParam,
+                                             const VarDecl *TargetParam) const {
+  return CGF.GetAddrOfLocalVar(NativeParam);
 }
