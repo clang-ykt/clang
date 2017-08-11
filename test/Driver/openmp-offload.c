@@ -589,3 +589,24 @@
 // CHK-UBUJOBS-ST-SAME: [[HOSTOBJ:[^\\/]+\.o]]" "{{.*}}[[HOSTASM]]"
 // CHK-UBUJOBS-ST: clang-offload-bundler{{.*}}" "-type=o" "-targets=openmp-powerpc64le-ibm-linux-gnu,openmp-x86_64-pc-linux-gnu,host-powerpc64le--linux" "-outputs=
 // CHK-UBUJOBS-ST-SAME: [[RES:[^\\/]+\.o]]" "-inputs={{.*}}[[T1OBJ]],{{.*}}[[T2OBJ]],{{.*}}[[HOSTOBJ]]"
+
+/// ###########################################################################
+
+/// Check debug command lines for NVPTX target
+// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -g 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-CUDA-DEBUG %s
+// CHK-CUDA-DEBUG: "-cc1"
+// CHK-CUDA-DEBUG-SAME: "-triple" "powerpc64le-ibm-linux-gnu"
+// CHK-CUDA-DEBUG: "-cc1"
+// CHK-CUDA-DEBUG-SAME: "-triple" "nvptx64-nvidia-cuda"
+// CHK-CUDA-DEBUG-SAME: "-dwarf-column-info"
+// CHK-CUDA-DEBUG-SAME: "-debug-info-kind=limited"
+// CHK-CUDA-DEBUG-SAME: "-dwarf-version=2"
+// CHK-CUDA-DEBUG-SAME: "-debugger-tuning=cuda-gdb"
+// CHK-CUDA-DEBUG: ptxas
+// CHK-CUDA-DEBUG-SAME: "-c"
+// CHK-CUDA-DEBUG-SAME: "-g"
+// CHK-CUDA-DEBUG-SAME: "--dont-merge-basicblocks"
+// CHK-CUDA-DEBUG-SAME: "--return-at-end"
+// CHK-CUDA-DEBUG: nvlink
+// CHK-CUDA-DEBUG-SAME: "-g"
