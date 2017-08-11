@@ -1443,6 +1443,8 @@ void CGOpenMPRuntimeNVPTX::emitWorkerFunction(WorkerFunctionState &WST) {
   auto &Ctx = CGM.getContext();
 
   CodeGenFunction CGF(CGM, /*suppressNewContext=*/true);
+  // We don't need debug information in this function as nothing here refers to
+  // user code.
   CGF.disableDebugInfo();
   CGF.StartFunction(GlobalDecl(), Ctx.VoidTy, WST.WorkerFn, *WST.CGFI, {});
   emitWorkerLoop(CGF, WST);
@@ -3216,6 +3218,9 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   Fn->setLinkage(llvm::GlobalValue::InternalLinkage);
 
   CodeGenFunction CGF(CGM, /*suppressNewContext=*/true);
+  // We don't need debug information in this function as nothing here refers to
+  // user code.
+  CGF.disableDebugInfo();
   CGF.StartFunction(GlobalDecl(), Ctx.VoidTy, Fn, CGFI, ArgList);
 
   // If this is an entry point, all the threads except the master should skip
@@ -3527,6 +3532,9 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   Fn->setLinkage(llvm::GlobalValue::InternalLinkage);
 
   CodeGenFunction CGF(CGM, /*suppressNewContext=*/true);
+  // We don't need debug information in this function as nothing here refers to
+  // user code.
+  CGF.disableDebugInfo();
   CGF.StartFunction(GlobalDecl(), Ctx.VoidTy, Fn, CGFI, WrapperArgs);
 
   // Get the parallelism level (L0, L1, L2+).
