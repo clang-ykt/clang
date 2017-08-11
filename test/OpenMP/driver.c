@@ -28,12 +28,6 @@
 // RUN: %clang %s -c -E -dM -fopenmp-version=45 | FileCheck --check-prefix=CHECK-VERSION %s
 // CHECK-VERSION-NOT: #define _OPENMP
 
-// RUN: %clang %s -### -fopenmp=libomp -fopenmp-targets=nvptx64-unknown-unknown -g -o %t.o 2>&1 | FileCheck --check-prefix=CHECK-NO-DEBUG %s
-// RUN: %clang %s -### -fopenmp=libomp -fopenmp-targets=nvptx64-unknown-unknown -g -fopenmp-debug -fno-openmp-debug -o %t.o 2>&1 | FileCheck --check-prefix=CHECK-NO-DEBUG %s
-// RUN: %clang %s -### -fopenmp=libomp -fopenmp-targets=nvptx64-unknown-unknown -g -fopenmp-debug -o %t.o 2>&1 | FileCheck --check-prefix=CHECK-DEBUG %s
-// RUN: %clang %s -### -fopenmp=libomp -fopenmp-targets=nvptx64-unknown-unknown -g -fno-openmp-debug -fopenmp-debug -o %t.o 2>&1 | FileCheck --check-prefix=CHECK-DEBUG %s
-// CHECK-NO-DEBUG: "-triple" "nvptx64-unknown-unknown"
-// CHECK-NO-DEBUG-NOT: "-debug-info-kind=limited"
-// CHECK-NO-DEBUG: "-triple"
+// RUN: %clang %s -### -fopenmp=libomp -fopenmp-targets=nvptx64-unknown-unknown -g -o %t.o 2>&1 | FileCheck --check-prefix=CHECK-DEBUG %s
 // CHECK-DEBUG: "-triple" "nvptx64-unknown-unknown"
 // CHECK-DEBUG-SAME: "-debug-info-kind=limited"

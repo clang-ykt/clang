@@ -593,7 +593,7 @@
 /// ###########################################################################
 
 /// Check debug command lines for NVPTX target
-// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -g -fopenmp-debug 2>&1 \
+// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -g 2>&1 \
 // RUN:   | FileCheck -check-prefix=CHK-CUDA-DEBUG %s
 // CHK-CUDA-DEBUG: "-cc1"
 // CHK-CUDA-DEBUG-SAME: "-triple" "powerpc64le-ibm-linux-gnu"
