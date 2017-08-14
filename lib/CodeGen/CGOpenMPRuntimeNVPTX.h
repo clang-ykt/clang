@@ -787,7 +787,7 @@ public:
 
   /// Emits call of the outlined function with the provided arguments.
   void emitOutlinedFunctionCall(
-      CodeGenFunction &CGF, llvm::Value *OutlinedFn,
+      CodeGenFunction &CGF, SourceLocation Loc, llvm::Value *OutlinedFn,
       ArrayRef<llvm::Value *> Args = llvm::None) const override;
 };
 
