@@ -7047,10 +7047,6 @@ public:
                        MapFlagsArrayTy &Types,
                        StructRangeMapTy &PartialStructs,
                        StructIndicesTy &StructIndices) const {
-    BasePointers.clear();
-    Pointers.clear();
-    Sizes.clear();
-    Types.clear();
 
     struct MapInfo {
       OMPClauseMappableExprCommon::MappableExprComponentListRef Components;
@@ -7241,11 +7237,6 @@ public:
                               StructRangeMapTy &PartialStructs) const {
     assert(!Cap->capturesVariableArrayType() &&
            "Not expecting to generate map info for a variable array type!");
-
-    BasePointers.clear();
-    Pointers.clear();
-    Sizes.clear();
-    Types.clear();
 
     // We need to know when we generating information for the first component
     // associated with a capture, because the mapping flags depend on it.
