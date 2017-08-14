@@ -413,12 +413,10 @@ CGOpenMPRuntimeNVPTX::getNVPTXIsWarpActiveMaster(CodeGenFunction &CGF) {
 
 void CGOpenMPRuntimeNVPTX::emitDistributeStaticInit(
     CodeGenFunction &CGF, SourceLocation Loc,
-    OpenMPDistScheduleClauseKind SchedKind, unsigned IVSize, bool IVSigned,
-    bool Ordered, Address IL, Address LB, Address UB, Address ST,
-    llvm::Value *Chunk, bool CoalescedDistSchedule) {
-  CGOpenMPRuntime::emitDistributeStaticInit(CGF, Loc, SchedKind, IVSize,
-                                            IVSigned, Ordered, IL, LB, UB, ST,
-                                            Chunk, CoalescedDistSchedule);
+    OpenMPDistScheduleClauseKind SchedKind, const StaticRTInput &Values,
+    bool CoalescedDistSchedule) {
+  CGOpenMPRuntime::emitDistributeStaticInit(CGF, Loc, SchedKind, Values,
+                                            CoalescedDistSchedule);
 
   // If we are generating a coalesced schedule for the directive
   // 'target teams distribute parallel for', then the 'distribute' and 'for'
