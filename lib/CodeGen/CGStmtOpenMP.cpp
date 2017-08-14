@@ -416,8 +416,8 @@ static llvm::Function *emitOutlinedFunctionPrologue(
     F->setDoesNotThrow();
 
   // Generate the function.
-  CGF.StartFunction(CD, Ctx.VoidTy, F, FuncInfo, TargetArgs, CD->getLocation(),
-                    CD->getBody()->getLocStart());
+  CGF.StartFunction(CD, Ctx.VoidTy, F, FuncInfo, TargetArgs,
+                    FO.S->getLocStart(), CD->getBody()->getLocStart());
   unsigned Cnt = FO.UseCapturedArgumentsOnly ? 0 : ImplicitParamStop;
   I = FO.S->captures().begin();
   for (auto *FD : RD->fields()) {
