@@ -6914,7 +6914,9 @@ private:
         // If we have a member expression and the current component is a
         // reference, we have to map the reference too. Whenever we have a
         // reference, the section that reference refers to is going to be a
-        // load instruction from the storage assigned to the reference.
+        // load instruction from the storage assigned to the reference. Cache
+        // the original base to be stored in the partial struct info.
+        llvm::Value *OrigBP = BP;
         if (isa<MemberExpr>(I->getAssociatedExpression()) &&
             I->getAssociatedDeclaration()->getType()->isReferenceType()) {
           auto *LI = cast<llvm::LoadInst>(LB);
@@ -6928,7 +6930,7 @@ private:
 
         // If this component is a pointer inside the base struct then we don't
         // need to create any entry for it - it will be combined with the object
-        // it is pointing to into a single PTR_AND_OBJ entry..
+        // it is pointing to into a single PTR_AND_OBJ entry.
         bool IsMemberPointer = IsPointer && EncounteredME &&
             (dyn_cast<MemberExpr>(I->getAssociatedExpression()) ==
                 EncounteredME);
@@ -6948,9 +6950,8 @@ private:
             // If we have a PTR_AND_OBJ pair where the OBJ is a pointer as well,
             // then we reset the To/FROM/ALWAYS/DELETE flags.
             if (IsPointer) {
-              flags &=
-                  ~(OMP_MAP_TO | OMP_MAP_FROM | OMP_MAP_ALWAYS |
-                      OMP_MAP_DELETE);
+              flags &= ~(OMP_MAP_TO | OMP_MAP_FROM | OMP_MAP_ALWAYS |
+                  OMP_MAP_DELETE);
             }
 
             if (ShouldBeMemberOf) {
@@ -6979,7 +6980,7 @@ private:
           if (PartialStructs.find(VDecl) == PartialStructs.end()) {
             PartialStructs[VDecl].LowestElem = {FieldIndex, LB, Size};
             PartialStructs[VDecl].HighestElem = {FieldIndex, LB, Size};
-            PartialStructs[VDecl].Base = BP;
+            PartialStructs[VDecl].Base = OrigBP;
           } else {
             if (FieldIndex < PartialStructs[VDecl].LowestElem.FieldIndex) {
               PartialStructs[VDecl].LowestElem = {FieldIndex, LB, Size};
@@ -7046,10 +7047,6 @@ public:
                        MapFlagsArrayTy &Types,
                        StructRangeMapTy &PartialStructs,
                        StructIndicesTy &StructIndices) const {
-    BasePointers.clear();
-    Pointers.clear();
-    Sizes.clear();
-    Types.clear();
 
     struct MapInfo {
       OMPClauseMappableExprCommon::MappableExprComponentListRef Components;
@@ -7241,11 +7238,6 @@ public:
     assert(!Cap->capturesVariableArrayType() &&
            "Not expecting to generate map info for a variable array type!");
 
-    BasePointers.clear();
-    Pointers.clear();
-    Sizes.clear();
-    Types.clear();
-
     // We need to know when we generating information for the first component
     // associated with a capture, because the mapping flags depend on it.
     bool IsFirstComponentList = true;
@@ -7257,21 +7249,8 @@ public:
 
     // If this declaration appears in a is_device_ptr clause we just have to
     // pass the pointer by value. If it is a reference to a declaration, we just
-    // pass its value, otherwise, if it is a member expression, we need to map
-    // 'to' the field.
-    if (!VD) {
-      auto It = DevPointersMap.find(VD);
-      if (It != DevPointersMap.end()) {
-        for (auto L : It->second) {
-          generateInfoForComponentList(
-              /*MapType=*/OMPC_MAP_to, /*MapTypeModifier=*/OMPC_MAP_unknown, L,
-              BasePointers, Pointers, Sizes, Types, PartialStructs,
-              IsFirstComponentList);
-          IsFirstComponentList = false;
-        }
-        return;
-      }
-    } else if (DevPointersMap.count(VD)) {
+    // pass its value.
+    if (DevPointersMap.count(VD)) {
       BasePointers.push_back({Arg, VD});
       Pointers.push_back(Arg);
       Sizes.push_back(CGF.getTypeSize(CGF.getContext().VoidPtrTy));
