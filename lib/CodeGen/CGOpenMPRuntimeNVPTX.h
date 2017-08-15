@@ -31,28 +31,14 @@ class CGOpenMPRuntimeNVPTX : public CGOpenMPRuntime {
   /// \param CGF Reference to current CodeGenFunction.
   /// \param Loc Clang source location.
   /// \param SchedKind Schedule kind, specified by the 'dist_schedule' clause.
-  /// \param IVSize Size of the iteration variable in bits.
-  /// \param IVSigned Sign of the interation variable.
-  /// \param Ordered true if loop is ordered, false otherwise.
-  /// \param IL Address of the output variable in which the flag of the
-  /// last iteration is returned.
-  /// \param LB Address of the output variable in which the lower iteration
-  /// number is returned.
-  /// \param UB Address of the output variable in which the upper iteration
-  /// number is returned.
-  /// \param ST Address of the output variable in which the stride value is
-  /// returned nesessary to generated the static_chunked scheduled loop.
-  /// \param Chunk Value of the chunk for the static_chunked scheduled loop.
-  /// For the default (nullptr) value, the chunk 1 will be used.
+  /// \param Values Input arguments for the construct.
   /// \param CoalescedDistSchedule Indicates if coalesced scheduling type is
   /// required.
   ///
   virtual void
   emitDistributeStaticInit(CodeGenFunction &CGF, SourceLocation Loc,
                            OpenMPDistScheduleClauseKind SchedKind,
-                           unsigned IVSize, bool IVSigned, bool Ordered,
-                           Address IL, Address LB, Address UB, Address ST,
-                           llvm::Value *Chunk = nullptr,
+                           const StaticRTInput &Values,
                            bool CoalescedDistSchedule = false) override;
 
   /// \brief Call the appropriate runtime routine to notify that we finished
@@ -788,7 +774,7 @@ public:
 
   /// Emits call of the outlined function with the provided arguments.
   void emitOutlinedFunctionCall(
-      CodeGenFunction &CGF, llvm::Value *OutlinedFn,
+      CodeGenFunction &CGF, SourceLocation Loc, llvm::Value *OutlinedFn,
       ArrayRef<llvm::Value *> Args = llvm::None) const override;
 };
 
