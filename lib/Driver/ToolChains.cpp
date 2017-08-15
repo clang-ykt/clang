@@ -1901,6 +1901,19 @@ CudaInstallationDetector::CudaInstallationDetector(
       }
     }
 
+    // This code prevents IsValid from being set when
+    // no libdevice has been found.
+    bool allEmpty = true;
+    std::string LibDeviceFile;
+    for (auto key : LibDeviceMap.keys()) {
+      LibDeviceFile = LibDeviceMap.lookup(key);
+      if (!LibDeviceFile.empty())
+        allEmpty = false;
+    }
+
+    if (allEmpty)
+      continue;
+
     IsValid = true;
     break;
   }
@@ -4907,11 +4920,11 @@ void CudaToolChain::addClangTargetOptions(
 
   StringRef GpuArch = DriverArgs.getLastArgValue(options::OPT_march_EQ);
   assert(!GpuArch.empty() && "Must have an explicit GPU arch.");
-  std::string LibDeviceFile;
+  assert((DeviceOffloadingKind == Action::OFK_OpenMP ||
+          DeviceOffloadingKind == Action::OFK_Cuda) &&
+         "Only OpenMP or CUDA offloading kinds are supported for NVIDIA GPUs.");
 
-  if (DeviceOffloadingKind == Action::OFK_OpenMP) {
-    LibDeviceFile = CudaInstallation.getLibDeviceFile(GpuArch);
-  } else {
+  if (DeviceOffloadingKind == Action::OFK_Cuda) {
     CC1Args.push_back("-fcuda-is-device");
 
     if (DriverArgs.hasFlag(options::OPT_fcuda_flush_denormals_to_zero,
@@ -4922,12 +4935,12 @@ void CudaToolChain::addClangTargetOptions(
     if (DriverArgs.hasFlag(options::OPT_fcuda_approx_transcendentals,
                            options::OPT_fno_cuda_approx_transcendentals, false))
       CC1Args.push_back("-fcuda-approx-transcendentals");
-
-    if (DriverArgs.hasArg(options::OPT_nocudalib))
-      return;
-
-    LibDeviceFile = CudaInstallation.getLibDeviceFile(GpuArch);
   }
+
+  if (DriverArgs.hasArg(options::OPT_nocudalib))
+    return;
+
+  std::string LibDeviceFile = CudaInstallation.getLibDeviceFile(GpuArch);
 
   if (LibDeviceFile.empty()) {
     getDriver().Diag(diag::err_drv_no_cuda_libdevice) << GpuArch;
