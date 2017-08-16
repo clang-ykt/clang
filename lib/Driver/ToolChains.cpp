@@ -1861,6 +1861,7 @@ CudaInstallationDetector::CudaInstallationDetector(
     }
 
     std::error_code EC;
+    SmallVector<std::string, 20> CudaArchStrs;
     for (llvm::sys::fs::directory_iterator LI(LibDevicePath, EC), LE;
          !EC && LI != LE; LI = LI.increment(EC)) {
       StringRef FilePath = LI->path();
@@ -1879,24 +1880,39 @@ CudaInstallationDetector::CudaInstallationDetector(
         LibDeviceMap["sm_20"] = FilePath;
         LibDeviceMap["sm_21"] = FilePath;
         LibDeviceMap["sm_32"] = FilePath;
+        CudaArchStrs.push_back("sm_20");
+        CudaArchStrs.push_back("sm_21");
+        CudaArchStrs.push_back("sm_32");
       } else if (GpuArch == "compute_30") {
         LibDeviceMap["sm_30"] = FilePath;
+        CudaArchStrs.push_back("sm_30");
         if (Version < CudaVersion::CUDA_80) {
           LibDeviceMap["sm_50"] = FilePath;
           LibDeviceMap["sm_52"] = FilePath;
           LibDeviceMap["sm_53"] = FilePath;
+          CudaArchStrs.push_back("sm_50");
+          CudaArchStrs.push_back("sm_52");
+          CudaArchStrs.push_back("sm_53");
         }
         LibDeviceMap["sm_60"] = FilePath;
         LibDeviceMap["sm_61"] = FilePath;
         LibDeviceMap["sm_62"] = FilePath;
+        CudaArchStrs.push_back("sm_60");
+        CudaArchStrs.push_back("sm_61");
+        CudaArchStrs.push_back("sm_62");
       } else if (GpuArch == "compute_35") {
         LibDeviceMap["sm_35"] = FilePath;
         LibDeviceMap["sm_37"] = FilePath;
+        CudaArchStrs.push_back("sm_35");
+        CudaArchStrs.push_back("sm_37");
       } else if (GpuArch == "compute_50") {
         if (Version >= CudaVersion::CUDA_80) {
           LibDeviceMap["sm_50"] = FilePath;
           LibDeviceMap["sm_52"] = FilePath;
           LibDeviceMap["sm_53"] = FilePath;
+          CudaArchStrs.push_back("sm_50");
+          CudaArchStrs.push_back("sm_52");
+          CudaArchStrs.push_back("sm_53");
         }
       }
     }
@@ -1905,7 +1921,7 @@ CudaInstallationDetector::CudaInstallationDetector(
     // no libdevice has been found.
     bool allEmpty = true;
     std::string LibDeviceFile;
-    for (auto key : LibDeviceMap.keys()) {
+    for (auto key : CudaArchStrs) {
       LibDeviceFile = LibDeviceMap.lookup(key);
       if (!LibDeviceFile.empty())
         allEmpty = false;
@@ -4937,7 +4953,11 @@ void CudaToolChain::addClangTargetOptions(
       CC1Args.push_back("-fcuda-approx-transcendentals");
   }
 
-  if (DriverArgs.hasArg(options::OPT_nocudalib))
+  if (DriverArgs.hasArg(options::OPT_nocudalib) ||
+      (DeviceOffloadingKind == Action::OFK_OpenMP &&
+       DriverArgs.hasArg(options::OPT_S)) ||
+      (DeviceOffloadingKind == Action::OFK_OpenMP &&
+       DriverArgs.hasArg(options::OPT_c)))
     return;
 
   std::string LibDeviceFile = CudaInstallation.getLibDeviceFile(GpuArch);
