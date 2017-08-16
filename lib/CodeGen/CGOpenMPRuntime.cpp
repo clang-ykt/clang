@@ -4763,15 +4763,6 @@ checkDestructorsRequired(const RecordDecl *KmpTaskTWithPrivatesQTyRD) {
   }
   return NeedsCleanup;
 }
-//
-//CGOpenMPRuntime::TaskResultTy
-//CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
-//                              const OMPExecutableDirective &D,
-//                              llvm::Value *TaskFunction, QualType SharedsTy,
-//                              Address Shareds, const OMPTaskDataTy &Data) {
-//  return emitTaskInit(CGF, Loc, D, TaskFunction, SharedsTy, Shareds, Data,
-//                      /* MapArrays = */ nullptr, /* Info = */ nullptr);
-//}
 
 CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
     CodeGenFunction &CGF, SourceLocation Loc, const OMPExecutableDirective &D,
@@ -6734,13 +6725,7 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
                                    ArrayRef<llvm::Value *> CapturedVars) {
 
   // Fill up the arrays with all the captured variables.
-  //  MappableExprsHandler::MapValuesArrayTy KernelArgs;
   OMPMapArrays Maps;
-//  MappableExprsHandler::MapBaseValuesArrayTy BasePointers;
-//  MappableExprsHandler::MapValuesArrayTy Pointers;
-//  MappableExprsHandler::MapValuesArrayTy Sizes;
-//  MappableExprsHandler::MapFlagsArrayTy MapTypes;
-
   MappableExprsHandler::MapBaseValuesArrayTy CurBasePointers;
   MappableExprsHandler::MapValuesArrayTy CurPointers;
   MappableExprsHandler::MapValuesArrayTy CurSizes;
@@ -6855,121 +6840,10 @@ void CGOpenMPRuntime::generateKernelArgs(
     CodeGenFunction &CGF, const OMPExecutableDirective &D,
     ArrayRef<llvm::Value *> CapturedVars,
     MappableExprsHandler::MapValuesArrayTy &KernelArgs) {
-
-  // Fill up the arrays with all the captured variables.
-  //  MappableExprsHandler::MapValuesArrayTy KernelArgs;
+  // Rebuild map arrays and extract kernel arguments
   OMPMapArrays Maps;
-//  MappableExprsHandler::MapBaseValuesArrayTy BasePointers;
-//  MappableExprsHandler::MapValuesArrayTy Pointers;
-//  MappableExprsHandler::MapValuesArrayTy Sizes;
-//  MappableExprsHandler::MapFlagsArrayTy MapTypes;
-
-  MappableExprsHandler::MapBaseValuesArrayTy CurBasePointers;
-  MappableExprsHandler::MapValuesArrayTy CurPointers;
-  MappableExprsHandler::MapValuesArrayTy CurSizes;
-  MappableExprsHandler::MapFlagsArrayTy CurMapTypes;
-
-  MappableExprsHandler::StructRangeMapTy PartialStructs;
-
-  // Get mappable expression information.
-  MappableExprsHandler MEHandler(D, CGF);
-
-  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
-  auto RI = CS.getCapturedRecordDecl()->field_begin();
-  auto CV = CapturedVars.begin();
-  for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
-                                            CE = CS.capture_end();
-       CI != CE; ++CI, ++RI, ++CV) {
-    StringRef Name;
-    QualType Ty;
-
-    CurBasePointers.clear();
-    CurPointers.clear();
-    CurSizes.clear();
-    CurMapTypes.clear();
-    PartialStructs.clear();
-
-    // VLA sizes are passed to the outlined region by copy and do not have map
-    // information associated.
-    if (CI->capturesVariableArrayType()) {
-      CurBasePointers.push_back(*CV);
-      CurPointers.push_back(*CV);
-      CurSizes.push_back(CGF.getTypeSize(RI->getType()));
-      // Copy to the device as an argument. No need to retrieve it.
-      CurMapTypes.push_back(MappableExprsHandler::OMP_MAP_LITERAL |
-                            MappableExprsHandler::OMP_MAP_TARGET_PARAM);
-    } else {
-      // If we have any information in the map clause, we use it, otherwise we
-      // just do a default mapping.
-      MEHandler.generateInfoForCapture(CI, *CV, CurBasePointers, CurPointers,
-                                       CurSizes, CurMapTypes, PartialStructs);
-      if (CurBasePointers.empty())
-        MEHandler.generateDefaultMapInfo(*CI, **RI, *CV, CurBasePointers,
-                                         CurPointers, CurSizes, CurMapTypes);
-    }
-    // We expect to have at least an element of information for this capture.
-    assert(!CurBasePointers.empty() && "Non-existing map pointer for capture!");
-    assert(CurBasePointers.size() == CurPointers.size() &&
-           CurBasePointers.size() == CurSizes.size() &&
-           CurBasePointers.size() == CurMapTypes.size() &&
-           "Inconsistent map information sizes!");
-
-    // If there is an entry in PartialStructs it means we have a struct with
-    // individual members mapped. Emit an extra combined entry.
-    if (PartialStructs.size() > 0) {
-      // Base is the base of the struct
-      KernelArgs.push_back(PartialStructs.begin()->second.Base);
-      Maps.BasePointers.push_back(PartialStructs.begin()->second.Base);
-      // Pointer is the address of the lowest element
-      auto *LB = PartialStructs.begin()->second.LowestElem.Pointer;
-      Maps.Pointers.push_back(LB);
-      // Size is (address of highest element) - (address of lowest element) +
-      // sizeof(highest element)
-      auto *HB = PartialStructs.begin()->second.HighestElem.Pointer;
-      auto *HS = PartialStructs.begin()->second.HighestElem.Size;
-      llvm::Value *LBVal = CGF.Builder.CreatePtrToInt(LB, CGF.CGM.SizeTy);
-      llvm::Value *HBVal = CGF.Builder.CreatePtrToInt(HB, CGF.CGM.SizeTy);
-      llvm::Value *HAddr = CGF.Builder.CreateAdd(HBVal, HS, "", true, false);
-      llvm::Value *Diff = CGF.Builder.CreateSub(HAddr, LBVal, "", true, false);
-      Maps.Sizes.push_back(Diff);
-      // Map type is always TARGET_PARAM
-      Maps.MapTypes.push_back(MappableExprsHandler::OMP_MAP_TARGET_PARAM);
-      // Remove TARGET_PARAM flag from the first element
-      (*CurMapTypes.begin()) &= ~MappableExprsHandler::OMP_MAP_TARGET_PARAM;
-
-      // All other current entries will be MEMBER_OF the combined entry except
-      // for PTR_AND_OBJ entries which do not have a placeholder value 0xFFFF
-      // in the MEMBER_OF field.
-      uint64_t MemberOfFlag =
-          MappableExprsHandler::getMemberOfFlag(Maps.BasePointers.size() - 1);
-      for (unsigned i = 0; i < CurMapTypes.size(); ++i) {
-        if (CurMapTypes[i] & MappableExprsHandler::OMP_MAP_PTR_AND_OBJ) {
-          // We have two cases: if the entry has not been marked with the
-          // special placeholder value, then it should not be marked as
-          // MEMBER_OF, so continue to the next entry.
-          if ((CurMapTypes[i] & MappableExprsHandler::OMP_MAP_MEMBER_OF) !=
-                  MappableExprsHandler::OMP_MAP_MEMBER_OF) {
-            continue;
-          } else {
-            // Reset the placeholder value to prepare the flag for the
-            // assignment of the proper MEMBER_OF value.
-            CurMapTypes[i] &= ~MappableExprsHandler::OMP_MAP_MEMBER_OF;
-          }
-        }
-        CurMapTypes[i] |= MemberOfFlag;
-      }
-    } else {
-      // If we don't have a partial struct, the kernel args are always the first
-      // elements of the base pointers associated with a capture.
-      KernelArgs.push_back(*CurBasePointers.front());
-    }
-
-    // We need to append the results of this capture to what we already have.
-    Maps.BasePointers.append(CurBasePointers.begin(), CurBasePointers.end());
-    Maps.Pointers.append(CurPointers.begin(), CurPointers.end());
-    Maps.Sizes.append(CurSizes.begin(), CurSizes.end());
-    Maps.MapTypes.append(CurMapTypes.begin(), CurMapTypes.end());
-  }
+  Maps = generateMapArrays(CGF, D, CapturedVars);
+  KernelArgs = Maps.KernelArgs;
 }
 
 CGOpenMPRuntime::TargetDataInfo
