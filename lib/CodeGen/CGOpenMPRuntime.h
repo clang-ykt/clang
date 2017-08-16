@@ -1765,33 +1765,6 @@ public:
     bool requiresDevicePointerInfo() { return RequiresDevicePointerInfo; }
   };
 
-  /// Emit task region for the task directive. The task region is emitted in
-  /// several steps:
-  /// 1. Emit a call to kmp_task_t *__kmpc_omp_task_alloc(ident_t *, kmp_int32
-  /// gtid, kmp_int32 flags, size_t sizeof_kmp_task_t, size_t sizeof_shareds,
-  /// kmp_routine_entry_t *task_entry). Here task_entry is a pointer to the
-  /// function:
-  /// kmp_int32 .omp_task_entry.(kmp_int32 gtid, kmp_task_t *tt) {
-  ///   TaskFunction(gtid, tt->part_id, tt->shareds);
-  ///   return 0;
-  /// }
-  /// 2. Copy a list of shared variables to field shareds of the resulting
-  /// structure kmp_task_t returned by the previous call (if any).
-  /// 3. Copy a pointer to destructions function to field destructions of the
-  /// resulting structure kmp_task_t.
-  /// \param D Current task directive.
-  /// \param TaskFunction An LLVM function with type void (*)(i32 /*gtid*/, i32
-  /// /*part_id*/, captured_struct */*__context*/);
-  /// \param SharedsTy A type which contains references the shared variables.
-  /// \param Shareds Context with the list of shared variables from the \p
-  /// TaskFunction.
-  /// \param Data Additional data for task generation like tiednsee, final
-  /// state, list of privates etc.
-//  TaskResultTy emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
-//                            const OMPExecutableDirective &D,
-//                            llvm::Value *TaskFunction, QualType SharedsTy,
-//                            Address Shareds, const OMPTaskDataTy &Data);
-
   /// Emit task region for target tasks, target directive with depend clause.
   /// The task region is emitted in several steps:
   /// 1. Emit a call to kmp_task_t *__kmpc_omp_task_alloc(ident_t *, kmp_int32

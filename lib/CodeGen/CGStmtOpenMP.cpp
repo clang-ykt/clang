@@ -4215,6 +4215,7 @@ void CodeGenFunction::EmitOMPTargetParallelDirective(
   auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &Action) {
     TargetParallelCodegen(CGF, Action, S);
   };
+  OMPLexicalScope TaskScope(*this, S, true);
   llvm::SmallVector<llvm::Value *, 16> CapturedVars;
   OMPMapArrays MapArrays;
   generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
@@ -4238,6 +4239,7 @@ void CodeGenFunction::EmitOMPTargetSimdDirective(
   auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &Action) {
     TargetSimdCodegen(CGF, Action, S);
   };
+  OMPLexicalScope TaskScope(*this, S, true);
   llvm::SmallVector<llvm::Value *, 16> CapturedVars;
   OMPMapArrays MapArrays;
   generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
@@ -4293,7 +4295,7 @@ void CodeGenFunction::EmitOMPTargetParallelForDirective(
   auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &Action) {
     TargetParallelForCodegen(CGF, Action, S);
   };
-
+  OMPLexicalScope TaskScope(*this, S, true);
   llvm::SmallVector<llvm::Value *, 16> CapturedVars;
   OMPMapArrays MapArrays;
   generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
@@ -4335,6 +4337,7 @@ void CodeGenFunction::EmitOMPTargetParallelForSimdDirective(
   auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &Action) {
     TargetParallelForSimdCodegen(CGF, Action, S);
   };
+  OMPLexicalScope TaskScope(*this, S, true);
   llvm::SmallVector<llvm::Value *, 16> CapturedVars;
   OMPMapArrays MapArrays;
   generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
@@ -4391,6 +4394,7 @@ void CodeGenFunction::EmitOMPTargetTeamsDistributeParallelForDirective(
   auto &&CodeGen = [&S, this](CodeGenFunction &CGF, PrePostActionTy &Action) {
     TargetTeamsDistributeParallelForCodegen(CGM, CGF, Action, S);
   };
+  OMPLexicalScope TaskScope(*this, S, true);
   llvm::SmallVector<llvm::Value *, 16> CapturedVars;
   OMPMapArrays MapArrays;
   generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
@@ -4449,6 +4453,7 @@ void CodeGenFunction::EmitOMPTargetTeamsDistributeParallelForSimdDirective(
   auto &&CodeGen = [&S, this](CodeGenFunction &CGF, PrePostActionTy &Action) {
     TargetTeamsDistributeParallelForSimdCodegen(CGM, CGF, Action, S);
   };
+  OMPLexicalScope TaskScope(*this, S, true);
   llvm::SmallVector<llvm::Value *, 16> CapturedVars;
   OMPMapArrays MapArrays;
   generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
@@ -4509,6 +4514,7 @@ void CodeGenFunction::EmitOMPTargetTeamsDirective(
   auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &Action) {
     TargetTeamsCodegen(CGF, Action, S);
   };
+  OMPLexicalScope TaskScope(*this, S, true);
   llvm::SmallVector<llvm::Value *, 16> CapturedVars;
   OMPMapArrays MapArrays;
   generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
@@ -4558,6 +4564,7 @@ void CodeGenFunction::EmitOMPTargetTeamsDistributeDirective(
   auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &Action) {
     TargetTeamsDistributeCodegen(CGF, Action, S);
   };
+  OMPLexicalScope TaskScope(*this, S, true);
   llvm::SmallVector<llvm::Value *, 16> CapturedVars;
   OMPMapArrays MapArrays;
   generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
@@ -4612,6 +4619,7 @@ void CodeGenFunction::EmitOMPTargetTeamsDistributeSimdDirective(
   auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &Action) {
     TargetTeamsDistributeSimdCodegen(CGF, Action, S);
   };
+  OMPLexicalScope TaskScope(*this, S, true);
   llvm::SmallVector<llvm::Value *, 16> CapturedVars;
   OMPMapArrays MapArrays;
   generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
