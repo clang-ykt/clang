@@ -8280,7 +8280,7 @@ public:
 
   /// \brief Initialization of captured region for OpenMP region.
   void ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope,
-      bool HasDependClause);
+                              bool HasDependClause);
   /// \brief End of OpenMP region.
   ///
   /// \param S Statement associated with the current OpenMP region.
