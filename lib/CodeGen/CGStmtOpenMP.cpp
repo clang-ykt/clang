@@ -3989,7 +3989,7 @@ static void emitCommonOMPTargetDirective(CodeGenFunction &CGF,
 
   // On device emit this construct as inlined code.
   if (CGM.getLangOpts().OpenMPIsDevice) {
-    //OMPLexicalScope Scope(CGF, S);
+    // OMPLexicalScope Scope(CGF, S);
     CGM.getOpenMPRuntime().emitInlinedDirective(
         CGF, OMPD_target, [&CS](CodeGenFunction &CGF, PrePostActionTy &) {
           CGF.EmitStmt(CS.getCapturedStmt());
@@ -4048,7 +4048,7 @@ static void emitCommonOMPTargetDirective(CodeGenFunction &CGF,
   unsigned CaptureLevel = HasDependClause ? 2 : 1;
   CGM.getOpenMPRuntime().emitTargetOutlinedFunction(
       S, ParentName, Fn, FnID, IsOffloadEntry, CodeGen, CaptureLevel);
-//  OMPLexicalScope Scope(CGF, S);
+  //  OMPLexicalScope Scope(CGF, S);
   auto &&SizeEmitter = [](CodeGenFunction &CGF,
                           const OMPLoopDirective &D) -> llvm::Value * {
     OMPLoopScope(CGF, D);
@@ -4135,16 +4135,17 @@ void CodeGenFunction::EmitOMPTargetDirective(const OMPTargetDirective &S) {
     auto &&TargetTaskBodyGen = [&S, &CodeGen, &MapArrays, &Data](
         CodeGenFunction &CGF, PrePostActionTy &) {
       OMPLexicalScope Scope(CGF, S, true);
-      // scan all map clauses and manually map the variables to their mapped address
+      // scan all map clauses and manually map the variables to their mapped
+      // address
       // re-generate host kernel arguments in the task region scope
       llvm::SmallVector<llvm::Value *, 16> CapturedVarsInTaskRegion;
       MapArrays.KernelArgs.clear();
       const CapturedStmt &CS = *cast<CapturedStmt>(S.getAssociatedStmt());
       CGF.GenerateOpenMPCapturedVars(CS, CapturedVarsInTaskRegion);
-      CGF.CGM.getOpenMPRuntime().generateKernelArgs(CGF, S, CapturedVarsInTaskRegion,
-                                                    MapArrays.KernelArgs);
-      emitCommonOMPTargetDirective(CGF, S, OMPD_target, CodeGen, CapturedVarsInTaskRegion,
-                                   MapArrays, &Data);
+      CGF.CGM.getOpenMPRuntime().generateKernelArgs(
+          CGF, S, CapturedVarsInTaskRegion, MapArrays.KernelArgs);
+      emitCommonOMPTargetDirective(CGF, S, OMPD_target, CodeGen,
+                                   CapturedVarsInTaskRegion, MapArrays, &Data);
     };
 
     auto CS = cast<CapturedStmt>(S.getAssociatedStmt());

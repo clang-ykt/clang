@@ -1966,14 +1966,18 @@ public:
         return;
 
       if (RequiresImplicitMaps) {
-          if (!(Stack->checkMappableExprComponentListsForDecl(VD,
-              /* CurrentRegionOnly = */ true, [](
-                  OMPClauseMappableExprCommon::MappableExprComponentListRef,
-                                    OpenMPClauseKind) { return true; }))) {
-            ImplicitlyMappedVars.emplace_back(SemaRef.BuildDeclRefExpr(VD,
-                E->getType(), E->getValueKind(), E->getExprLoc()).get());
-            return;
-          }
+        if (!(Stack->checkMappableExprComponentListsForDecl(
+                VD,
+                /* CurrentRegionOnly = */ true,
+                [](OMPClauseMappableExprCommon::MappableExprComponentListRef,
+                   OpenMPClauseKind) { return true; }))) {
+          ImplicitlyMappedVars.emplace_back(
+              SemaRef
+                  .BuildDeclRefExpr(VD, E->getType(), E->getValueKind(),
+                                    E->getExprLoc())
+                  .get());
+          return;
+        }
       }
 
       auto ELoc = E->getExprLoc();
@@ -2020,13 +2024,14 @@ public:
       return;
     if (isa<CXXThisExpr>(E->getBase()->IgnoreParens())) {
       if (auto *FD = dyn_cast<FieldDecl>(E->getMemberDecl())) {
-        if (!(Stack->checkMappableExprComponentListsForDecl(FD,
-            /* CurrentRegionOnly = */ true, [](OMPClauseMappableExprCommon::MappableExprComponentListRef,
-                                  OpenMPClauseKind) { return true; }))) {
+        if (!(Stack->checkMappableExprComponentListsForDecl(
+                FD,
+                /* CurrentRegionOnly = */ true,
+                [](OMPClauseMappableExprCommon::MappableExprComponentListRef,
+                   OpenMPClauseKind) { return true; }))) {
           ImplicitlyMappedVars.emplace_back(E);
           return;
-      }
-
+        }
 
         auto DVar = Stack->getTopDSA(FD, false);
         // Check if the variable has explicit DSA set and stop analysis if it
@@ -2090,7 +2095,7 @@ public:
   }
 
   DSAAttrChecker(DSAStackTy *S, Sema &SemaRef, CapturedStmt *CS,
-      bool RequiresImplicitMaps)
+                 bool RequiresImplicitMaps)
       : Stack(S), SemaRef(SemaRef), ErrorFound(false), CS(CS),
         RequiresImplicitMaps(RequiresImplicitMaps) {}
 };
@@ -2747,7 +2752,8 @@ static bool checkIfClauses(Sema &S, OpenMPDirectiveKind Kind,
 StmtResult Sema::ActOnOpenMPExecutableDirective(
     OpenMPDirectiveKind Kind, const DeclarationNameInfo &DirName,
     OpenMPDirectiveKind CancelRegion, ArrayRef<OMPClause *> Clauses,
-    Stmt *AStmt, SourceLocation StartLoc, SourceLocation EndLoc, bool HasDependClause) {
+    Stmt *AStmt, SourceLocation StartLoc, SourceLocation EndLoc,
+    bool HasDependClause) {
   StmtResult Res = StmtError();
   if (CheckNestingOfRegions(*this, DSAStack, Kind, DirName, CancelRegion,
                             StartLoc))
@@ -2765,7 +2771,7 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
 
     // Check default data sharing attributes for referenced variables.
     DSAAttrChecker DSAChecker(DSAStack, *this, cast<CapturedStmt>(AStmt),
-        requiresImplicitMaps);
+                              requiresImplicitMaps);
     DSAChecker.Visit(cast<CapturedStmt>(AStmt)->getCapturedStmt());
     if (DSAChecker.isErrorFound())
       return StmtError();
@@ -2773,8 +2779,8 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
     VarsWithInheritedDSA = DSAChecker.getVarsWithInheritedDSA();
 
     SmallVector<Expr *, 4> ImplicitlyMappedVars(
-            DSAChecker.getImplicitlyMappedVars().begin(),
-            DSAChecker.getImplicitlyMappedVars().end());
+        DSAChecker.getImplicitlyMappedVars().begin(),
+        DSAChecker.getImplicitlyMappedVars().end());
     SmallVector<Expr *, 4> ImplicitFirstprivates(
         DSAChecker.getImplicitFirstprivate().begin(),
         DSAChecker.getImplicitFirstprivate().end());
@@ -2798,13 +2804,13 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
     }
     // TODO: add combined constructs
     if (requiresImplicitMaps && !ImplicitlyMappedVars.empty()) {
-      if (OMPClause *Implicit = ActOnOpenMPMapClause(OMPC_MAP_unknown,
-          OMPC_MAP_tofrom, /* IsMapTypeImplicit = */ true, SourceLocation(),
-          SourceLocation(), ImplicitlyMappedVars, SourceLocation(),
-          SourceLocation(), SourceLocation())) {
+      if (OMPClause *Implicit = ActOnOpenMPMapClause(
+              OMPC_MAP_unknown, OMPC_MAP_tofrom, /* IsMapTypeImplicit = */ true,
+              SourceLocation(), SourceLocation(), ImplicitlyMappedVars,
+              SourceLocation(), SourceLocation(), SourceLocation())) {
         ClausesWithImplicit.push_back(Implicit);
         ErrorFound |= cast<OMPMapClause>(Implicit)->varlist_size() !=
-                     ImplicitlyMappedVars.size();
+                      ImplicitlyMappedVars.size();
       } else
         ErrorFound = true;
     }

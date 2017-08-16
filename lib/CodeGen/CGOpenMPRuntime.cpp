@@ -4744,7 +4744,8 @@ emitTaskDupFunction(CodeGenModule &CGM, SourceLocation Loc,
         CGF.getNaturalTypeAlignment(SharedsTy));
   }
   emitPrivatesInit(CGF, D, KmpTaskSharedsPtr, TDBase, KmpTaskTWithPrivatesQTyRD,
-                   SharedsTy, SharedsPtrTy, Data, Privates, /*ForDup=*/true, CGOpenMPRuntime::TargetDataInfo());
+                   SharedsTy, SharedsPtrTy, Data, Privates, /*ForDup=*/true,
+                   CGOpenMPRuntime::TargetDataInfo());
   CGF.FinishFunction();
   return TaskDup;
 }
@@ -5026,7 +5027,7 @@ void CGOpenMPRuntime::emitTaskLoopCall(CodeGenFunction &CGF, SourceLocation Loc,
     return;
   TaskResultTy Result =
       emitTaskInit(CGF, Loc, D, TaskFunction, SharedsTy, Shareds, Data,
-          OMPMapArrays(), TargetDataInfo());
+                   OMPMapArrays(), TargetDataInfo());
   // NOTE: routine and part_id fields are intialized by __kmpc_omp_task_alloc()
   // libcall.
   // Call to void __kmpc_taskloop(ident_t *loc, int gtid, kmp_task_t *task, int
@@ -7236,7 +7237,8 @@ void CGOpenMPRuntime::emitTargetCall(
   CGF.Builder.CreateCondBr(Failed, OffloadFailedBlock, OffloadContBlock);
 
   CGF.EmitBlock(OffloadFailedBlock);
-  emitOutlinedFunctionCall(CGF, D.getLocStart(), OutlinedFn, MapArrays.KernelArgs);
+  emitOutlinedFunctionCall(CGF, D.getLocStart(), OutlinedFn,
+                           MapArrays.KernelArgs);
   CGF.EmitBranch(OffloadContBlock);
 
   CGF.EmitBlock(OffloadContBlock, /*IsFinished=*/true);
@@ -7578,8 +7580,7 @@ void MappableExprsHandler::generateInfoForComponentList(
     if (Next == CE || IsPointer || IsFinalArraySection) {
       // If this is not the last component, we expect the pointer to be
       // associated with an array expression or member expression.
-      assert((Next == CE ||
-              isa<MemberExpr>(Next->getAssociatedExpression()) ||
+      assert((Next == CE || isa<MemberExpr>(Next->getAssociatedExpression()) ||
               isa<ArraySubscriptExpr>(Next->getAssociatedExpression()) ||
               isa<OMPArraySectionExpr>(Next->getAssociatedExpression())) &&
              "Unexpected expression");
@@ -7607,9 +7608,9 @@ void MappableExprsHandler::generateInfoForComponentList(
       // If this component is a pointer inside the base struct then we don't
       // need to create any entry for it - it will be combined with the object
       // it is pointing to into a single PTR_AND_OBJ entry.
-      bool IsMemberPointer = IsPointer && EncounteredME &&
-          (dyn_cast<MemberExpr>(I->getAssociatedExpression()) ==
-              EncounteredME);
+      bool IsMemberPointer =
+          IsPointer && EncounteredME &&
+          (dyn_cast<MemberExpr>(I->getAssociatedExpression()) == EncounteredME);
       if (!IsMemberPointer) {
         BasePointers.push_back(BP);
         Pointers.push_back(LB);
@@ -7619,15 +7620,16 @@ void MappableExprsHandler::generateInfoForComponentList(
         // same expression except for the first one. We also need to signal
         // this map is the first one that relates with the current capture
         // (there is a set of entries for each capture).
-        uint64_t flags = getMapTypeBits(MapType, MapTypeModifier,
-            !IsExpressionFirstInfo, IsCaptureFirstInfo);
+        uint64_t flags =
+            getMapTypeBits(MapType, MapTypeModifier, !IsExpressionFirstInfo,
+                           IsCaptureFirstInfo);
 
         if (!IsExpressionFirstInfo) {
           // If we have a PTR_AND_OBJ pair where the OBJ is a pointer as well,
           // then we reset the To/FROM/ALWAYS/DELETE flags.
           if (IsPointer) {
-            flags &= ~(OMP_MAP_TO | OMP_MAP_FROM | OMP_MAP_ALWAYS |
-                OMP_MAP_DELETE);
+            flags &=
+                ~(OMP_MAP_TO | OMP_MAP_FROM | OMP_MAP_ALWAYS | OMP_MAP_DELETE);
           }
 
           if (ShouldBeMemberOf) {
@@ -7717,8 +7719,7 @@ void MappableExprsHandler::generateAllInfo(
       OMPClauseMappableExprCommon::MappableExprComponentListRef L,
       OpenMPMapClauseKind MapType, OpenMPMapClauseKind MapModifier,
       bool ReturnDevicePointer = false) {
-    const ValueDecl *VD =
-        D ? cast<ValueDecl>(D->getCanonicalDecl()) : nullptr;
+    const ValueDecl *VD = D ? cast<ValueDecl>(D->getCanonicalDecl()) : nullptr;
     Info[VD].push_back({L, MapType, MapModifier, ReturnDevicePointer});
   };
 
@@ -7813,10 +7814,9 @@ void MappableExprsHandler::generateAllInfo(
       // Remember the current base pointer index.
       unsigned CurrentBasePointersIdx = BasePointers.size();
       // FIXME: MSVC 2013 seems to require this-> to find the member method.
-      this->generateInfoForComponentList(L.MapType, L.MapTypeModifier,
-                                         L.Components, BasePointers, Pointers,
-                                         Sizes, Types, PartialStructs,
-                                         IsFirstComponentList);
+      this->generateInfoForComponentList(
+          L.MapType, L.MapTypeModifier, L.Components, BasePointers, Pointers,
+          Sizes, Types, PartialStructs, IsFirstComponentList);
 
       // If this entry relates with a device pointer, set the relevant
       // declaration and add the 'return pointer' flag.
@@ -7842,8 +7842,10 @@ void MappableExprsHandler::generateAllInfo(
       for (DeferredEntry &L : CI->second) {
         llvm::Value *BasePtr, *Ptr;
         BasePtr = this->CGF.EmitLValue(L.IE).getPointer();
-        Ptr = this->CGF.EmitLoadOfLValue(this->CGF.EmitLValue(L.IE),
-            SourceLocation()).getScalarVal();
+        Ptr =
+            this->CGF
+                .EmitLoadOfLValue(this->CGF.EmitLValue(L.IE), SourceLocation())
+                .getScalarVal();
         BasePointers.push_back({BasePtr, L.VD});
         Pointers.push_back(Ptr);
         Sizes.push_back(llvm::Constant::getNullValue(this->CGF.SizeTy));
@@ -7851,7 +7853,7 @@ void MappableExprsHandler::generateAllInfo(
         // value MEMBER_OF=FFFF so that the entry is later updated with the
         // correct value of MEMBER_OF.
         Types.push_back(OMP_MAP_PTR_AND_OBJ | OMP_MAP_RETURN_PARAM |
-            OMP_MAP_MEMBER_OF);
+                        OMP_MAP_MEMBER_OF);
       }
     }
 
@@ -7859,8 +7861,8 @@ void MappableExprsHandler::generateAllInfo(
       // If we generated entries for a new partial struct, mark the index in
       // BasePointers where the struct entries begin.
       unsigned NumOfEntries = BasePointers.size() - InitialBasePointesIdx;
-      StructIndices.push_back(std::pair<unsigned, unsigned>(
-          InitialBasePointesIdx, NumOfEntries));
+      StructIndices.push_back(
+          std::pair<unsigned, unsigned>(InitialBasePointesIdx, NumOfEntries));
     }
   }
 }
@@ -7896,14 +7898,12 @@ void MappableExprsHandler::generateInfoForCapture(
   // FIXME: MSVC 2013 seems to require this-> to find member CurDir.
   for (auto *C : this->CurDir.getClausesOfKind<OMPMapClause>())
     for (auto L : C->decl_component_lists(VD)) {
-      assert(L.first == VD &&
-             "We got information for the wrong declaration??");
+      assert(L.first == VD && "We got information for the wrong declaration??");
       assert(!L.second.empty() &&
              "Not expecting declaration with no component lists.");
       generateInfoForComponentList(C->getMapType(), C->getMapTypeModifier(),
                                    L.second, BasePointers, Pointers, Sizes,
-                                   Types, PartialStructs,
-                                   IsFirstComponentList);
+                                   Types, PartialStructs, IsFirstComponentList);
       IsFirstComponentList = false;
     }
 
