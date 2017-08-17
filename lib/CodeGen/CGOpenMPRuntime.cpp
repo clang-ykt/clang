@@ -4484,19 +4484,19 @@ static llvm::Value *emitTaskPrivateMappingFunction(
     ++Counter;
   }
   if (HasImplicitTargetMaps) {
-    ImplicitParamDecl *BasesArgDecl = ImplicitParamDecl::Create(
+    auto *BasesArgDecl = ImplicitParamDecl::Create(
         C, C.getPointerType(
                 C.getPointerType(FirstprivateSimpleArrayImplicit[0]->getType()))
                .withConst()
                .withRestrict(),
         ImplicitParamDecl::ImplicitParamKind::Other);
-    ImplicitParamDecl *PtrsArgDecl = ImplicitParamDecl::Create(
+    auto *PtrsArgDecl = ImplicitParamDecl::Create(
         C, C.getPointerType(
                 C.getPointerType(FirstprivateSimpleArrayImplicit[1]->getType()))
                .withConst()
                .withRestrict(),
         ImplicitParamDecl::ImplicitParamKind::Other);
-    ImplicitParamDecl *SizesArgDecl = ImplicitParamDecl::Create(
+    auto *SizesArgDecl = ImplicitParamDecl::Create(
         C, C.getPointerType(
                 C.getPointerType(FirstprivateSimpleArrayImplicit[2]->getType()))
                .withConst()
@@ -4814,7 +4814,7 @@ CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
     QualType BasesAndPtrsType = C.getConstantArrayType(
         C.getUIntPtrType(), llvm::APInt(32, Info.NumberOfPtrs),
         ArrayType::Normal, /* IndexTypeQuals = */ 0);
-    ImplicitParamDecl *BasePtrsFakePrivate = ImplicitParamDecl::Create(
+    auto *BasePtrsFakePrivate = ImplicitParamDecl::Create(
         C, C.getUIntPtrType(), ImplicitParamDecl::ImplicitParamKind::Other);
     IntegerLiteral Init(C, llvm::APInt(C.toBits(CGF.getPointerSize()), 0),
                         C.getUIntPtrType(), SourceLocation());
@@ -4827,7 +4827,7 @@ CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
     const ImplicitParamDecl *PtrsParam =
         Data.FirstprivateSimpleArrayImplicit
             [OMPTaskDataTy::ImplicitMapArray::OMP_PTRS];
-    ImplicitParamDecl *PtrsFakePrivate = ImplicitParamDecl::Create(
+    auto *PtrsFakePrivate = ImplicitParamDecl::Create(
         C, BasesAndPtrsType, ImplicitParamDecl::ImplicitParamKind::Other);
     Privates.push_back(std::make_pair(
         C.getDeclAlign(PtrsParam),
@@ -4840,7 +4840,7 @@ CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
     QualType SizesType = C.getConstantArrayType(
         C.getSizeType(), llvm::APInt(32, Info.NumberOfPtrs), ArrayType::Normal,
         /* IndexTypeQuals = */ 0);
-    ImplicitParamDecl *SizesFakePrivate = ImplicitParamDecl::Create(
+    auto *SizesFakePrivate = ImplicitParamDecl::Create(
         C, SizesType, ImplicitParamDecl::ImplicitParamKind::Other);
     Privates.push_back(std::make_pair(
         C.getDeclAlign(SizesParam),
@@ -4880,7 +4880,7 @@ CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
     TaskPrivatesMap = emitTaskPrivateMappingFunction(
         CGM, Loc, Data.PrivateVars, Data.FirstprivateVars, Data.LastprivateVars,
         FI->getType(), Privates,
-        (ImplicitParamDecl **)Data.FirstprivateSimpleArrayImplicit,
+        (ImplicitParamDecl **) Data.FirstprivateSimpleArrayImplicit,
         Data.HasImplicitTargetArrays);
     TaskPrivatesMap = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
         TaskPrivatesMap, TaskPrivatesMapTy);
@@ -4932,12 +4932,13 @@ CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
   if (Data.HasImplicitTargetArrays) {
     // Emit device ID if any.
     llvm::Value *DeviceID;
-    if (MapArrays.DeviceExpr)
+    if (MapArrays.DeviceExpr) {
       DeviceID =
           CGF.Builder.CreateIntCast(CGF.EmitScalarExpr(MapArrays.DeviceExpr),
                                     CGF.Int64Ty, /*isSigned=*/true);
-    else
+    } else {
       DeviceID = CGF.Builder.getInt64(OMP_DEVICEID_UNDEF);
+    }
     llvm::Value *AllocArgs[] = {emitUpdateLocation(CGF, Loc),
                                 getThreadID(CGF, Loc), TaskFlags,
                                 KmpTaskTWithPrivatesTySize, SharedsSize,
@@ -6437,7 +6438,7 @@ emitMapTypesArray(CodeGenFunction &CGF,
   auto &CGM = CGF.CGM;
   // The map types are always constant so we don't need to generate code to
   // fill arrays. Instead, we create an array constant.
-  llvm::Constant *MapTypesArrayInit =
+  auto *MapTypesArrayInit =
       llvm::ConstantDataArray::get(CGF.Builder.getContext(), MapTypes);
   auto *MapTypesArrayGbl = new llvm::GlobalVariable(
       CGM.getModule(), MapTypesArrayInit->getType(),

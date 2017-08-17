@@ -33,7 +33,6 @@
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/SemaInternal.h"
 #include "llvm/ADT/PointerEmbeddedInt.h"
-
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
