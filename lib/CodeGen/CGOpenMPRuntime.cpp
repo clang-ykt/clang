@@ -4880,7 +4880,7 @@ CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
     TaskPrivatesMap = emitTaskPrivateMappingFunction(
         CGM, Loc, Data.PrivateVars, Data.FirstprivateVars, Data.LastprivateVars,
         FI->getType(), Privates,
-        (ImplicitParamDecl **) Data.FirstprivateSimpleArrayImplicit,
+        (ImplicitParamDecl **)Data.FirstprivateSimpleArrayImplicit,
         Data.HasImplicitTargetArrays);
     TaskPrivatesMap = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
         TaskPrivatesMap, TaskPrivatesMapTy);
