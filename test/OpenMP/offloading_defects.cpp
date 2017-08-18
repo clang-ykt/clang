@@ -1,17 +1,14 @@
-// RUN:   %clang_cc1 -DCK1 -fopenmp -triple powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda -O3 -emit-llvm %s -o - \
-// RUN:   | FileCheck --check-prefix CK1-HOST %s
-// RUN:   %clang_cc1 -DCK1 -fopenmp -triple powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda -O3 -emit-llvm-bc %s -o %t-ppc-host.bc
-// RUN:   %clang_cc1 -DCK1 -fopenmp -triple nvptx64-nvidia-cuda -fopenmp-targets=nvptx64-nvidia-cuda -O3 -emit-llvm %s -fopenmp-is-device \
-// RUN:    -fopenmp-host-ir-file-path %t-ppc-host.bc -o - | FileCheck --check-prefix CK1-DEV %s
+// RUN:   %clangxx -DCK1 -fopenmp -target x86_64-pc-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda -O3 -S -emit-llvm %s -o - \
+// RUN:   | FileCheck --check-prefix CK1 %s
 #ifdef CK1
 
 
-// CK1-DEV: define {{.*}}void @__omp_offloading_{{.+}}bar{{.+}}
+// CK1: define {{.*}}void @__omp_offloading_{{.+}}bar{{.+}}
 
 int foo (float myvar)
 {
   int a;
-  // CK1-HOST: pmovmskb
+  // CK1: pmovmskb
   __asm ("pmovmskb %1, %0" : "=r" (a) : "x" (myvar));
   return a & 0x8;
 }
@@ -19,7 +16,7 @@ int foo (float myvar)
 int bar (int a, float b){
   int c = a + foo(b);
 
-  // CK1-HOST: tgt_target(i64 -1
+  // CK1: tgt_target(i64 -1
   #pragma omp target
     b = a+1;
 
