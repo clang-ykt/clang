@@ -1971,9 +1971,11 @@ public:
                 /* CurrentRegionOnly = */ true,
                 [](OMPClauseMappableExprCommon::MappableExprComponentListRef,
                    OpenMPClauseKind) { return true; }))) {
-          auto *DeclRef = SemaRef
-              .BuildDeclRefExpr(VD, E->getType(), E->getValueKind(),
-                                E->getExprLoc()).get();
+          auto *DeclRef =
+              SemaRef
+                  .BuildDeclRefExpr(VD, E->getType(), E->getValueKind(),
+                                    E->getExprLoc())
+                  .get();
           bool CapturedByRef = true;
           for (const auto &I : CS->captures()) {
             if (!I.capturesVariableByCopy())

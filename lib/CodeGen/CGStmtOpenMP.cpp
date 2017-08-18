@@ -4135,8 +4135,8 @@ void CodeGenFunction::EmitOMPTargetDirective(const OMPTargetDirective &S) {
     Data.FirstprivateSimpleArrayImplicit[OMPTaskDataTy::OMP_SIZES] = SizesDecl;
     Data.HasImplicitTargetArrays = true;
 
-    auto &&TargetTaskBodyGen = [&S, &CodeGen, &Data](
-        CodeGenFunction &CGF, PrePostActionTy &) {
+    auto &&TargetTaskBodyGen = [&S, &CodeGen, &Data](CodeGenFunction &CGF,
+                                                     PrePostActionTy &) {
       OMPLexicalScope Scope(CGF, S, true);
       // scan all map clauses and manually map the variables to their mapped
       // address
@@ -4145,9 +4145,11 @@ void CodeGenFunction::EmitOMPTargetDirective(const OMPTargetDirective &S) {
       OMPMapArrays MapArraysInTaskRegion;
       const CapturedStmt &CS = *cast<CapturedStmt>(S.getAssociatedStmt());
       CGF.GenerateOpenMPCapturedVars(CS, CapturedVarsInTaskRegion);
-      generateCapturedVarsAndMapArrays(CGF, S, CapturedVarsInTaskRegion, MapArraysInTaskRegion);
+      generateCapturedVarsAndMapArrays(CGF, S, CapturedVarsInTaskRegion,
+                                       MapArraysInTaskRegion);
       emitCommonOMPTargetDirective(CGF, S, OMPD_target, CodeGen,
-                                   CapturedVarsInTaskRegion, MapArraysInTaskRegion, &Data);
+                                   CapturedVarsInTaskRegion,
+                                   MapArraysInTaskRegion, &Data);
     };
 
     auto CS = cast<CapturedStmt>(S.getAssociatedStmt());

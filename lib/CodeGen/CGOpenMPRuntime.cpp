@@ -6729,7 +6729,6 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
                                    const OMPExecutableDirective &D,
                                    ArrayRef<llvm::Value *> CapturedVars) {
 
-
   // Fill up the arrays with all the captured variables.
   OMPMapArrays Maps;
   MappableExprsHandler::MapBaseValuesArrayTy CurBasePointers;
