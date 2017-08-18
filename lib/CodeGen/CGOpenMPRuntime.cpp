@@ -6842,16 +6842,6 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
   return Maps;
 }
 
-void CGOpenMPRuntime::generateKernelArgs(
-    CodeGenFunction &CGF, const OMPExecutableDirective &D,
-    ArrayRef<llvm::Value *> CapturedVars,
-    MappableExprsHandler::MapValuesArrayTy &KernelArgs) {
-  // Rebuild map arrays and extract kernel arguments
-  OMPMapArrays Maps;
-  Maps = generateMapArrays(CGF, D, CapturedVars);
-  KernelArgs = Maps.KernelArgs;
-}
-
 CGOpenMPRuntime::TargetDataInfo
 CGOpenMPRuntime::emitMapArrays(CodeGenFunction &CGF, OMPMapArrays &Maps) {
   CGOpenMPRuntime::TargetDataInfo Info;

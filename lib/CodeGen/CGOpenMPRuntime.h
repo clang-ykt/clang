@@ -1799,11 +1799,6 @@ public:
                                  const OMPExecutableDirective &D,
                                  ArrayRef<llvm::Value *> CapturedVars);
 
-  // Generate arguments for target outlined function when executed on host
-  void generateKernelArgs(CodeGenFunction &CGF, const OMPExecutableDirective &D,
-                          ArrayRef<llvm::Value *> CapturedVars,
-                          MappableExprsHandler::MapValuesArrayTy &KernelArgs);
-
   /// Emit map arrays
   TargetDataInfo emitMapArrays(CodeGenFunction &CGF, OMPMapArrays &Maps);
 

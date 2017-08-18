@@ -4146,8 +4146,6 @@ void CodeGenFunction::EmitOMPTargetDirective(const OMPTargetDirective &S) {
       const CapturedStmt &CS = *cast<CapturedStmt>(S.getAssociatedStmt());
       CGF.GenerateOpenMPCapturedVars(CS, CapturedVarsInTaskRegion);
       generateCapturedVarsAndMapArrays(CGF, S, CapturedVarsInTaskRegion, MapArraysInTaskRegion);
-//      CGF.CGM.getOpenMPRuntime().generateKernelArgs(
-//          CGF, S, CapturedVarsInTaskRegion, MapArrays.KernelArgs);
       emitCommonOMPTargetDirective(CGF, S, OMPD_target, CodeGen,
                                    CapturedVarsInTaskRegion, MapArraysInTaskRegion, &Data);
     };
