@@ -1964,23 +1964,39 @@ public:
       if (DVar.RefExpr)
         return;
 
+      auto DKind = Stack->getCurrentDirective();
       if (RequiresImplicitMaps) {
         if (!(Stack->checkMappableExprComponentListsForDecl(
                 VD,
                 /* CurrentRegionOnly = */ true,
                 [](OMPClauseMappableExprCommon::MappableExprComponentListRef,
                    OpenMPClauseKind) { return true; }))) {
-          ImplicitlyMappedVars.emplace_back(
-              SemaRef
-                  .BuildDeclRefExpr(VD, E->getType(), E->getValueKind(),
-                                    E->getExprLoc())
-                  .get());
+          auto *DeclRef = SemaRef
+              .BuildDeclRefExpr(VD, E->getType(), E->getValueKind(),
+                                E->getExprLoc()).get();
+          bool CapturedByRef = true;
+          for (const auto &I : CS->captures()) {
+            if (!I.capturesVariableByCopy())
+              continue;
+
+            // This does not handle variable redeclarations. This should be
+            // extended to capture variables with redeclarations, for example
+            // a thread-private variable in OpenMP.
+            if (I.getCapturedVar() == VD) {
+              CapturedByRef = false;
+              break;
+            }
+          }
+
+          if (CapturedByRef)
+            ImplicitlyMappedVars.emplace_back(DeclRef);
+          else
+            ImplicitFirstprivate.emplace_back(DeclRef);
           return;
         }
       }
 
       auto ELoc = E->getExprLoc();
-      auto DKind = Stack->getCurrentDirective();
       // The default(none) clause requires that each variable that is referenced
       // in the construct, and does not have a predetermined data-sharing
       // attribute, must have its data-sharing attribute explicitly determined
