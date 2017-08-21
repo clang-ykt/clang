@@ -4366,10 +4366,10 @@ bool CGOpenMPRuntimeNVPTX::requiresBarrier(const OMPLoopDirective &S) const {
 /// All enumeric elements are named and described in accordance with the code
 /// from http://llvm.org/svn/llvm-project/openmp/trunk/runtime/src/kmp.h
 enum OpenMPLocationFlags {
-  /// \brief Explicit 'barrier' directive.
-  OMP_IDENT_BARRIER_EXPL = 0x20,
   /// \brief Implicit barrier in 'for' directive.
   OMP_IDENT_BARRIER_IMPL_FOR = 0x40,
+  /// \brief Implicit barrier in code.
+  OMP_IDENT_BARRIER_IMPL = 0x40,
 };
 
 // Handle simple barrier case when runtime is not available.
@@ -4381,7 +4381,8 @@ void CGOpenMPRuntimeNVPTX::emitBarrierCall(CodeGenFunction &CGF,
   if (!CGF.HaveInsertPoint())
     return;
 
-  bool IsSimpleBarrier = Kind == OMPD_for || Kind == OMPD_barrier;
+  bool IsSimpleBarrier =
+      Kind == OMPD_for || Kind == OMPD_barrier || Kind == OMPD_unknown;
   if (auto *OMPRegionInfo =
           dyn_cast_or_null<CGOpenMPRegionInfo>(CGF.CapturedStmtInfo))
     if (!ForceSimpleCall && OMPRegionInfo->hasCancel())
@@ -4393,7 +4394,7 @@ void CGOpenMPRuntimeNVPTX::emitBarrierCall(CodeGenFunction &CGF,
     if (Kind == OMPD_for)
       Flags = OMP_IDENT_BARRIER_IMPL_FOR;
     else
-      Flags = OMP_IDENT_BARRIER_EXPL;
+      Flags = OMP_IDENT_BARRIER_IMPL;
     llvm::Value *Args[] = {emitUpdateLocation(CGF, Loc, Flags),
                            getThreadID(CGF, Loc)};
     auto Name = selectRuntimeCall<OpenMPRTLFunctionNVPTX>(
