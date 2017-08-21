@@ -8279,7 +8279,8 @@ public:
   void checkDeclImplicitlyUsedOpenMPTargetContext(Decl *D);
 
   /// \brief Initialization of captured region for OpenMP region.
-  void ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope);
+  void ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope,
+                              bool HasDependClause);
   /// \brief End of OpenMP region.
   ///
   /// \param S Statement associated with the current OpenMP region.
@@ -8290,7 +8291,8 @@ public:
   StmtResult ActOnOpenMPExecutableDirective(
       OpenMPDirectiveKind Kind, const DeclarationNameInfo &DirName,
       OpenMPDirectiveKind CancelRegion, ArrayRef<OMPClause *> Clauses,
-      Stmt *AStmt, SourceLocation StartLoc, SourceLocation EndLoc);
+      Stmt *AStmt, SourceLocation StartLoc, SourceLocation EndLoc,
+      bool HasDependClause);
   /// \brief Called on well-formed '\#pragma omp parallel' after parsing
   /// of the  associated statement.
   StmtResult ActOnOpenMPParallelDirective(ArrayRef<OMPClause *> Clauses,

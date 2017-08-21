@@ -1395,9 +1395,12 @@ public:
                                            OpenMPDirectiveKind CancelRegion,
                                            ArrayRef<OMPClause *> Clauses,
                                            Stmt *AStmt, SourceLocation StartLoc,
-                                           SourceLocation EndLoc) {
+                                           SourceLocation EndLoc,
+                                           bool HasDependClause) {
+    bool requiresImplicitMaps = (Kind == OMPD_target && HasDependClause);
     return getSema().ActOnOpenMPExecutableDirective(
-        Kind, DirName, CancelRegion, Clauses, AStmt, StartLoc, EndLoc);
+        Kind, DirName, CancelRegion, Clauses, AStmt, StartLoc, EndLoc,
+        requiresImplicitMaps);
   }
 
   /// \brief Build a new OpenMP 'if' clause.
@@ -7253,6 +7256,7 @@ StmtResult TreeTransform<Derived>::TransformOMPExecutableDirective(
   llvm::SmallVector<OMPClause *, 16> TClauses;
   ArrayRef<OMPClause *> Clauses = D->clauses();
   TClauses.reserve(Clauses.size());
+  bool HasDependClause = D->hasClausesOfKind<OMPDependClause>();
   for (ArrayRef<OMPClause *>::iterator I = Clauses.begin(), E = Clauses.end();
        I != E; ++I) {
     if (*I) {
@@ -7268,7 +7272,8 @@ StmtResult TreeTransform<Derived>::TransformOMPExecutableDirective(
   StmtResult AssociatedStmt;
   if (D->hasAssociatedStmt() && D->getAssociatedStmt()) {
     getDerived().getSema().ActOnOpenMPRegionStart(D->getDirectiveKind(),
-                                                  /*CurScope=*/nullptr);
+                                                  /*CurScope=*/nullptr,
+                                                  HasDependClause);
     StmtResult Body;
     {
       Sema::CompoundScopeRAII CompoundScope(getSema());
@@ -7300,7 +7305,7 @@ StmtResult TreeTransform<Derived>::TransformOMPExecutableDirective(
 
   return getDerived().RebuildOMPExecutableDirective(
       D->getDirectiveKind(), DirName, CancelRegion, TClauses,
-      AssociatedStmt.get(), D->getLocStart(), D->getLocEnd());
+      AssociatedStmt.get(), D->getLocStart(), D->getLocEnd(), HasDependClause);
 }
 
 template <typename Derived>

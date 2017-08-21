@@ -1946,6 +1946,8 @@ class DSAAttrChecker : public StmtVisitor<DSAAttrChecker, void> {
   CapturedStmt *CS;
   llvm::SmallVector<Expr *, 8> ImplicitFirstprivate;
   llvm::DenseMap<ValueDecl *, Expr *> VarsWithInheritedDSA;
+  llvm::SmallVector<Expr *, 8> ImplicitlyMappedVars;
+  bool RequiresImplicitMaps;
 
 public:
   void VisitDeclRefExpr(DeclRefExpr *E) {
@@ -1962,8 +1964,41 @@ public:
       if (DVar.RefExpr)
         return;
 
-      auto ELoc = E->getExprLoc();
       auto DKind = Stack->getCurrentDirective();
+      if (RequiresImplicitMaps) {
+        if (!(Stack->checkMappableExprComponentListsForDecl(
+                VD,
+                /* CurrentRegionOnly = */ true,
+                [](OMPClauseMappableExprCommon::MappableExprComponentListRef,
+                   OpenMPClauseKind) { return true; }))) {
+          auto *DeclRef =
+              SemaRef
+                  .BuildDeclRefExpr(VD, E->getType(), E->getValueKind(),
+                                    E->getExprLoc())
+                  .get();
+          bool CapturedByRef = true;
+          for (const auto &I : CS->captures()) {
+            if (!I.capturesVariableByCopy())
+              continue;
+
+            // This does not handle variable redeclarations. This should be
+            // extended to capture variables with redeclarations, for example
+            // a thread-private variable in OpenMP.
+            if (I.getCapturedVar() == VD) {
+              CapturedByRef = false;
+              break;
+            }
+          }
+
+          if (CapturedByRef)
+            ImplicitlyMappedVars.emplace_back(DeclRef);
+          else
+            ImplicitFirstprivate.emplace_back(DeclRef);
+          return;
+        }
+      }
+
+      auto ELoc = E->getExprLoc();
       // The default(none) clause requires that each variable that is referenced
       // in the construct, and does not have a predetermined data-sharing
       // attribute, must have its data-sharing attribute explicitly determined
@@ -2006,6 +2041,15 @@ public:
       return;
     if (isa<CXXThisExpr>(E->getBase()->IgnoreParens())) {
       if (auto *FD = dyn_cast<FieldDecl>(E->getMemberDecl())) {
+        if (!(Stack->checkMappableExprComponentListsForDecl(
+                FD,
+                /* CurrentRegionOnly = */ true,
+                [](OMPClauseMappableExprCommon::MappableExprComponentListRef,
+                   OpenMPClauseKind) { return true; }))) {
+          ImplicitlyMappedVars.emplace_back(E);
+          return;
+        }
+
         auto DVar = Stack->getTopDSA(FD, false);
         // Check if the variable has explicit DSA set and stop analysis if it
         // so.
@@ -2062,16 +2106,20 @@ public:
 
   bool isErrorFound() { return ErrorFound; }
   ArrayRef<Expr *> getImplicitFirstprivate() { return ImplicitFirstprivate; }
+  ArrayRef<Expr *> getImplicitlyMappedVars() { return ImplicitlyMappedVars; }
   llvm::DenseMap<ValueDecl *, Expr *> &getVarsWithInheritedDSA() {
     return VarsWithInheritedDSA;
   }
 
-  DSAAttrChecker(DSAStackTy *S, Sema &SemaRef, CapturedStmt *CS)
-      : Stack(S), SemaRef(SemaRef), ErrorFound(false), CS(CS) {}
+  DSAAttrChecker(DSAStackTy *S, Sema &SemaRef, CapturedStmt *CS,
+                 bool RequiresImplicitMaps)
+      : Stack(S), SemaRef(SemaRef), ErrorFound(false), CS(CS),
+        RequiresImplicitMaps(RequiresImplicitMaps) {}
 };
 } // namespace
 
-void Sema::ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope) {
+void Sema::ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope,
+                                  bool HasDependClause) {
   switch (DKind) {
   case OMPD_parallel:
   case OMPD_parallel_for:
@@ -2120,7 +2168,6 @@ void Sema::ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope) {
   case OMPD_ordered:
   case OMPD_atomic:
   case OMPD_target_data:
-  case OMPD_target:
   case OMPD_target_simd: {
     Sema::CapturedParamNameType Params[] = {
         std::make_pair(StringRef(), QualType()) // __context with shared vars
@@ -2129,6 +2176,41 @@ void Sema::ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope) {
                              Params);
     break;
   }
+  case OMPD_target: {
+    if (HasDependClause) {
+      // special handling for depend clause
+      QualType KmpInt32Ty = Context.getIntTypeForBitwidth(32, 1);
+      QualType Args[] = {Context.VoidPtrTy.withConst().withRestrict()};
+      FunctionProtoType::ExtProtoInfo EPI;
+      EPI.Variadic = true;
+      QualType CopyFnType = Context.getFunctionType(Context.VoidTy, Args, EPI);
+      Sema::CapturedParamNameType Params[] = {
+          std::make_pair(".global_tid.", KmpInt32Ty),
+          std::make_pair(".part_id.", Context.getPointerType(KmpInt32Ty)),
+          std::make_pair(".privates.", Context.VoidPtrTy.withConst()),
+          std::make_pair(".copy_fn.",
+                         Context.getPointerType(CopyFnType).withConst()),
+          std::make_pair(".task_t.", Context.VoidPtrTy.withConst()),
+          std::make_pair(StringRef(), QualType()) // __context with shared vars
+      };
+      ActOnCapturedRegionStart(DSAStack->getConstructLoc(), CurScope, CR_OpenMP,
+                               Params);
+      // Mark this captured region as inlined, because we don't use outlined
+      // function directly.
+      getCurCapturedRegion()->TheCapturedDecl->addAttr(
+          AlwaysInlineAttr::CreateImplicit(
+              Context, AlwaysInlineAttr::Keyword_forceinline, SourceRange()));
+    } else {
+      Sema::CapturedParamNameType Params[] = {
+          std::make_pair(StringRef(), QualType()) // __context with shared vars
+      };
+
+      ActOnCapturedRegionStart(DSAStack->getConstructLoc(), CurScope, CR_OpenMP,
+                               Params);
+    }
+    break;
+  }
+
   case OMPD_task: {
     QualType KmpInt32Ty = Context.getIntTypeForBitwidth(32, 1);
     QualType Args[] = {Context.VoidPtrTy.withConst().withRestrict()};
@@ -2687,7 +2769,8 @@ static bool checkIfClauses(Sema &S, OpenMPDirectiveKind Kind,
 StmtResult Sema::ActOnOpenMPExecutableDirective(
     OpenMPDirectiveKind Kind, const DeclarationNameInfo &DirName,
     OpenMPDirectiveKind CancelRegion, ArrayRef<OMPClause *> Clauses,
-    Stmt *AStmt, SourceLocation StartLoc, SourceLocation EndLoc) {
+    Stmt *AStmt, SourceLocation StartLoc, SourceLocation EndLoc,
+    bool HasDependClause) {
   StmtResult Res = StmtError();
   if (CheckNestingOfRegions(*this, DSAStack, Kind, DirName, CancelRegion,
                             StartLoc))
@@ -2700,14 +2783,21 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
   if (AStmt) {
     assert(isa<CapturedStmt>(AStmt) && "Captured statement expected");
 
+    // do we need to create implicit maps for all implicitly captured vars?
+    bool requiresImplicitMaps = (Kind == OMPD_target && HasDependClause);
+
     // Check default data sharing attributes for referenced variables.
-    DSAAttrChecker DSAChecker(DSAStack, *this, cast<CapturedStmt>(AStmt));
+    DSAAttrChecker DSAChecker(DSAStack, *this, cast<CapturedStmt>(AStmt),
+                              requiresImplicitMaps);
     DSAChecker.Visit(cast<CapturedStmt>(AStmt)->getCapturedStmt());
     if (DSAChecker.isErrorFound())
       return StmtError();
     // Generate list of implicitly defined firstprivate variables.
     VarsWithInheritedDSA = DSAChecker.getVarsWithInheritedDSA();
 
+    SmallVector<Expr *, 4> ImplicitlyMappedVars(
+        DSAChecker.getImplicitlyMappedVars().begin(),
+        DSAChecker.getImplicitlyMappedVars().end());
     SmallVector<Expr *, 4> ImplicitFirstprivates(
         DSAChecker.getImplicitFirstprivate().begin(),
         DSAChecker.getImplicitFirstprivate().end());
@@ -2726,6 +2816,18 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
         ClausesWithImplicit.push_back(Implicit);
         ErrorFound = cast<OMPFirstprivateClause>(Implicit)->varlist_size() !=
                      ImplicitFirstprivates.size();
+      } else
+        ErrorFound = true;
+    }
+    // TODO: add combined constructs
+    if (requiresImplicitMaps && !ImplicitlyMappedVars.empty()) {
+      if (OMPClause *Implicit = ActOnOpenMPMapClause(
+              OMPC_MAP_unknown, OMPC_MAP_tofrom, /* IsMapTypeImplicit = */ true,
+              SourceLocation(), SourceLocation(), ImplicitlyMappedVars,
+              SourceLocation(), SourceLocation(), SourceLocation())) {
+        ClausesWithImplicit.push_back(Implicit);
+        ErrorFound |= cast<OMPMapClause>(Implicit)->varlist_size() !=
+                      ImplicitlyMappedVars.size();
       } else
         ErrorFound = true;
     }

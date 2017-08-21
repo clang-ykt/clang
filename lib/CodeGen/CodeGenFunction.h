@@ -2639,7 +2639,9 @@ public:
   /// and initializes them with the values according to OpenMP standard.
   ///
   /// \param D Directive (possibly) with the 'linear' clause.
-  void EmitOMPLinearClauseInit(const OMPLoopDirective &D);
+  /// \return true if at least one linear variable is found that should be
+  /// initialized with the value of the original variable, false otherwise.
+  bool EmitOMPLinearClauseInit(const OMPLoopDirective &D);
 
   typedef const llvm::function_ref<void(CodeGenFunction & /*CGF*/,
                                         llvm::Value * /*OutlinedFn*/,
@@ -2647,7 +2649,8 @@ public:
       TaskGenTy;
   void EmitOMPTaskBasedDirective(const OMPExecutableDirective &S,
                                  const RegionCodeGenTy &BodyGen,
-                                 const TaskGenTy &TaskGen, OMPTaskDataTy &Data);
+                                 const TaskGenTy &TaskGen, OMPTaskDataTy &Data,
+                                 unsigned MapSize = 0);
 
   void EmitOMPParallelDirective(const OMPParallelDirective &S);
   void EmitOMPSimdDirective(const OMPSimdDirective &S);
