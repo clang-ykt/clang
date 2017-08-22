@@ -4576,12 +4576,12 @@ static void emitPrivatesInit(CodeGenFunction &CGF,
       cast<CapturedStmt>(*D.getAssociatedStmt()));
   FI = cast<RecordDecl>(FI->getType()->getAsTagDecl())->field_begin();
   for (auto &&Pair : Privates) {
-    auto *VD = Pair.second.PrivateCopy;
-    auto *Init = VD->getAnyInitializer();
-
     // skip all implicit param decl for map arrays
     if (Pair.second.IsImplicitPrivate)
       break;
+    auto *VD = Pair.second.PrivateCopy;
+    auto *Init = VD->getAnyInitializer();
+
     if (Init && (!ForDup || (isa<CXXConstructExpr>(Init) &&
                              !CGF.isTrivialInitializer(Init)))) {
       LValue PrivateLValue = CGF.EmitLValueForField(PrivatesBase, *FI);
