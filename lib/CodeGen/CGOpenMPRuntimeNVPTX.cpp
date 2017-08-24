@@ -2322,9 +2322,13 @@ CGOpenMPRuntimeNVPTX::outlineTargetDirective(const OMPExecutableDirective &D,
   CodeGenFunction WrapperCGF(CGM, /*suppressNewContext=*/true);
   auto &Ctx = WrapperCGF.getContext();
   const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  // When a target region has a depend clause, generate a new task
+  // that contains the target region invocation, instead of generating it in
+  // place. The task will take care of the depend logic.
+  bool HasDependClause = D.hasClausesOfKind<OMPDependClause>();
   bool UseCapturedArgumentsOnly =
       isOpenMPParallelDirective(D.getDirectiveKind()) ||
-      isOpenMPTeamsDirective(D.getDirectiveKind());
+      isOpenMPTeamsDirective(D.getDirectiveKind()) || HasDependClause;
   FunctionArgList Args;
   WrapperCGF.GenerateOpenMPCapturedStmtParameters(
       CS, UseCapturedArgumentsOnly, /*CaptureLevel=*/1, /*ImplicitParamStop=*/0,
