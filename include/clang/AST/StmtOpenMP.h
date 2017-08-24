@@ -1953,6 +1953,67 @@ public:
   }
 };
 
+/// \brief This represents '#pragma omp lastprivate_update' directive.
+///
+/// \code
+/// #pragma omp lastprivate_update(a,b)
+/// \endcode
+/// In this example directive '#pragma omp lastprivate_update' has 2 arguments-
+/// variables 'a' and 'b'.
+/// 'omp lastprivate_update' directive does not have clauses but have an
+/// optional list of variables to update. This list of variables is stored
+/// within some fake clause LastprivateUpdateClause.
+class OMPLastprivateUpdateDirective : public OMPExecutableDirective {
+  friend class ASTStmtReader;
+  /// \brief Build directive with the given start and end location.
+  ///
+  /// \param StartLoc Starting location of the directive kind.
+  /// \param EndLoc Ending location of the directive.
+  /// \param NumClauses Number of clauses.
+  ///
+  OMPLastprivateUpdateDirective(SourceLocation StartLoc, SourceLocation EndLoc,
+                                unsigned NumClauses)
+      : OMPExecutableDirective(this, OMPLastprivateUpdateDirectiveClass,
+                               OMPD_lastprivate_update, StartLoc, EndLoc,
+                               NumClauses, 1) {}
+
+  /// \brief Build an empty directive.
+  ///
+  /// \param NumClauses Number of clauses.
+  ///
+  explicit OMPLastprivateUpdateDirective(unsigned NumClauses)
+      : OMPExecutableDirective(this, OMPLastprivateUpdateDirectiveClass,
+                               OMPD_lastprivate_update, SourceLocation(),
+                               SourceLocation(), NumClauses, 1) {}
+
+public:
+  /// \brief Creates directive with a list of \a Clauses.
+  ///
+  /// \param C AST context.
+  /// \param StartLoc Starting location of the directive kind.
+  /// \param EndLoc Ending Location of the directive.
+  /// \param Clauses List of clauses (only single
+  /// OMPLastprivateUpdateClause clause is allowed).
+  /// \param AssociatedStmt Statement, associated with the directive.
+  ///
+  static OMPLastprivateUpdateDirective *
+  Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation EndLoc,
+         ArrayRef<OMPClause *> Clauses, Stmt *AssociatedStmt);
+
+  /// \brief Creates an empty directive with the place for \a NumClauses
+  /// clauses.
+  ///
+  /// \param C AST context.
+  /// \param NumClauses Number of clauses.
+  ///
+  static OMPLastprivateUpdateDirective *
+  CreateEmpty(const ASTContext &C, unsigned NumClauses, EmptyShell);
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == OMPLastprivateUpdateDirectiveClass;
+  }
+};
+
 /// \brief This represents '#pragma omp ordered' directive.
 ///
 /// \code

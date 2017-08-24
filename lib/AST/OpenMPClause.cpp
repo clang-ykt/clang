@@ -77,6 +77,7 @@ const OMPClauseWithPreInit *OMPClauseWithPreInit::get(const OMPClause *C) {
   case OMPC_mergeable:
   case OMPC_threadprivate:
   case OMPC_flush:
+  case OMPC_lastprivate_update:
   case OMPC_read:
   case OMPC_write:
   case OMPC_update:
@@ -144,6 +145,7 @@ const OMPClauseWithPostUpdate *OMPClauseWithPostUpdate::get(const OMPClause *C) 
   case OMPC_mergeable:
   case OMPC_threadprivate:
   case OMPC_flush:
+  case OMPC_lastprivate_update:
   case OMPC_read:
   case OMPC_write:
   case OMPC_update:
@@ -532,6 +534,23 @@ OMPFlushClause *OMPFlushClause::Create(const ASTContext &C,
 OMPFlushClause *OMPFlushClause::CreateEmpty(const ASTContext &C, unsigned N) {
   void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(N));
   return new (Mem) OMPFlushClause(N);
+}
+
+OMPLastprivateUpdateClause *
+OMPLastprivateUpdateClause::Create(const ASTContext &C, SourceLocation StartLoc,
+                                   SourceLocation LParenLoc,
+                                   SourceLocation EndLoc, ArrayRef<Expr *> VL) {
+  void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(VL.size() + 1));
+  OMPLastprivateUpdateClause *Clause = new (Mem)
+      OMPLastprivateUpdateClause(StartLoc, LParenLoc, EndLoc, VL.size());
+  Clause->setVarRefs(VL);
+  return Clause;
+}
+
+OMPLastprivateUpdateClause *
+OMPLastprivateUpdateClause::CreateEmpty(const ASTContext &C, unsigned N) {
+  void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(N));
+  return new (Mem) OMPLastprivateUpdateClause(N);
 }
 
 OMPDependClause *OMPDependClause::Create(

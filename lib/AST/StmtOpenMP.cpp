@@ -657,6 +657,30 @@ OMPFlushDirective *OMPFlushDirective::CreateEmpty(const ASTContext &C,
   return new (Mem) OMPFlushDirective(NumClauses);
 }
 
+OMPLastprivateUpdateDirective *OMPLastprivateUpdateDirective::Create(
+    const ASTContext &C, SourceLocation StartLoc, SourceLocation EndLoc,
+    ArrayRef<OMPClause *> Clauses, Stmt *AssociatedStmt) {
+  unsigned Size = llvm::alignTo(sizeof(OMPLastprivateUpdateDirective),
+                                alignof(OMPClause *));
+  void *Mem =
+      C.Allocate(Size + sizeof(Stmt *) + sizeof(OMPClause *) * Clauses.size());
+  OMPLastprivateUpdateDirective *Dir =
+      new (Mem) OMPLastprivateUpdateDirective(StartLoc, EndLoc, Clauses.size());
+  Dir->setClauses(Clauses);
+  Dir->setAssociatedStmt(AssociatedStmt);
+  return Dir;
+}
+
+OMPLastprivateUpdateDirective *
+OMPLastprivateUpdateDirective::CreateEmpty(const ASTContext &C,
+                                           unsigned NumClauses, EmptyShell) {
+  unsigned Size = llvm::alignTo(sizeof(OMPLastprivateUpdateDirective),
+                                alignof(OMPClause *));
+  void *Mem =
+      C.Allocate(Size + sizeof(Stmt *) + sizeof(OMPClause *) * NumClauses);
+  return new (Mem) OMPLastprivateUpdateDirective(NumClauses);
+}
+
 OMPOrderedDirective *OMPOrderedDirective::Create(const ASTContext &C,
                                                  SourceLocation StartLoc,
                                                  SourceLocation EndLoc,

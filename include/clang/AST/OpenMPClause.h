@@ -2604,6 +2604,76 @@ public:
   }
 };
 
+/// \brief This represents implicit clause 'update' for the (future)
+/// '#pragma omp lastprivate_update' directive.
+/// This clause does not exist by itself, it can be only as a part of 'omp
+/// lastprivate_update' directive. This clause is introduced to keep the
+/// original structure of \a OMPExecutableDirective class and its derivatives
+/// and to use the existing infrastructure of clauses with the list of
+/// variables.
+///
+/// \code
+/// #pragma omp lastprivate_update(a,b)
+/// \endcode
+/// In this example directive '#pragma omp lastprivate_update' has implicit
+/// clause 'update' with the variables 'a' and 'b'.
+///
+class OMPLastprivateUpdateClause final
+    : public OMPVarListClause<OMPLastprivateUpdateClause>,
+      private llvm::TrailingObjects<OMPLastprivateUpdateClause, Expr *> {
+  friend TrailingObjects;
+  friend OMPVarListClause;
+  /// \brief Build clause with number of variables \a N.
+  ///
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  /// \param N Number of the variables in the clause.
+  ///
+  OMPLastprivateUpdateClause(SourceLocation StartLoc, SourceLocation LParenLoc,
+                             SourceLocation EndLoc, unsigned N)
+      : OMPVarListClause<OMPLastprivateUpdateClause>(
+            OMPC_lastprivate_update, StartLoc, LParenLoc, EndLoc, N) {}
+
+  /// \brief Build an empty clause.
+  ///
+  /// \param N Number of variables.
+  ///
+  explicit OMPLastprivateUpdateClause(unsigned N)
+      : OMPVarListClause<OMPLastprivateUpdateClause>(
+            OMPC_lastprivate_update, SourceLocation(), SourceLocation(),
+            SourceLocation(), N) {}
+
+public:
+  /// \brief Creates clause with a list of variables \a VL.
+  ///
+  /// \param C AST context.
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  /// \param VL List of references to the variables.
+  ///
+  static OMPLastprivateUpdateClause *
+  Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation LParenLoc,
+         SourceLocation EndLoc, ArrayRef<Expr *> VL);
+  /// \brief Creates an empty clause with \a N variables.
+  ///
+  /// \param C AST context.
+  /// \param N The number of variables.
+  ///
+  static OMPLastprivateUpdateClause *CreateEmpty(const ASTContext &C,
+                                                 unsigned N);
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
+                       reinterpret_cast<Stmt **>(varlist_end()));
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_lastprivate_update;
+  }
+};
+
 /// \brief This represents implicit clause 'depend' for the '#pragma omp task'
 /// and '#pragma omp taskwait' directives.
 ///

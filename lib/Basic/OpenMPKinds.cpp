@@ -50,7 +50,7 @@ OpenMPClauseKind clang::getOpenMPClauseKind(StringRef Str) {
   // clause for 'flush' directive. If the 'flush' clause is explicitly specified
   // the Parser should generate a warning about extra tokens at the end of the
   // directive.
-  if (Str == "flush")
+  if (Str == "flush" || Str == "lastprivate_update")
     return OMPC_unknown;
   return llvm::StringSwitch<OpenMPClauseKind>(Str)
 #define OPENMP_CLAUSE(Name, Class) .Case(#Name, OMPC_##Name)
@@ -150,6 +150,7 @@ unsigned clang::getOpenMPSimpleClauseType(OpenMPClauseKind Kind,
   case OMPC_untied:
   case OMPC_mergeable:
   case OMPC_flush:
+  case OMPC_lastprivate_update:
   case OMPC_read:
   case OMPC_write:
   case OMPC_update:
@@ -302,6 +303,7 @@ const char *clang::getOpenMPSimpleClauseTypeName(OpenMPClauseKind Kind,
   case OMPC_untied:
   case OMPC_mergeable:
   case OMPC_flush:
+  case OMPC_lastprivate_update:
   case OMPC_read:
   case OMPC_write:
   case OMPC_update:
@@ -436,6 +438,9 @@ bool clang::isAllowedClauseForDirective(OpenMPDirectiveKind DKind,
     break;
   case OMPD_flush:
     return CKind == OMPC_flush;
+    break;
+  case OMPD_lastprivate_update:
+    return CKind == OMPC_lastprivate_update;
     break;
   case OMPD_atomic:
     switch (CKind) {
@@ -907,4 +912,8 @@ bool clang::requiresAdditionalIterationVar(OpenMPDirectiveKind DKind) {
          DKind == OMPD_target_teams_distribute_simd ||
          DKind == OMPD_teams_distribute_parallel_for_simd;
   // TODO add more directives if we detect any other cases.
+}
+
+bool clang::isOpenMPConditionalLastprivateDirective(OpenMPDirectiveKind DKind) {
+  return DKind == OMPD_for;
 }
