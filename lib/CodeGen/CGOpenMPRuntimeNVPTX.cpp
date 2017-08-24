@@ -5210,7 +5210,97 @@ static llvm::Value *CreateRuntimeShuffleFunction(CodeGenFunction &CGF,
   FnArgs.push_back(Offset);
   FnArgs.push_back(Bld.getInt16(DS_Max_Worker_Warp_Size));
 
-  return CGF.EmitRuntimeCall(RTLFn, FnArgs);
+  llvm::Value *ShuffledVal =
+      CGF.EmitCallOrInvoke(RTLFn, FnArgs).getInstruction();
+  return Bld.CreateTruncOrBitCast(ShuffledVal,
+                                  CGF.ConvertTypeForMem(ShuffleTy));
+}
+
+static void CopyReductionVariable(
+    CodeGenFunction &CGF, QualType Ty, Address Src, Address Dest,
+    const llvm::function_ref<void(QualType Ty, Address, Address)>
+        &ScalarCopyMaker,
+    const llvm::function_ref<void(unsigned, llvm::Value *, llvm::Value *,
+                                  llvm::Value *)> &ArrayElementCopyMaker) {
+  if (Ty->isScalarType()) {
+    ScalarCopyMaker(Ty, Src, Dest);
+  } else {
+    auto &&LoopGen = [&CGF](
+        unsigned LoopLB, unsigned LoopUB,
+        const llvm::function_ref<void(unsigned, llvm::Value *, llvm::Value *,
+                                      llvm::Value *)> &CopyMaker,
+        unsigned ElementSize, llvm::Value *Src, llvm::Value *Dest) {
+      auto &Bld = CGF.Builder;
+      llvm::BasicBlock *LoopBB = CGF.createBasicBlock("copy.loop");
+      llvm::BasicBlock *ContBB = CGF.createBasicBlock("copy.loop.end");
+
+      auto Int64Ty = CGF.CGM.getContext().getIntTypeForBitwidth(
+          /*DestWidth=*/64, /*Signed=*/false);
+      Address Idx = CGF.CreateMemTemp(Int64Ty, "loop.idx");
+      Address UB = CGF.CreateMemTemp(Int64Ty, "loop.ub");
+      CGF.EmitStoreOfScalar(Bld.getInt64(LoopLB), Idx, /*Volatile=*/false,
+                            Int64Ty);
+      CGF.EmitStoreOfScalar(Bld.getInt64(LoopUB), UB, /*Volatile=*/false,
+                            Int64Ty);
+
+      CGF.EmitBlock(LoopBB);
+      llvm::Value *IdxVal = CGF.EmitLoadOfScalar(Idx, /*Volatile=*/false,
+                                                 Int64Ty, SourceLocation());
+      CopyMaker(ElementSize, Src, Dest, IdxVal);
+
+      llvm::Value *IdxIncr = Bld.CreateNUWAdd(IdxVal, Bld.getInt64(1));
+      CGF.EmitStoreOfScalar(IdxIncr, Idx, /*Volatile=*/false, Int64Ty);
+      llvm::Value *UBVal = CGF.EmitLoadOfScalar(UB, /*Volatile=*/false, Int64Ty,
+                                                SourceLocation());
+      llvm::Value *AtEnd = Bld.CreateICmpEQ(IdxIncr, UBVal, "copy.loop.atend");
+      Bld.CreateCondBr(AtEnd, ContBB, LoopBB);
+
+      CGF.EmitBlock(ContBB);
+    };
+    auto &Bld = CGF.Builder;
+    unsigned Bytes = CGF.getContext().getTypeSizeInChars(Ty).getQuantity();
+    unsigned Words = Bytes / 8;
+    // Shuffle chunks of 64-bit words.
+    if (Words > 0) {
+      auto *ArrayTy = CGF.CGM.Int64Ty->getPointerTo();
+      auto *SrcCast = Bld.CreatePointerCast(Src.getPointer(), ArrayTy);
+      auto *DestCast = Bld.CreatePointerCast(Dest.getPointer(), ArrayTy);
+      LoopGen(0, Words, ArrayElementCopyMaker, /*ElementSize=*/64, SrcCast,
+              DestCast);
+    }
+
+    // Shuffle one remainder of 32 bits.
+    unsigned Remainder = Bytes % 8;
+    if (Remainder >= 4) {
+      unsigned HalfWords = Bytes / 4;
+      auto *ArrayTy = CGF.CGM.Int32Ty->getPointerTo();
+      auto *SrcCast = Bld.CreatePointerCast(Src.getPointer(), ArrayTy);
+      auto *DestCast = Bld.CreatePointerCast(Dest.getPointer(), ArrayTy);
+      ArrayElementCopyMaker(/*ElementSize=*/32, SrcCast, DestCast,
+                            Bld.getInt64(HalfWords - 1));
+      Remainder -= 4;
+    }
+
+    // Shuffle one remainder of 16 bits.
+    if (Remainder >= 2) {
+      unsigned ShortWords = Bytes / 2;
+      auto *ArrayTy = CGF.CGM.Int16Ty->getPointerTo();
+      auto *SrcCast = Bld.CreatePointerCast(Src.getPointer(), ArrayTy);
+      auto *DestCast = Bld.CreatePointerCast(Dest.getPointer(), ArrayTy);
+      ArrayElementCopyMaker(/*ElementSize=*/16, SrcCast, DestCast,
+                            Bld.getInt64(ShortWords - 1));
+      Remainder -= 2;
+    }
+
+    // Shuffle one remainder of 8 bits.
+    if (Remainder) {
+      auto *ArrayTy = CGF.CGM.Int8Ty->getPointerTo();
+      auto *SrcCast = Bld.CreatePointerCast(Src.getPointer(), ArrayTy);
+      auto *DestCast = Bld.CreatePointerCast(Dest.getPointer(), ArrayTy);
+      ArrayElementCopyMaker(/*ElementSize=*/8, SrcCast, DestCast,
+                            Bld.getInt64(Bytes - 1));
+    }
+  }
 }
 
 static void EmitDirectionSpecializedReduceDataCopy(
@@ -5350,10 +5440,55 @@ static void EmitDirectionSpecializedReduceDataCopy(
     // element as this is required in all directions
     SrcElementAddr = Bld.CreateElementBitCast(
         SrcElementAddr, CGF.ConvertTypeForMem(Private->getType()));
-    llvm::Value *Elem =
-        CGF.EmitLoadOfScalar(SrcElementAddr, /*Volatile=*/false,
-                             Private->getType(), SourceLocation());
 
+    if (Direction == Shuffle_To_ReduceData) {
+      // Shuffle a variable from another lane.
+      auto &&ScalarCopyMaker = [&CGF, OffsetVal](QualType Ty, Address Src,
+                                                 Address Dest) {
+        llvm::Value *Elem =
+            CGF.EmitLoadOfScalar(Src, /*Volatile=*/false, Ty, SourceLocation());
+        llvm::Value *ShuffledVal =
+            CreateRuntimeShuffleFunction(CGF, Ty, Elem, OffsetVal);
+        CGF.EmitStoreOfScalar(ShuffledVal, Dest, /*Volatile=*/false, Ty);
+      };
+      auto &&ArrayElementCopyMaker = [&CGF, &C, &Bld, OffsetVal](
+          unsigned ElementSize, llvm::Value *Src, llvm::Value *Dest,
+          llvm::Value *Idx) {
+        auto ShuffleTy = C.getIntTypeForBitwidth(/*DestWidth*/ ElementSize,
+                                                 /*Signed*/ false);
+        Address SrcElementPtr(Bld.CreateGEP(Src, Idx),
+                              C.getTypeAlignInChars(ShuffleTy));
+        llvm::Value *SrcElement = CGF.EmitLoadOfScalar(
+            SrcElementPtr, /*Volatile=*/false, ShuffleTy, SourceLocation());
+        llvm::Value *ShuffledVal =
+            CreateRuntimeShuffleFunction(CGF, ShuffleTy, SrcElement, OffsetVal);
+        Address DestElementPtr(Bld.CreateGEP(Dest, Idx),
+                               C.getTypeAlignInChars(ShuffleTy));
+        CGF.EmitStoreOfScalar(ShuffledVal, DestElementPtr, /*Volatile=*/false,
+                              ShuffleTy);
+      };
+      CopyReductionVariable(CGF, Private->getType(), SrcElementAddr,
+                            DestElementAddr, ScalarCopyMaker,
+                            ArrayElementCopyMaker);
+    } else {
+      // Copy a variable from memory.  Use 'memcpy' for structures.
+      if (Private->getType()->isScalarType()) {
+        llvm::Value *Elem =
+            CGF.EmitLoadOfScalar(SrcElementAddr, /*Volatile=*/false,
+                                 Private->getType(), SourceLocation());
+        // Just store the element value we have already obtained to dest element
+        // address.
+        CGF.EmitStoreOfScalar(Elem, DestElementAddr, /*Volatile=*/false,
+                              Private->getType());
+      } else {
+        unsigned Bytes = CGF.getContext()
+                             .getTypeSizeInChars(Private->getType())
+                             .getQuantity();
+        Bld.CreateMemCpy(DestElementAddr, SrcElementAddr, Bytes);
+      }
+    }
+
+#if 0
 // Step 2.1 create individual load (potentially with shuffle) and stores
 // for each ReduceData Element and ReduceData subelement.
 
@@ -5409,6 +5544,7 @@ static void EmitDirectionSpecializedReduceDataCopy(
                           Private->getType());
 #if 0
     }
+#endif
 #endif
 
     // Step 3.1 modify reference in Dest ReduceData as needed.
@@ -5732,6 +5868,10 @@ static llvm::Value *EmitInterWarpCopyFunction(CodeGenModule &CGM,
   auto *LaneId = GetNVPTXThreadWarpID(CGF);
   // nvptx_warp_id = nvptx_id / 32
   auto *WarpId = GetNVPTXWarpID(CGF);
+  // get WarpNumNeeded as a function parameter
+  Address AddrWarpNumArg = CGF.GetAddrOfLocalVar(&WarpNumArg);
+  llvm::Value *WarpNumVal = CGF.EmitLoadOfScalar(
+      AddrWarpNumArg, /*Volatile=*/false, C.IntTy, SourceLocation());
   // SrcDataAddr = <reduce_data_type> (*reduce_data)
   Address AddrReduceDataArg = CGF.GetAddrOfLocalVar(&ReduceDataArg);
   Address SrcDataAddr(
@@ -5743,15 +5883,6 @@ static llvm::Value *EmitInterWarpCopyFunction(CodeGenModule &CGM,
 
   unsigned Idx = 0;
   for (auto &Private : Privates) {
-    llvm::BasicBlock *ThenBB = CGF.createBasicBlock("then");
-    llvm::BasicBlock *ElseBB = CGF.createBasicBlock("else");
-    llvm::BasicBlock *MergeBB = CGF.createBasicBlock("ifcont");
-
-    // if (lane_id == 0)
-    auto IsWarpMaster = Bld.CreateICmpEQ(LaneId, Bld.getInt32(0), "ifcond");
-    Bld.CreateCondBr(IsWarpMaster, ThenBB, ElseBB);
-    CGF.EmitBlock(ThenBB);
-
     // elemptrptr =SrcDataAddr[i]
     Address ElemPtrPtrAddr =
         Bld.CreateConstArrayGEP(SrcDataAddr, Idx, CGF.getPointerSize());
@@ -5762,60 +5893,6 @@ static llvm::Value *EmitInterWarpCopyFunction(CodeGenModule &CGM,
         Address(ElemPtrPtr, C.getTypeAlignInChars(Private->getType()));
     ElemPtr = Bld.CreateElementBitCast(
         ElemPtr, CGF.ConvertTypeForMem(Private->getType()));
-    // elem = *elemptr
-    llvm::Value *Elem = CGF.EmitLoadOfScalar(
-        ElemPtr, /*Volatile=*/false, Private->getType(), SourceLocation());
-
-    // MediumPtr = &shared[warp_id]
-    llvm::Value *MediumPtrVal = Bld.CreateInBoundsGEP(
-        Gbl, {llvm::Constant::getNullValue(CGM.Int64Ty), WarpId});
-    Address MediumPtr(MediumPtrVal, C.getTypeAlignInChars(Private->getType()));
-    // Casting to actual data type.
-    // MediumPtr = (type[i]*)MediumPtrAddr;
-    MediumPtr = Bld.CreateElementBitCast(
-        MediumPtr, CGF.ConvertTypeForMem(Private->getType()));
-
-    //*MediumPtr = elem
-    Bld.CreateStore(Elem, MediumPtr);
-
-    Bld.CreateBr(MergeBB);
-
-    CGF.EmitBlock(ElseBB);
-    Bld.CreateBr(MergeBB);
-    CGF.EmitBlock(MergeBB);
-
-    // get WarpNumNeeded as a function parameter
-    Address AddrWarpNumArg = CGF.GetAddrOfLocalVar(&WarpNumArg);
-    llvm::Value *WarpNumVal = CGF.EmitLoadOfScalar(
-        AddrWarpNumArg, /*Volatile=*/false, C.IntTy, SourceLocation());
-
-    // num_thread_to_synchronize = warpNumNeeded * 32
-    auto *NumThreadActive =
-        Bld.CreateNSWMul(WarpNumVal, Bld.getInt32(DS_Max_Worker_Warp_Size),
-                         "num_thread_to_synchronize");
-    // named_barrier_sync(num_thread_to_synchronize)
-    GetNVPTXBarrier(CGF, PARALLEL_BARRIER, NumThreadActive);
-
-    llvm::BasicBlock *ThenBB2 = CGF.createBasicBlock("then");
-    llvm::BasicBlock *ElseBB2 = CGF.createBasicBlock("else");
-    llvm::BasicBlock *MergeBB2 = CGF.createBasicBlock("ifcont");
-
-    // if threadId < WarpNeeded
-    auto IsActiveThread = Bld.CreateICmpULT(ThreadId, WarpNumVal, "ifcond");
-    Bld.CreateCondBr(IsActiveThread, ThenBB2, ElseBB2);
-
-    CGF.EmitBlock(ThenBB2);
-
-    // SrcMediumPtr = &shared[tid]
-    llvm::Value *SrcMediumPtrVal = Bld.CreateInBoundsGEP(
-        Gbl, {llvm::Constant::getNullValue(CGM.Int64Ty), ThreadId});
-    Address SrcMediumPtr(SrcMediumPtrVal,
-                         C.getTypeAlignInChars(Private->getType()));
-    // SrcMediumVal = *SrcMediumPtr;
-    SrcMediumPtr = Bld.CreateElementBitCast(
-        SrcMediumPtr, CGF.ConvertTypeForMem(Private->getType()));
-    llvm::Value *SrcMediumValue = CGF.EmitLoadOfScalar(
-        SrcMediumPtr, /*Volatile=*/false, Private->getType(), SourceLocation());
 
     // TargetElemPtr = (type[i]*)(SrcDataAddr[i])
     Address TargetElemPtrPtr =
@@ -5827,20 +5904,116 @@ static llvm::Value *EmitInterWarpCopyFunction(CodeGenModule &CGM,
     TargetElemPtr = Bld.CreateElementBitCast(
         TargetElemPtr, CGF.ConvertTypeForMem(Private->getType()));
 
-    //*TargetElemPtr = SrcMediumVal;
-    CGF.EmitStoreOfScalar(SrcMediumValue, TargetElemPtr, /*Volatile=*/false,
-                          Private->getType());
+    auto &&CopyThruSharedMemory = [&CGF, &CGM, &C, &Bld, Gbl, ThreadId, LaneId,
+                                   WarpId, WarpNumVal](
+        QualType Ty, const llvm::function_ref<llvm::Value *()> &LoadScalarSrc,
+        const llvm::function_ref<void(llvm::Value *)> &StoreScalarTarget) {
+      llvm::BasicBlock *ThenBB = CGF.createBasicBlock("then");
+      llvm::BasicBlock *ElseBB = CGF.createBasicBlock("else");
+      llvm::BasicBlock *MergeBB = CGF.createBasicBlock("ifcont");
 
-    Bld.CreateBr(MergeBB2);
+      // if (lane_id == 0)
+      auto IsWarpMaster = Bld.CreateICmpEQ(LaneId, Bld.getInt32(0), "ifcond");
+      Bld.CreateCondBr(IsWarpMaster, ThenBB, ElseBB);
+      CGF.EmitBlock(ThenBB);
 
-    CGF.EmitBlock(ElseBB2);
-    Bld.CreateBr(MergeBB2);
+      // elem = *elemptr
+      llvm::Value *Elem = LoadScalarSrc();
 
-    CGF.EmitBlock(MergeBB2);
+      // MediumPtr = &shared[warp_id]
+      llvm::Value *MediumPtrVal = Bld.CreateInBoundsGEP(
+          Gbl, {llvm::Constant::getNullValue(CGM.Int64Ty), WarpId});
+      Address MediumPtr(MediumPtrVal, C.getTypeAlignInChars(Ty));
+      // Casting to actual data type.
+      // MediumPtr = (type[i]*)MediumPtrAddr;
+      MediumPtr =
+          Bld.CreateElementBitCast(MediumPtr, CGF.ConvertTypeForMem(Ty));
 
-    // While master warp copies values from shared memory, all other warps must
-    // wait.
-    GetNVPTXBarrier(CGF, PARALLEL_BARRIER, NumThreadActive);
+      //*MediumPtr = elem
+      Bld.CreateStore(Elem, MediumPtr);
+
+      Bld.CreateBr(MergeBB);
+
+      CGF.EmitBlock(ElseBB);
+      Bld.CreateBr(MergeBB);
+      CGF.EmitBlock(MergeBB);
+
+      // num_thread_to_synchronize = warpNumNeeded * 32
+      auto *NumThreadActive =
+          Bld.CreateNSWMul(WarpNumVal, Bld.getInt32(DS_Max_Worker_Warp_Size),
+                           "num_thread_to_synchronize");
+      // named_barrier_sync(num_thread_to_synchronize)
+      GetNVPTXBarrier(CGF, PARALLEL_BARRIER, NumThreadActive);
+
+      llvm::BasicBlock *ThenBB2 = CGF.createBasicBlock("then");
+      llvm::BasicBlock *ElseBB2 = CGF.createBasicBlock("else");
+      llvm::BasicBlock *MergeBB2 = CGF.createBasicBlock("ifcont");
+
+      // if threadId < WarpNeeded
+      auto IsActiveThread = Bld.CreateICmpULT(ThreadId, WarpNumVal, "ifcond");
+      Bld.CreateCondBr(IsActiveThread, ThenBB2, ElseBB2);
+
+      CGF.EmitBlock(ThenBB2);
+
+      // SrcMediumPtr = &shared[tid]
+      llvm::Value *SrcMediumPtrVal = Bld.CreateInBoundsGEP(
+          Gbl, {llvm::Constant::getNullValue(CGM.Int64Ty), ThreadId});
+      Address SrcMediumPtr(SrcMediumPtrVal, C.getTypeAlignInChars(Ty));
+      // SrcMediumVal = *SrcMediumPtr;
+      SrcMediumPtr =
+          Bld.CreateElementBitCast(SrcMediumPtr, CGF.ConvertTypeForMem(Ty));
+      llvm::Value *SrcMediumValue = CGF.EmitLoadOfScalar(
+          SrcMediumPtr, /*Volatile=*/false, Ty, SourceLocation());
+
+      //*TargetElemPtr = SrcMediumVal;
+      StoreScalarTarget(SrcMediumValue);
+
+      Bld.CreateBr(MergeBB2);
+
+      CGF.EmitBlock(ElseBB2);
+      Bld.CreateBr(MergeBB2);
+
+      CGF.EmitBlock(MergeBB2);
+
+      // While master warp copies values from shared memory, all other warps
+      // must wait.
+      GetNVPTXBarrier(CGF, PARALLEL_BARRIER, NumThreadActive);
+    };
+    auto &&ScalarCopyMaker = [&CGF, &CopyThruSharedMemory](
+        QualType Ty, Address Src, Address Dest) {
+      auto &&LoadSrc = [&CGF, &Ty, &Src]() -> llvm::Value * {
+        // elem = *elemptr
+        llvm::Value *Elem =
+            CGF.EmitLoadOfScalar(Src, /*Volatile=*/false, Ty, SourceLocation());
+        return Elem;
+      };
+      auto &&StoreTarget = [&CGF, &Ty, &Dest](llvm::Value *Val) {
+        //*TargetElemPtr = SrcMediumVal;
+        CGF.EmitStoreOfScalar(Val, Dest, /*Volatile=*/false, Ty);
+      };
+      CopyThruSharedMemory(Ty, LoadSrc, StoreTarget);
+    };
+    auto &&ArrayElementCopyMaker = [&CGF, &C, &Bld, &CopyThruSharedMemory](
+        unsigned ElementSize, llvm::Value *Src, llvm::Value *Dest,
+        llvm::Value *Idx) {
+      auto ElemTy = C.getIntTypeForBitwidth(/*DestWidth*/ ElementSize,
+                                            /*Signed*/ false);
+      auto &&LoadSrc = [&CGF, &C, &Bld, &ElemTy, &Src, Idx]() -> llvm::Value * {
+        Address ElemPtr(Bld.CreateGEP(Src, Idx), C.getTypeAlignInChars(ElemTy));
+        llvm::Value *Elem = CGF.EmitLoadOfScalar(ElemPtr, /*Volatile=*/false,
+                                                 ElemTy, SourceLocation());
+        return Elem;
+      };
+      auto &&StoreTarget = [&CGF, &C, &Bld, &ElemTy, &Dest,
+                            Idx](llvm::Value *Val) {
+        Address ElemPtr(Bld.CreateGEP(Dest, Idx),
+                        C.getTypeAlignInChars(ElemTy));
+        CGF.EmitStoreOfScalar(Val, ElemPtr, /*Volatile=*/false, ElemTy);
+      };
+      CopyThruSharedMemory(ElemTy, LoadSrc, StoreTarget);
+    };
+    CopyReductionVariable(CGF, Private->getType(), ElemPtr, TargetElemPtr,
+                          ScalarCopyMaker, ArrayElementCopyMaker);
     Idx++;
   }
 
@@ -6051,7 +6224,7 @@ EmitShuffleAndReduceFunction(CodeGenModule &CGM,
   llvm::BasicBlock *CpyThenBB = CGF.createBasicBlock("then");
   llvm::BasicBlock *CpyElseBB = CGF.createBasicBlock("else");
   llvm::BasicBlock *CpyMergeBB = CGF.createBasicBlock("ifcont");
-  Bld.CreateCondBr(CondCopy, CpyThenBB, CpyMergeBB);
+  Bld.CreateCondBr(CondCopy, CpyThenBB, CpyElseBB);
 
   CGF.EmitBlock(CpyThenBB);
   EmitDirectionSpecializedReduceDataCopy(ReduceData_To_ReduceData, CGF,
