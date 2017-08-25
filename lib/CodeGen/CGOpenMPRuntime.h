@@ -89,6 +89,7 @@ public:
   void operator()(CodeGenFunction &CGF) const;
 };
 
+typedef std::pair<OpenMPDependClauseKind, const Expr *> DependenceType;
 struct OMPTaskDataTy final {
   enum ImplicitMapArray {
     OMP_BASE_PTRS = 0,
@@ -108,7 +109,7 @@ struct OMPTaskDataTy final {
   SmallVector<const Expr *, 4> ReductionVars;
   SmallVector<const Expr *, 4> ReductionCopies;
   SmallVector<const Expr *, 4> ReductionOps;
-  SmallVector<std::pair<OpenMPDependClauseKind, const Expr *>, 4> Dependences;
+  SmallVector<DependenceType, 4> Dependences;
   llvm::PointerIntPair<llvm::Value *, 1, bool> Final;
   llvm::PointerIntPair<llvm::Value *, 1, bool> Schedule;
   llvm::PointerIntPair<llvm::Value *, 1, bool> Priority;

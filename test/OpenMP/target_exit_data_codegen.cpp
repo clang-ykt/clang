@@ -227,4 +227,36 @@ void no_target_devices(int arg) {
   {++arg;}
 }
 #endif
+#ifdef CK5
+// RUN: %clang_cc1 -DCK5 -verify -fopenmp -fopenmp-targets=powerpc64le-ibm-linux-gnu -x c++ -triple powerpc64le-unknown-unknown -emit-llvm %s -o - | FileCheck %s --check-prefix CK5
+// CK5: %struct.kmp_depend_info = type { i64, i64, i8 }
+
+// CK5-LABEL: depend_nowait
+void depend_nowait(int arg, float arg2) {
+  // CK5:       [[ARG:%.+]] = alloca i32,
+  // CK5:       [[ARG2:%.+]] = alloca float,
+  // CK5:       [[DEP:%.+]] = alloca [2 x %struct.kmp_depend_info],
+  // CK5:       [[DEP0:%.+]] = getelementptr inbounds [2 x %struct.kmp_depend_info], [2 x %struct.kmp_depend_info]* [[DEP]], i64 0, i64 0
+  // CK5-NEXT:  getelementptr inbounds %struct.kmp_depend_info, %struct.kmp_depend_info* [[DEP0]], i32 0, i32 0
+  // CK5-NEXT:  ptrtoint i32* [[ARG]] to i64
+  // CK5-NEXT:  store i64 %{{.+}}, i64* %{{.+}},
+  // CK5-NEXT:  getelementptr inbounds %struct.kmp_depend_info, %struct.kmp_depend_info* [[DEP0]], i32 0, i32 1
+  // CK5-NEXT:  store i64 4, i64* %{{.+}},
+  // CK5-NEXT:  getelementptr inbounds %struct.kmp_depend_info, %struct.kmp_depend_info* [[DEP0]], i32 0, i32 2
+  // CK5-NEXT:  store i8 3, i8* %{{.+}},
+  // CK5:       [[DEP1:%.+]] = getelementptr inbounds [2 x %struct.kmp_depend_info], [2 x %struct.kmp_depend_info]* [[DEP]], i64 0, i64 1
+  // CK5-NEXT:  getelementptr inbounds %struct.kmp_depend_info, %struct.kmp_depend_info* [[DEP1]], i32 0, i32 0
+  // CK5-NEXT:  ptrtoint float* [[ARG2]] to i64
+  // CK5-NEXT:  store i64 %{{.+}}, i64* %{{.+}},
+  // CK5-NEXT:  getelementptr inbounds %struct.kmp_depend_info, %struct.kmp_depend_info* [[DEP1]], i32 0, i32 1
+  // CK5-NEXT:  store i64 4, i64* %{{.+}},
+  // CK5-NEXT:  getelementptr inbounds %struct.kmp_depend_info, %struct.kmp_depend_info* [[DEP1]], i32 0, i32 2
+  // CK5-NEXT:  store i8 1, i8* %{{.+}},
+  // CK5-NEXT:  getelementptr inbounds [2 x %struct.kmp_depend_info], [2 x %struct.kmp_depend_info]* [[DEP]], i32 0, i32 0
+  // CK5-NEXT:  bitcast %struct.kmp_depend_info* %{{.+}} to i8*
+  // CK5-NEXT:  call void @__tgt_target_data_end_nowait_depend(i64 -1, i32 1, i8** %{{.+}}, i8** %{{.+}}, i64* getelementptr inbounds ([1 x i64], [1 x i64]* @{{.+}}, i32 0, i32 0), i64* getelementptr inbounds ([1 x i64], [1 x i64]* @{{.+}}, i32 0, i32 0), i32 2, i8* %{{.+}}, i32 0, i8* null)
+  #pragma omp target exit data map(from: arg) depend(out: arg) depend(in : arg2) nowait
+  {++arg;}
+}
+#endif
 #endif

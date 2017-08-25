@@ -757,6 +757,11 @@ enum OpenMPRTLFunction {
   // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
   // *arg_types);
   OMPRTL__tgt_target_data_begin_nowait,
+  // Call to void __tgt_target_data_begin_nowait_depend(int64_t device_id,
+  // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+  // *arg_types, in32_t depNum, void *depList, int32_t noAliasDepNum, void
+  // *noAliasDepList);
+  OMPRTL__tgt_target_data_begin_nowait_depend,
   // Call to void __tgt_target_data_end(int64_t device_id, int32_t arg_num,
   // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
   OMPRTL__tgt_target_data_end,
@@ -764,6 +769,11 @@ enum OpenMPRTLFunction {
   // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
   // *arg_types);
   OMPRTL__tgt_target_data_end_nowait,
+  // Call to void __tgt_target_data_end_nowait_depend(int64_t device_id,
+  // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+  // *arg_types, in32_t depNum, void *depList, int32_t noAliasDepNum, void
+  // *noAliasDepList);
+  OMPRTL__tgt_target_data_end_nowait_depend,
   // Call to void __tgt_target_data_update(int64_t device_id, int32_t arg_num,
   // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
   OMPRTL__tgt_target_data_update,
@@ -771,6 +781,11 @@ enum OpenMPRTLFunction {
   // arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
   // *arg_types);
   OMPRTL__tgt_target_data_update_nowait,
+  // Call to void __tgt_target_data_update_nowait_depend(int64_t device_id,
+  // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+  // *arg_types, in32_t depNum, void *depList, int32_t noAliasDepNum, void
+  // *noAliasDepList);
+  OMPRTL__tgt_target_data_update_nowait_depend,
   // Call to kmp_task_t * __kmpc_omp_target_task_alloc(ident_t *, kmp_int32
   // gtid,
   // kmp_int32 flags, size_t sizeof_kmp_task_t, size_t sizeof_shareds,
@@ -2283,6 +2298,29 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
     RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_begin_nowait");
     break;
   }
+  case OMPRTL__tgt_target_data_begin_nowait_depend: {
+    // Build void __tgt_target_data_begin_nowait_depend(int64_t device_id,
+    // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
+    // int64_t *arg_types, int32_t depNum, void *depList, int32_t noAliasDepNum,
+    // void *noAliasDepList);
+    llvm::Type *TypeParams[] = {
+        CGM.Int64Ty,
+        CGM.Int32Ty,
+        CGM.VoidPtrPtrTy,
+        CGM.VoidPtrPtrTy,
+        CGM.SizeTy->getPointerTo(),
+        CGM.Int64Ty->getPointerTo(),
+        CGM.Int32Ty,
+        CGM.VoidPtrTy,
+        CGM.Int32Ty,
+        CGM.VoidPtrTy,
+    };
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+    RTLFn = CGM.CreateRuntimeFunction(FnTy,
+                                      "__tgt_target_data_begin_nowait_depend");
+    break;
+  }
   case OMPRTL__tgt_target_data_end: {
     // Build void __tgt_target_data_end(int64_t device_id, int32_t arg_num,
     // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
@@ -2312,6 +2350,29 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
     RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_end_nowait");
     break;
   }
+  case OMPRTL__tgt_target_data_end_nowait_depend: {
+    // Build void __tgt_target_data_end_nowait_depend(int64_t device_id,
+    // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
+    // int64_t *arg_types, int32_t depNum, void *depList, int32_t noAliasDepNum,
+    // void *noAliasDepList);
+    llvm::Type *TypeParams[] = {
+        CGM.Int64Ty,
+        CGM.Int32Ty,
+        CGM.VoidPtrPtrTy,
+        CGM.VoidPtrPtrTy,
+        CGM.SizeTy->getPointerTo(),
+        CGM.Int64Ty->getPointerTo(),
+        CGM.Int32Ty,
+        CGM.VoidPtrTy,
+        CGM.Int32Ty,
+        CGM.VoidPtrTy,
+    };
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+    RTLFn =
+        CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_end_nowait_depend");
+    break;
+  }
   case OMPRTL__tgt_target_data_update: {
     // Build void __tgt_target_data_update(int64_t device_id, int32_t arg_num,
     // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
@@ -2339,6 +2400,29 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
     llvm::FunctionType *FnTy =
         llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
     RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_update_nowait");
+    break;
+  }
+  case OMPRTL__tgt_target_data_update_nowait_depend: {
+    // Build void __tgt_target_data_update_nowait_depend(int64_t device_id,
+    // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
+    // int64_t *arg_types, int32_t depNum, void *depList, int32_t noAliasDepNum,
+    // void *noAliasDepList);
+    llvm::Type *TypeParams[] = {
+        CGM.Int64Ty,
+        CGM.Int32Ty,
+        CGM.VoidPtrPtrTy,
+        CGM.VoidPtrPtrTy,
+        CGM.SizeTy->getPointerTo(),
+        CGM.Int64Ty->getPointerTo(),
+        CGM.Int32Ty,
+        CGM.VoidPtrTy,
+        CGM.Int32Ty,
+        CGM.VoidPtrTy,
+    };
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+    RTLFn = CGM.CreateRuntimeFunction(FnTy,
+                                      "__tgt_target_data_update_nowait_depend");
     break;
   }
   case OMPRTL__kmpc_tgt_target_task_alloc: {
@@ -6858,33 +6942,13 @@ CGOpenMPRuntime::emitMapArrays(CodeGenFunction &CGF, OMPMapArrays &Maps) {
   return Info;
 }
 
-void CGOpenMPRuntime::emitTaskCall(
-    CodeGenFunction &CGF, SourceLocation Loc, const OMPExecutableDirective &D,
-    llvm::Value *TaskFunction, QualType SharedsTy, Address Shareds,
-    const Expr *IfCond, const OMPTaskDataTy &Data, OMPMapArrays *MapArrays) {
-  if (!CGF.HaveInsertPoint())
-    return;
-
-  // When calling a target task, we need to generate the offloading mapping
-  // arrays upfront in the task caller and pass them to the task region.
-  TargetDataInfo Info;
-  if (isOpenMPTargetExecutionDirective(D.getDirectiveKind()) &&
-      D.hasClausesOfKind<OMPDependClause>()) {
-    Info = emitMapArrays(CGF, *MapArrays);
-  }
-
-  TaskResultTy Result = emitTaskInit(CGF, Loc, D, TaskFunction, SharedsTy,
-                                     Shareds, Data, *MapArrays, Info);
-  //, Info);
-  llvm::Value *NewTask = Result.NewTask;
-  llvm::Value *TaskEntry = Result.TaskEntry;
-  llvm::Value *NewTaskNewTaskTTy = Result.NewTaskNewTaskTTy;
-  LValue TDBase = Result.TDBase;
-  RecordDecl *KmpTaskTQTyRD = Result.KmpTaskTQTyRD;
-  auto &C = CGM.getContext();
+static Address emitDependences(CodeGenFunction &CGF,
+                               ArrayRef<DependenceType> Dependences,
+                               QualType &KmpDependInfoTy) {
   // Process list of dependences.
+  ASTContext &C = CGF.getContext();
   Address DependenciesArray = Address::invalid();
-  unsigned NumDependencies = Data.Dependences.size();
+  unsigned NumDependencies = Dependences.size();
   if (NumDependencies) {
     // Dependence kind for RTL.
     enum RTLDependenceKindTy { DepIn = 0x01, DepInOut = 0x3 };
@@ -6912,7 +6976,7 @@ void CGOpenMPRuntime::emitTaskCall(
     DependenciesArray =
         CGF.CreateMemTemp(KmpDependInfoArrayTy, ".dep.arr.addr");
     for (unsigned i = 0; i < NumDependencies; ++i) {
-      const Expr *E = Data.Dependences[i].second;
+      const Expr *E = Dependences[i].second;
       auto Addr = CGF.EmitLValue(E);
       llvm::Value *Size;
       QualType Ty = E->getType();
@@ -6922,8 +6986,8 @@ void CGOpenMPRuntime::emitTaskCall(
         llvm::Value *UpAddr =
             CGF.Builder.CreateConstGEP1_32(UpAddrLVal.getPointer(), /*Idx0=*/1);
         llvm::Value *LowIntPtr =
-            CGF.Builder.CreatePtrToInt(Addr.getPointer(), CGM.SizeTy);
-        llvm::Value *UpIntPtr = CGF.Builder.CreatePtrToInt(UpAddr, CGM.SizeTy);
+            CGF.Builder.CreatePtrToInt(Addr.getPointer(), CGF.SizeTy);
+        llvm::Value *UpIntPtr = CGF.Builder.CreatePtrToInt(UpAddr, CGF.SizeTy);
         Size = CGF.Builder.CreateNUWSub(UpIntPtr, LowIntPtr);
       } else
         Size = CGF.getTypeSize(Ty);
@@ -6942,7 +7006,7 @@ void CGOpenMPRuntime::emitTaskCall(
       CGF.EmitStoreOfScalar(Size, LenLVal);
       // deps[i].flags = <Dependences[i].first>;
       RTLDependenceKindTy DepKind;
-      switch (Data.Dependences[i].first) {
+      switch (Dependences[i].first) {
       case OMPC_DEPEND_in:
         DepKind = DepIn;
         break;
@@ -6965,6 +7029,35 @@ void CGOpenMPRuntime::emitTaskCall(
         CGF.Builder.CreateStructGEP(DependenciesArray, 0, CharUnits::Zero()),
         CGF.VoidPtrTy);
   }
+  return DependenciesArray;
+}
+
+void CGOpenMPRuntime::emitTaskCall(
+    CodeGenFunction &CGF, SourceLocation Loc, const OMPExecutableDirective &D,
+    llvm::Value *TaskFunction, QualType SharedsTy, Address Shareds,
+    const Expr *IfCond, const OMPTaskDataTy &Data, OMPMapArrays *MapArrays) {
+  if (!CGF.HaveInsertPoint())
+    return;
+
+  // When calling a target task, we need to generate the offloading mapping
+  // arrays upfront in the task caller and pass them to the task region.
+  TargetDataInfo Info;
+  if (isOpenMPTargetExecutionDirective(D.getDirectiveKind()) &&
+      D.hasClausesOfKind<OMPDependClause>()) {
+    Info = emitMapArrays(CGF, *MapArrays);
+  }
+
+  TaskResultTy Result = emitTaskInit(CGF, Loc, D, TaskFunction, SharedsTy,
+                                     Shareds, Data, *MapArrays, Info);
+  //, Info);
+  llvm::Value *NewTask = Result.NewTask;
+  llvm::Value *TaskEntry = Result.TaskEntry;
+  llvm::Value *NewTaskNewTaskTTy = Result.NewTaskNewTaskTTy;
+  LValue TDBase = Result.TDBase;
+  RecordDecl *KmpTaskTQTyRD = Result.KmpTaskTQTyRD;
+  // Process list of dependences.
+  Address DependenciesArray =
+      emitDependences(CGF, Data.Dependences, KmpDependInfoTy);
 
   // NOTE: routine and part_id fields are intialized by __kmpc_omp_task_alloc()
   // libcall.
@@ -6976,6 +7069,7 @@ void CGOpenMPRuntime::emitTaskCall(
   auto *UpLoc = emitUpdateLocation(CGF, Loc);
   llvm::Value *TaskArgs[] = {UpLoc, ThreadID, NewTask};
   llvm::Value *DepTaskArgs[7];
+  unsigned NumDependencies = Data.Dependences.size();
   if (NumDependencies) {
     DepTaskArgs[0] = UpLoc;
     DepTaskArgs[1] = ThreadID;
@@ -8798,30 +8892,62 @@ void CGOpenMPRuntime::emitTargetDataStandAloneCall(
     OpenMPRTLFunction RTLFn;
     // Check if directive has nowait clause
     bool hasNowait = D.hasClausesOfKind<OMPNowaitClause>();
+    bool HasDepend = D.hasClausesOfKind<OMPDependClause>();
     switch (D.getDirectiveKind()) {
     default:
       llvm_unreachable("Unexpected standalone target data directive.");
       break;
     case OMPD_target_enter_data:
-      if (hasNowait)
-        RTLFn = OMPRTL__tgt_target_data_begin_nowait;
-      else
+      if (hasNowait) {
+        if (HasDepend)
+          RTLFn = OMPRTL__tgt_target_data_begin_nowait_depend;
+        else
+          RTLFn = OMPRTL__tgt_target_data_begin_nowait;
+      } else {
         RTLFn = OMPRTL__tgt_target_data_begin;
+      }
       break;
     case OMPD_target_exit_data:
-      if (hasNowait)
-        RTLFn = OMPRTL__tgt_target_data_end_nowait;
-      else
+      if (hasNowait) {
+        if (HasDepend)
+          RTLFn = OMPRTL__tgt_target_data_end_nowait_depend;
+        else
+          RTLFn = OMPRTL__tgt_target_data_end_nowait;
+      } else {
         RTLFn = OMPRTL__tgt_target_data_end;
+      }
       break;
     case OMPD_target_update:
-      if (hasNowait)
-        RTLFn = OMPRTL__tgt_target_data_update_nowait;
-      else
+      if (hasNowait) {
+        if (HasDepend)
+          RTLFn = OMPRTL__tgt_target_data_update_nowait_depend;
+        else
+          RTLFn = OMPRTL__tgt_target_data_update_nowait;
+      } else {
         RTLFn = OMPRTL__tgt_target_data_update;
+      }
       break;
     }
-    CGF.EmitRuntimeCall(RT.createRuntimeFunction(RTLFn), OffloadingArgs);
+    llvm::SmallVector<llvm::Value *, llvm::array_lengthof(OffloadingArgs)> Args(
+        std::begin(OffloadingArgs), std::end(OffloadingArgs));
+    if (hasNowait && HasDepend) {
+      Args.reserve(Args.size() + 4);
+      llvm::SmallVector<DependenceType, 4> Dependences;
+      for (const auto *C : D.getClausesOfKind<OMPDependClause>())
+        for (auto *IRef : C->varlists())
+          Dependences.emplace_back(C->getDependencyKind(), IRef);
+      Address DependenciesArray =
+          emitDependences(CGF, Dependences, RT.KmpDependInfoTy);
+      // Number of dependences.
+      Args.emplace_back(CGF.Builder.getInt32(Dependences.size()));
+      // List of dependences.
+      Args.emplace_back(DependenciesArray.getPointer());
+      // Number of non-aliasing dependences.
+      Args.emplace_back(CGF.Builder.getInt32(/*C=*/0));
+      // List of non-aliasing dependences.
+      Args.emplace_back(llvm::ConstantPointerNull::get(CGF.VoidPtrTy));
+    }
+    CGF.EmitRuntimeCall(RT.createRuntimeFunction(RTLFn), Args);
   };
 
   // In the event we get an if clause, we don't have to take any action on the
