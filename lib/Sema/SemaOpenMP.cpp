@@ -9062,7 +9062,8 @@ buildDeclareReductionRef(Sema &SemaRef, SourceLocation Loc, SourceRange Range,
       PrevD = D;
     }
   }
-  if (Ty->isDependentType() || Ty->isInstantiationDependentType() ||
+  if (SemaRef.CurContext->isDependentContext() || Ty->isDependentType() ||
+      Ty->isInstantiationDependentType() ||
       Ty->containsUnexpandedParameterPack() ||
       filterLookupForUDR<bool>(Lookups, [](ValueDecl *D) -> bool {
         return !D->isInvalidDecl() &&
