@@ -2872,6 +2872,12 @@ bool RecursiveASTVisitor<Derived>::VisitOMPLastprivateClause(
   for (auto *E : C->private_copies()) {
     TRY_TO(TraverseStmt(E));
   }
+  for (auto *E : C->conditional_lastprivate_iterations()) {
+    TRY_TO(TraverseStmt(E));
+  }
+  for (auto *E : C->conditional_lastprivate_variables()) {
+    TRY_TO(TraverseStmt(E));
+  }
   for (auto *E : C->source_exprs()) {
     TRY_TO(TraverseStmt(E));
   }

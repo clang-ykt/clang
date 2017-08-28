@@ -4768,6 +4768,18 @@ static unsigned CheckOpenMPLoop(
   if (!Inc.isUsable())
     return 0;
 
+  // Loop IV for conditional lastprivate processing: (CLIV = IV)
+  SourceLocation CLIVLoc;
+  ExprResult CLIV = DSA.getLoopIterationVar();
+  ExprResult CLIVInit;
+  if (isOpenMPConditionalLastprivateDirective(DKind)) {
+    CLIVInit =
+        SemaRef.BuildBinOp(CurScope, CLIVLoc, BO_Assign, CLIV.get(), IV.get());
+    CLIVInit = SemaRef.ActOnFinishFullExpr(CLIVInit.get());
+    if (!CLIVInit.isUsable())
+      return 0;
+  }
+
   // Increments for worksharing loops (LB = LB + ST; UB = UB + ST).
   // Used for directives with static scheduling.
   ExprResult NextLB, NextUB;
@@ -4950,6 +4962,8 @@ static unsigned CheckOpenMPLoop(
   Built.DistInc = DistInc.get();
   Built.PrevEUB = PrevEUB.get();
   Built.InnermostIterationVarRef = InnermostIV.get();
+  Built.CLIter = CLIV.get();
+  Built.CLIterInit = CLIVInit.get();
 
   Expr *CounterVal = SemaRef.DefaultLvalueConversion(IV.get()).get();
   // Fill data for doacross depend clauses.
@@ -8832,11 +8846,14 @@ OMPClause *Sema::ActOnOpenMPLastprivateClause(ArrayRef<Expr *> VarList,
                                               SourceLocation ColonLoc,
                                               SourceLocation EndLoc) {
   SmallVector<Expr *, 8> Vars;
+  SmallVector<Expr *, 8> CLIs;
+  SmallVector<Expr *, 8> CLVs;
   SmallVector<Expr *, 8> SrcExprs;
   SmallVector<Expr *, 8> DstExprs;
   SmallVector<Expr *, 8> AssignmentOps;
   SmallVector<Decl *, 4> ExprCaptures;
   SmallVector<Expr *, 4> ExprPostUpdates;
+  llvm::DenseMap<const ValueDecl *, Expr *> AlreadyEmittedCLUExprs;
   for (auto &RefExpr : VarList) {
     assert(RefExpr && "NULL expr in OpenMP lastprivate clause.");
     SourceLocation ELoc;
@@ -8846,6 +8863,8 @@ OMPClause *Sema::ActOnOpenMPLastprivateClause(ArrayRef<Expr *> VarList,
     if (Res.second) {
       // It will be analyzed later.
       Vars.push_back(RefExpr);
+      CLIs.push_back(nullptr);
+      CLVs.push_back(nullptr);
       SrcExprs.push_back(nullptr);
       DstExprs.push_back(nullptr);
       AssignmentOps.push_back(nullptr);
@@ -8860,9 +8879,10 @@ OMPClause *Sema::ActOnOpenMPLastprivateClause(ArrayRef<Expr *> VarList,
     // OpenMP [2.15.3.5, Restrictions, p.3]
     //  A list item that appears in a lastprivate clause with the
     //  conditional modifier must be a scalar variable.
-    if (LpKind == OMPC_LASTPRIVATE_conditional &&
-        !Type->isScalarType())
+    if (LpKind == OMPC_LASTPRIVATE_conditional && !Type->isScalarType()) {
       Diag(ELoc, diag::err_omp_lastprivate_cond_wrong_type) << Type;
+      continue;
+    }
 
     // OpenMP [2.14.3.5, Restrictions, C/C++, p.2]
     //  A variable that appears in a lastprivate clause must not have an
@@ -8966,56 +8986,69 @@ OMPClause *Sema::ActOnOpenMPLastprivateClause(ArrayRef<Expr *> VarList,
       }
     }
     Expr *CLUExpr = nullptr;
+    Expr *CLIExpr = nullptr;
+    Expr *CLVExpr = nullptr;
     if (LpKind == OMPC_LASTPRIVATE_conditional) {
-      auto VType = Context.getSizeType();
-      VarDecl *ConditionalLastprivateIndex =
-          buildVarDecl(*this, StartLoc, VType, ".cond_lastprivate_index");
-      ExprResult CLI =
-          buildDeclRefExpr(*this, ConditionalLastprivateIndex, VType, StartLoc);
-      if (!CLI.isUsable())
-        continue;
+      const ValueDecl *CanonicalVD = getCanonicalDecl(D);
+      if (auto *EmittedExpr = AlreadyEmittedCLUExprs.lookup(CanonicalVD)) {
+        CLUExpr = EmittedExpr;
+      } else {
+        auto VType = Context.getSizeType();
+        VarDecl *ConditionalLastprivateIndex =
+            buildVarDecl(*this, StartLoc, VType, ".cond_lastprivate_index");
+        ExprResult CLI = buildDeclRefExpr(*this, ConditionalLastprivateIndex,
+                                          VType, StartLoc);
+        if (!CLI.isUsable())
+          continue;
 
-      VarDecl *ConditionalLastprivate = buildVarDecl(
-          *this, StartLoc, Type.getUnqualifiedType(), ".cond_lastprivate");
-      ExprResult CLV = buildDeclRefExpr(*this, ConditionalLastprivate,
-                                        Type.getUnqualifiedType(), StartLoc);
-      if (!CLV.isUsable())
-        continue;
+        VarDecl *ConditionalLastprivate = buildVarDecl(
+            *this, StartLoc, Type.getUnqualifiedType(), ".cond_lastprivate");
+        ExprResult CLV = buildDeclRefExpr(*this, ConditionalLastprivate,
+                                          Type.getUnqualifiedType(), StartLoc);
+        if (!CLV.isUsable())
+          continue;
 
-      assert(DSAStack->getLoopIterationVar() &&
-             "Expecting a loop directive for conditional lastprivate.");
-      DeclRefExpr *LoopIterator = DSAStack->getLoopIterationVar();
-      SourceLocation UpdateLoc;
-      ExprResult IsIVGreater = BuildBinOp(DSAStack->getCurScope(), UpdateLoc,
-                                          BO_GT, LoopIterator, CLI.get());
-      auto CondOp = ActOnConditionalOp(UpdateLoc, UpdateLoc, IsIVGreater.get(),
-                                       RefExpr->IgnoreParens(), CLV.get());
-      auto LVU = BuildBinOp(DSAStack->getCurScope(), UpdateLoc, BO_Assign,
-                            CLV.get(), CondOp.get());
-      LVU = ActOnFinishFullExpr(LVU.get());
-      if (!LVU.isUsable())
-        continue;
-      IsIVGreater = BuildBinOp(DSAStack->getCurScope(), UpdateLoc, BO_GT,
-                               LoopIterator, CLI.get());
-      CondOp = ActOnConditionalOp(UpdateLoc, UpdateLoc, IsIVGreater.get(),
-                                  LoopIterator, CLI.get());
-      auto LIU = BuildBinOp(DSAStack->getCurScope(), UpdateLoc, BO_Assign,
-                            CLI.get(), CondOp.get());
-      LIU = ActOnFinishFullExpr(LIU.get());
-      if (!LIU.isUsable())
-        continue;
-      auto CLU = BuildBinOp(DSAStack->getCurScope(), UpdateLoc, BO_Comma,
-                            LVU.get(), LIU.get());
-      CLU = ActOnFinishFullExpr(CLU.get());
-      if (!CLU.isUsable())
-        continue;
+        assert(DSAStack->getLoopIterationVar() &&
+               "Expecting a loop directive for conditional lastprivate.");
+        DeclRefExpr *LoopIterator = DSAStack->getLoopIterationVar();
+        SourceLocation UpdateLoc;
+        ExprResult IsIVGreater = BuildBinOp(DSAStack->getCurScope(), UpdateLoc,
+                                            BO_GT, LoopIterator, CLI.get());
+        auto CondOp =
+            ActOnConditionalOp(UpdateLoc, UpdateLoc, IsIVGreater.get(),
+                               RefExpr->IgnoreParens(), CLV.get());
+        auto LVU = BuildBinOp(DSAStack->getCurScope(), UpdateLoc, BO_Assign,
+                              CLV.get(), CondOp.get());
+        LVU = ActOnFinishFullExpr(LVU.get());
+        if (!LVU.isUsable())
+          continue;
+        IsIVGreater = BuildBinOp(DSAStack->getCurScope(), UpdateLoc, BO_GT,
+                                 LoopIterator, CLI.get());
+        CondOp = ActOnConditionalOp(UpdateLoc, UpdateLoc, IsIVGreater.get(),
+                                    LoopIterator, CLI.get());
+        auto LIU = BuildBinOp(DSAStack->getCurScope(), UpdateLoc, BO_Assign,
+                              CLI.get(), CondOp.get());
+        LIU = ActOnFinishFullExpr(LIU.get());
+        if (!LIU.isUsable())
+          continue;
+        auto CLU = BuildBinOp(DSAStack->getCurScope(), UpdateLoc, BO_Comma,
+                              LVU.get(), LIU.get());
+        CLU = ActOnFinishFullExpr(CLU.get());
+        if (!CLU.isUsable())
+          continue;
 
-      CLUExpr = CLU.get();
-      ExprCaptures.push_back(ConditionalLastprivateIndex);
-      ExprCaptures.push_back(ConditionalLastprivate);
+        CLUExpr = CLU.get();
+        CLIExpr = CLI.get();
+        CLVExpr = CLV.get();
+        ExprCaptures.push_back(ConditionalLastprivateIndex);
+        ExprCaptures.push_back(ConditionalLastprivate);
+        AlreadyEmittedCLUExprs[CanonicalVD] = CLUExpr;
+      }
     }
     DSAStack->addDSA(D, RefExpr->IgnoreParens(), OMPC_lastprivate, Ref,
                      CLUExpr);
+    CLIs.push_back(CLIExpr);
+    CLVs.push_back(CLVExpr);
     Vars.push_back((VD || CurContext->isDependentContext())
                        ? RefExpr->IgnoreParens()
                        : Ref);
@@ -9028,8 +9061,8 @@ OMPClause *Sema::ActOnOpenMPLastprivateClause(ArrayRef<Expr *> VarList,
     return nullptr;
 
   return OMPLastprivateClause::Create(Context, StartLoc, LParenLoc, LpKind,
-                                      LpKindLoc, ColonLoc, EndLoc,
-                                      Vars, SrcExprs, DstExprs, AssignmentOps,
+                                      LpKindLoc, ColonLoc, EndLoc, Vars, CLIs,
+                                      CLVs, SrcExprs, DstExprs, AssignmentOps,
                                       buildPreInits(Context, ExprCaptures),
                                       buildPostUpdate(*this, ExprPostUpdates));
 }

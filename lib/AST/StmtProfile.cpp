@@ -383,6 +383,14 @@ void
 OMPClauseProfiler::VisitOMPLastprivateClause(const OMPLastprivateClause *C) {
   VisitOMPClauseList(C);
   VistOMPClauseWithPostUpdate(C);
+  for (auto *E : C->conditional_lastprivate_iterations()) {
+    if (E)
+      Profiler->VisitStmt(E);
+  }
+  for (auto *E : C->conditional_lastprivate_variables()) {
+    if (E)
+      Profiler->VisitStmt(E);
+  }
   for (auto *E : C->source_exprs()) {
     if (E)
       Profiler->VisitStmt(E);

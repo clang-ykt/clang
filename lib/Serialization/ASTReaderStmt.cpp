@@ -2090,6 +2090,14 @@ void OMPClauseReader::VisitOMPLastprivateClause(OMPLastprivateClause *C) {
   Vars.clear();
   for (unsigned i = 0; i != NumVars; ++i)
     Vars.push_back(Reader->Record.readSubExpr());
+  C->setConditionalLastprivateIterations(Vars);
+  Vars.clear();
+  for (unsigned i = 0; i != NumVars; ++i)
+    Vars.push_back(Reader->Record.readSubExpr());
+  C->setConditionalLastprivateVariables(Vars);
+  Vars.clear();
+  for (unsigned i = 0; i != NumVars; ++i)
+    Vars.push_back(Reader->Record.readSubExpr());
   C->setSourceExprs(Vars);
   Vars.clear();
   for (unsigned i = 0; i != NumVars; ++i)
@@ -2669,6 +2677,8 @@ void ASTStmtReader::VisitOMPLoopDirective(OMPLoopDirective *D) {
     D->setDistInc(Record.readSubExpr());
     D->setPrevEnsureUpperBound(Record.readSubExpr());
     D->setInnermostIterationVariable(Record.readSubExpr());
+    D->setConditionalLastprivateIterVariable(Record.readSubExpr());
+    D->setConditionalLastprivateIterInit(Record.readSubExpr());
     D->setNumIterations(Record.readSubExpr());
   }
   SmallVector<Expr *, 4> Sub;

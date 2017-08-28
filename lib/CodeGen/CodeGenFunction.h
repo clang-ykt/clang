@@ -2615,7 +2615,8 @@ public:
   /// 'i1 false' otherwise. If this item is nullptr, no final check is required.
   void EmitOMPLastprivateClauseFinal(const OMPExecutableDirective &D,
                                      bool NoFinals,
-                                     llvm::Value *IsLastIterCond = nullptr);
+                                     llvm::Value *IsLastIterCond = nullptr,
+                                     bool UnconditionalKind = false);
   /// Emit initial code for linear clauses.
   void EmitOMPLinearClause(const OMPLoopDirective &D,
                            CodeGenFunction::OMPPrivateScope &PrivateScope);
@@ -2779,7 +2780,7 @@ public:
   /// loop directvies).
   void EmitOMPInnerLoop(
       const Stmt &S, bool RequiresCleanup, const Expr *LoopCond,
-      const Expr *IncExpr,
+      const Expr *IncExpr, const Expr *LastprivateIterInitExpr,
       const llvm::function_ref<void(CodeGenFunction &)> &BodyGen,
       const llvm::function_ref<void(CodeGenFunction &)> &PostIncGen);
 

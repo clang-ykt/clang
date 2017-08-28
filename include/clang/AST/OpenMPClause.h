@@ -1522,6 +1522,32 @@ class OMPLastprivateClause final
     return llvm::makeArrayRef(getDestinationExprs().end(), varlist_size());
   }
 
+  /// \brief Get the list of helper variables storing the last updated
+  /// iteration index for conditional lastprivate variables.
+  void setConditionalLastprivateIterations(ArrayRef<Expr *> LIs);
+
+  /// \brief Get the list of helper lastprivate iteration variables.
+  MutableArrayRef<Expr *> getConditionalLastprivateIterations() {
+    return MutableArrayRef<Expr *>(getAssignmentOps().end(), varlist_size());
+  }
+  ArrayRef<const Expr *> getConditionalLastprivateIterations() const {
+    return llvm::makeArrayRef(getAssignmentOps().end(), varlist_size());
+  }
+
+  /// \brief Get the list of helper variables storing the last updated
+  /// value for conditional lastprivate variables.
+  void setConditionalLastprivateVariables(ArrayRef<Expr *> LIs);
+
+  /// \brief Get the list of helper conditional lastprivate variables.
+  MutableArrayRef<Expr *> getConditionalLastprivateVariables() {
+    return MutableArrayRef<Expr *>(getConditionalLastprivateIterations().end(),
+                                   varlist_size());
+  }
+  ArrayRef<const Expr *> getConditionalLastprivateVariables() const {
+    return llvm::makeArrayRef(getConditionalLastprivateIterations().end(),
+                              varlist_size());
+  }
+
 public:
   /// \brief Creates clause with a list of variables \a VL.
   ///
@@ -1530,6 +1556,8 @@ public:
   /// \param LParenLoc Location of '('.
   /// \param EndLoc Ending location of the clause.
   /// \param VL List of references to the variables.
+  /// \param CLI List of references to the conditional lastprivate iteration.
+  /// \param CLV List of references to the conditional lastprivate variable.
   /// \param SrcExprs List of helper expressions for proper generation of
   /// assignment operation required for lastprivate clause. This list represents
   /// private variables (for arrays, single array element).
@@ -1552,6 +1580,7 @@ public:
   Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation LParenLoc,
          OpenMPLastprivateClauseKind Modifier, SourceLocation ModifierLoc,
          SourceLocation ColonLoc, SourceLocation EndLoc, ArrayRef<Expr *> VL,
+         ArrayRef<Expr *> CLIs, ArrayRef<Expr *> CLVs,
          ArrayRef<Expr *> SrcExprs, ArrayRef<Expr *> DstExprs,
          ArrayRef<Expr *> AssignmentOps, Stmt *PreInit, Expr *PostUpdate);
 
@@ -1617,6 +1646,23 @@ public:
   helper_expr_range assignment_ops() {
     return helper_expr_range(getAssignmentOps().begin(),
                              getAssignmentOps().end());
+  }
+  helper_expr_const_range conditional_lastprivate_iterations() const {
+    return helper_expr_const_range(
+        getConditionalLastprivateIterations().begin(),
+        getConditionalLastprivateIterations().end());
+  }
+  helper_expr_range conditional_lastprivate_iterations() {
+    return helper_expr_range(getConditionalLastprivateIterations().begin(),
+                             getConditionalLastprivateIterations().end());
+  }
+  helper_expr_const_range conditional_lastprivate_variables() const {
+    return helper_expr_const_range(getConditionalLastprivateVariables().begin(),
+                                   getConditionalLastprivateVariables().end());
+  }
+  helper_expr_range conditional_lastprivate_variables() {
+    return helper_expr_range(getConditionalLastprivateVariables().begin(),
+                             getConditionalLastprivateVariables().end());
   }
 
   child_range children() {

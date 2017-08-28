@@ -2226,6 +2226,12 @@ void OMPClauseEnqueue::VisitOMPLastprivateClause(
   for (auto *E : C->private_copies()) {
     Visitor->AddStmt(E);
   }
+  for (auto *E : C->conditional_lastprivate_iterations()) {
+    Visitor->AddStmt(E);
+  }
+  for (auto *E : C->conditional_lastprivate_variables()) {
+    Visitor->AddStmt(E);
+  }
   for (auto *E : C->source_exprs()) {
     Visitor->AddStmt(E);
   }

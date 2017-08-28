@@ -317,28 +317,30 @@ class OMPLoopDirective : public OMPExecutableDirective {
     NumLanesOffset = 8,
     IncOffset = 9,
     PreInitsOffset = 10,
+    ConditionalLastprivateIterVariableOffset = 11,
+    ConditionalLastprivateIterInitOffset = 12,
     // The '...End' enumerators do not correspond to child expressions - they
     // specify the offset to the end (and start of the following counters/
     // updates/finals arrays).
-    DefaultEnd = 11,
+    DefaultEnd = 13,
     // The following 7 exprs are used by worksharing loops only.
-    IsLastIterVariableOffset = 11,
-    LowerBoundVariableOffset = 12,
-    UpperBoundVariableOffset = 13,
-    StrideVariableOffset = 14,
-    EnsureUpperBoundOffset = 15,
-    NextLowerBoundOffset = 16,
-    NextUpperBoundOffset = 17,
-    NumIterationsOffset = 18,
-    PrevLowerBoundVariableOffset = 19,
-    PrevUpperBoundVariableOffset = 20,
-    DistCondOffset = 21,
-    DistIncOffset = 22,
-    PrevEnsureUpperBoundOffset = 23,
-    InnermostIterationVariableOffset = 24,
+    IsLastIterVariableOffset = 13,
+    LowerBoundVariableOffset = 14,
+    UpperBoundVariableOffset = 15,
+    StrideVariableOffset = 16,
+    EnsureUpperBoundOffset = 17,
+    NextLowerBoundOffset = 18,
+    NextUpperBoundOffset = 19,
+    NumIterationsOffset = 20,
+    PrevLowerBoundVariableOffset = 21,
+    PrevUpperBoundVariableOffset = 22,
+    DistCondOffset = 23,
+    DistIncOffset = 24,
+    PrevEnsureUpperBoundOffset = 25,
+    InnermostIterationVariableOffset = 26,
     // Offset to the end (and start of the following counters/updates/finals
     // arrays) for worksharing loop directives.
-    WorksharingEnd = 25,
+    WorksharingEnd = 27,
   };
 
   /// \brief Get the counters storage.
@@ -442,6 +444,12 @@ protected:
   void setInc(Expr *Inc) { *std::next(child_begin(), IncOffset) = Inc; }
   void setPreInits(Stmt *PreInits) {
     *std::next(child_begin(), PreInitsOffset) = PreInits;
+  }
+  void setConditionalLastprivateIterVariable(Expr *IV) {
+    *std::next(child_begin(), ConditionalLastprivateIterVariableOffset) = IV;
+  }
+  void setConditionalLastprivateIterInit(Expr *IVInit) {
+    *std::next(child_begin(), ConditionalLastprivateIterInitOffset) = IVInit;
   }
   void setIsLastIterVariable(Expr *IL) {
     assert((isOpenMPWorksharingDirective(getDirectiveKind()) ||
@@ -600,6 +608,10 @@ public:
     /// \brief PreviousEnsureUpperBound -- expression LB = min(LB,
     /// NumIterations).
     Expr *PrevEUB;
+    /// \brief Additional iteration variable for conditional lastprivate.
+    Expr *CLIter;
+    /// \brief Init of iteration variable for conditional lastprivate.
+    Expr *CLIterInit;
     /// \brief Counters Loop counters.
     SmallVector<Expr *, 4> Counters;
     /// \brief PrivateCounters Loop counters.
@@ -647,6 +659,8 @@ public:
       DistInc = nullptr;
       PrevEUB = nullptr;
       InnermostIterationVarRef = nullptr;
+      CLIter = nullptr;
+      CLIterInit = nullptr;
       Counters.resize(Size);
       PrivateCounters.resize(Size);
       Inits.resize(Size);
@@ -706,6 +720,14 @@ public:
     return *std::next(child_begin(), PreInitsOffset);
   }
   Stmt *getPreInits() { return *std::next(child_begin(), PreInitsOffset); }
+  Expr *getConditionalLastprivateIterVariable() const {
+    return const_cast<Expr *>(reinterpret_cast<const Expr *>(
+        *std::next(child_begin(), ConditionalLastprivateIterVariableOffset)));
+  }
+  Expr *getConditionalLastprivateIterInit() const {
+    return const_cast<Expr *>(reinterpret_cast<const Expr *>(
+        *std::next(child_begin(), ConditionalLastprivateIterInitOffset)));
+  }
   Expr *getIsLastIterVariable() const {
     assert((isOpenMPWorksharingDirective(getDirectiveKind()) ||
             isOpenMPTaskLoopDirective(getDirectiveKind()) ||

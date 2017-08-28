@@ -723,6 +723,9 @@ enum OpenMPRTLFunction {
   // Call to void *__kmpc_task_reduction_get_th_data(int gtid, void *tg, void
   // *d);
   OMPRTL__kmpc_task_reduction_get_th_data,
+  // Call to kmp_int32 __kmpc_reduce_conditional_lastprivate(ident_t *loc,
+  // kmp_int32 global_tid, kmp_int32 num_vars, void *array);
+  OMPRTL__kmpc_reduce_conditional_lastprivate,
 
   //
   // Offloading related calls
@@ -2179,6 +2182,17 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
         llvm::FunctionType::get(CGM.VoidPtrTy, TypeParams, /*isVarArg=*/false);
     RTLFn = CGM.CreateRuntimeFunction(
         FnTy, /*Name=*/"__kmpc_task_reduction_get_th_data");
+    break;
+  }
+  case OMPRTL__kmpc_reduce_conditional_lastprivate: {
+    // Build void *__kmpc_reduce_conditional_lastprivate(ident_t *loc,
+    // kmp_int32 global_tid, kmp_int32 num_vars, void *array);
+    llvm::Type *TypeParams[] = {getIdentTyPointerTy(), CGM.Int32Ty, CGM.Int32Ty,
+                                CGM.VoidPtrTy};
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg=*/false);
+    RTLFn = CGM.CreateRuntimeFunction(
+        FnTy, /*Name=*/"__kmpc_reduce_conditional_lastprivate");
     break;
   }
   case OMPRTL__tgt_target: {
@@ -6028,6 +6042,20 @@ Address CGOpenMPRuntime::getTaskReductionItem(CodeGenFunction &CGF,
       CGF.EmitRuntimeCall(
           createRuntimeFunction(OMPRTL__kmpc_task_reduction_get_th_data), Args),
       SharedLVal.getAlignment());
+}
+
+void CGOpenMPRuntime::emitReduceConditionalLastprivateCall(CodeGenFunction &CGF,
+                                                           SourceLocation Loc,
+                                                           llvm::Value *NumVars,
+                                                           llvm::Value *Array) {
+  if (!CGF.HaveInsertPoint())
+    return;
+  // Build call kmp_int32 __kmpc_reduce_conditional_lastprivate(ident_t *loc,
+  // kmp_int32 global_tid, kmp_int32 num_vars, void *array);
+  llvm::Value *Args[] = {emitUpdateLocation(CGF, Loc), getThreadID(CGF, Loc),
+                         NumVars, Array};
+  CGF.EmitRuntimeCall(
+      createRuntimeFunction(OMPRTL__kmpc_reduce_conditional_lastprivate), Args);
 }
 
 void CGOpenMPRuntime::emitTaskwaitCall(CodeGenFunction &CGF,

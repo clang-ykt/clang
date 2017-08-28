@@ -1926,6 +1926,10 @@ void OMPClauseWriter::VisitOMPLastprivateClause(OMPLastprivateClause *C) {
     Record.AddStmt(VE);
   for (auto *E : C->private_copies())
     Record.AddStmt(E);
+  for (auto *E : C->conditional_lastprivate_iterations())
+    Record.AddStmt(E);
+  for (auto *E : C->conditional_lastprivate_variables())
+    Record.AddStmt(E);
   for (auto *E : C->source_exprs())
     Record.AddStmt(E);
   for (auto *E : C->destination_exprs())
@@ -2294,6 +2298,8 @@ void ASTStmtWriter::VisitOMPLoopDirective(OMPLoopDirective *D) {
     Record.AddStmt(D->getDistInc());
     Record.AddStmt(D->getPrevEnsureUpperBound());
     Record.AddStmt(D->getInnermostIterationVariable());
+    Record.AddStmt(D->getConditionalLastprivateIterVariable());
+    Record.AddStmt(D->getConditionalLastprivateIterInit());
     Record.AddStmt(D->getNumIterations());
   }
   for (auto I : D->counters()) {

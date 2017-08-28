@@ -977,29 +977,41 @@ bool CodeGenFunction::EmitOMPLastprivateClauseInit(
       ++IRef;
       ++IDestRef;
     }
+    if (C->getModifier() == OMPC_LASTPRIVATE_conditional) {
+      for (auto *CLIter : C->conditional_lastprivate_iterations()) {
+        if (!CLIter)
+          continue;
+        llvm::APInt InitValue = llvm::APInt::getMinValue(
+            getContext().getTypeSize(CLIter->getType()));
+        auto Init = llvm::ConstantInt::get(getLLVMContext(), InitValue);
+        EmitStoreOfScalar(Init, EmitLValue(CLIter));
+      }
+    }
   }
   return HasAtLeastOneLastprivate;
 }
 
+static std::pair<unsigned, unsigned>
+GetLastprivateVariableCount(const OMPExecutableDirective &D) {
+  unsigned UnconditionalSize = 0;
+  unsigned ConditionalSize = 0;
+  for (const auto *C : D.getClausesOfKind<OMPLastprivateClause>()) {
+    if (C->getModifier() == OMPC_LASTPRIVATE_conditional)
+      ConditionalSize +=
+          std::count_if(C->conditional_lastprivate_iterations().begin(),
+                        C->conditional_lastprivate_iterations().end(),
+                        [](const Expr *E) { return E; });
+    else
+      UnconditionalSize += C->varlist_size();
+  }
+  return {UnconditionalSize, ConditionalSize};
+}
+
 void CodeGenFunction::EmitOMPLastprivateClauseFinal(
-    const OMPExecutableDirective &D, bool NoFinals,
-    llvm::Value *IsLastIterCond) {
+    const OMPExecutableDirective &D, bool NoFinals, llvm::Value *IsLastIterCond,
+    bool UnconditionalKind) {
   if (!HaveInsertPoint())
     return;
-  // Emit following code:
-  // if (<IsLastIterCond>) {
-  //   orig_var1 = private_orig_var1;
-  //   ...
-  //   orig_varn = private_orig_varn;
-  // }
-  llvm::BasicBlock *ThenBB = nullptr;
-  llvm::BasicBlock *DoneBB = nullptr;
-  if (IsLastIterCond) {
-    ThenBB = createBasicBlock(".omp.lastprivate.then");
-    DoneBB = createBasicBlock(".omp.lastprivate.done");
-    Builder.CreateCondBr(IsLastIterCond, ThenBB, DoneBB);
-    EmitBlock(ThenBB);
-  }
   llvm::DenseSet<const VarDecl *> AlreadyEmittedVars;
   llvm::DenseMap<const VarDecl *, const Expr *> LoopCountersAndUpdates;
   if (auto *LoopDirective = dyn_cast<OMPLoopDirective>(&D)) {
@@ -1014,46 +1026,146 @@ void CodeGenFunction::EmitOMPLastprivateClauseFinal(
       ++IC;
     }
   }
-  for (const auto *C : D.getClausesOfKind<OMPLastprivateClause>()) {
-    auto IRef = C->varlist_begin();
-    auto ISrcRef = C->source_exprs().begin();
-    auto IDestRef = C->destination_exprs().begin();
-    // Arpith
-    // if (C->getModifier() == OMPC_LASTPRIVATE_conditional)
-    //   printf(" ---------> This is a conditional lastprivate!\n");
-    // else
-    //   printf(" ---------> This is a lastprivate!\n");
-    for (auto *AssignOp : C->assignment_ops()) {
-      auto *PrivateVD = cast<VarDecl>(cast<DeclRefExpr>(*IRef)->getDecl());
-      QualType Type = PrivateVD->getType();
-      auto *CanonicalVD = PrivateVD->getCanonicalDecl();
-      if (AlreadyEmittedVars.insert(CanonicalVD).second) {
-        // If lastprivate variable is a loop control variable for loop-based
-        // directive, update its value before copyin back to original
-        // variable.
-        if (auto *FinalExpr = LoopCountersAndUpdates.lookup(CanonicalVD))
-          EmitIgnoredExpr(FinalExpr);
-        auto *SrcVD = cast<VarDecl>(cast<DeclRefExpr>(*ISrcRef)->getDecl());
-        auto *DestVD = cast<VarDecl>(cast<DeclRefExpr>(*IDestRef)->getDecl());
-        // Get the address of the original variable.
-        Address OriginalAddr = GetAddrOfLocalVar(DestVD);
-        // Get the address of the private variable.
-        Address PrivateAddr = GetAddrOfLocalVar(PrivateVD);
-        if (auto RefTy = PrivateVD->getType()->getAs<ReferenceType>())
-          PrivateAddr =
-              Address(Builder.CreateLoad(PrivateAddr),
-                      getNaturalTypeAlignment(RefTy->getPointeeType()));
-        EmitOMPCopy(Type, OriginalAddr, PrivateAddr, DestVD, SrcVD, AssignOp);
+  auto &&CodeGenCopy = [&AlreadyEmittedVars, &LoopCountersAndUpdates](
+      CodeGenFunction &CGF, const Expr *AssignOp, const Expr *IRef,
+      const Expr *ISrcRef, const Expr *IDestRef) {
+    auto *PrivateVD = cast<VarDecl>(cast<DeclRefExpr>(IRef)->getDecl());
+    QualType Type = PrivateVD->getType();
+    auto *CanonicalVD = PrivateVD->getCanonicalDecl();
+    // If lastprivate variable is a loop control variable for loop-based
+    // directive, update its value before copyin back to original
+    // variable.
+    if (auto *FinalExpr = LoopCountersAndUpdates.lookup(CanonicalVD))
+      CGF.EmitIgnoredExpr(FinalExpr);
+    auto *SrcVD = cast<VarDecl>(cast<DeclRefExpr>(ISrcRef)->getDecl());
+    auto *DestVD = cast<VarDecl>(cast<DeclRefExpr>(IDestRef)->getDecl());
+    // Get the address of the original variable.
+    Address OriginalAddr = CGF.GetAddrOfLocalVar(DestVD);
+    // Get the address of the private variable.
+    Address PrivateAddr = CGF.GetAddrOfLocalVar(PrivateVD);
+    if (auto RefTy = PrivateVD->getType()->getAs<ReferenceType>())
+      PrivateAddr =
+          Address(CGF.Builder.CreateLoad(PrivateAddr),
+                  CGF.getNaturalTypeAlignment(RefTy->getPointeeType()));
+    CGF.EmitOMPCopy(Type, OriginalAddr, PrivateAddr, DestVD, SrcVD, AssignOp);
+  };
+
+  // Codegen conditional lastprivate variables.
+  unsigned UnconditionalSize;
+  unsigned ConditionalSize;
+  std::tie(UnconditionalSize, ConditionalSize) = GetLastprivateVariableCount(D);
+  if (!UnconditionalKind && ConditionalSize) {
+    ASTContext &Ctx = CGM.getContext();
+    llvm::APInt IdxArraySize(/*numBits=*/32, ConditionalSize);
+    auto IdxArrayTy =
+        Ctx.getConstantArrayType(Ctx.getSizeType(), IdxArraySize,
+                                 ArrayType::Normal, /*IndexTypeQuals=*/0);
+    auto IdxArray = CreateMemTemp(IdxArrayTy, "idx_array");
+    unsigned I = 0;
+    for (const auto *C : D.getClausesOfKind<OMPLastprivateClause>()) {
+      if (C->getModifier() != OMPC_LASTPRIVATE_conditional)
+        continue;
+      for (auto *CLIter : C->conditional_lastprivate_iterations()) {
+        if (!CLIter)
+          continue;
+        Address Elem =
+            Builder.CreateConstArrayGEP(IdxArray, I, getPointerSize());
+        auto *ITVD = cast<VarDecl>(cast<DeclRefExpr>(CLIter)->getDecl());
+        Address ITAddr = GetAddrOfLocalVar(ITVD);
+        Builder.CreateStore(Builder.CreateLoad(ITAddr), Elem);
+        ++I;
       }
-      ++IRef;
-      ++ISrcRef;
-      ++IDestRef;
     }
-    if (auto *PostUpdate = C->getPostUpdateExpr())
-      EmitIgnoredExpr(PostUpdate);
+    CGM.getOpenMPRuntime().emitReduceConditionalLastprivateCall(
+        *this, D.getLocEnd(), Builder.getInt32(ConditionalSize),
+        Builder.CreatePointerBitCastOrAddrSpaceCast(IdxArray.getPointer(),
+                                                    CGM.VoidPtrTy));
+    I = 0;
+    for (const auto *C : D.getClausesOfKind<OMPLastprivateClause>()) {
+      if (C->getModifier() != OMPC_LASTPRIVATE_conditional)
+        continue;
+      auto CLIter = C->conditional_lastprivate_iterations().begin();
+      auto CLVar = C->conditional_lastprivate_variables().begin();
+      auto IRef = C->varlist_begin();
+      auto ISrcRef = C->source_exprs().begin();
+      auto IDestRef = C->destination_exprs().begin();
+      for (auto *AssignOp : C->assignment_ops()) {
+        auto *PrivateVD = cast<VarDecl>(cast<DeclRefExpr>(*IRef)->getDecl());
+        auto *CanonicalVD = PrivateVD->getCanonicalDecl();
+        if (AlreadyEmittedVars.insert(CanonicalVD).second) {
+          Address Elem =
+              Builder.CreateConstArrayGEP(IdxArray, I, getPointerSize());
+          auto MaxIdx = Builder.CreateLoad(Elem);
+          auto *ITVD = cast<VarDecl>(cast<DeclRefExpr>(*CLIter)->getDecl());
+          Address ITAddr = GetAddrOfLocalVar(ITVD);
+          auto ThisIdx = Builder.CreateLoad(ITAddr);
+          auto *IsLastUpdateCond = Builder.CreateICmpEQ(ThisIdx, MaxIdx);
+          llvm::BasicBlock *ThenBB =
+              createBasicBlock(".omp.conditional.lastprivate.then");
+          llvm::BasicBlock *DoneBB =
+              createBasicBlock(".omp.conditional.lastprivate.done");
+          Builder.CreateCondBr(IsLastUpdateCond, ThenBB, DoneBB);
+          EmitBlock(ThenBB);
+
+          CodeGenCopy(*this, AssignOp, *CLVar, *ISrcRef, *IDestRef);
+
+          EmitBlock(DoneBB, /*IsFinished=*/true);
+        }
+
+        ++CLIter;
+        ++CLVar;
+        ++IRef;
+        ++ISrcRef;
+        ++IDestRef;
+        ++I;
+      }
+      if (auto *PostUpdate = C->getPostUpdateExpr())
+        EmitIgnoredExpr(PostUpdate);
+    }
   }
-  if (IsLastIterCond)
-    EmitBlock(DoneBB, /*IsFinished=*/true);
+
+  if (UnconditionalKind || UnconditionalSize) {
+    // Emit following code:
+    // if (<IsLastIterCond>) {
+    //   orig_var1 = private_orig_var1;
+    //   ...
+    //   orig_varn = private_orig_varn;
+    // }
+    llvm::BasicBlock *ThenBB = nullptr;
+    llvm::BasicBlock *DoneBB = nullptr;
+    if (IsLastIterCond) {
+      ThenBB = createBasicBlock(".omp.lastprivate.then");
+      DoneBB = createBasicBlock(".omp.lastprivate.done");
+      Builder.CreateCondBr(IsLastIterCond, ThenBB, DoneBB);
+      EmitBlock(ThenBB);
+    }
+    for (const auto *C : D.getClausesOfKind<OMPLastprivateClause>()) {
+      if (!UnconditionalKind &&
+          C->getModifier() == OMPC_LASTPRIVATE_conditional)
+        continue;
+      auto CLVar = C->conditional_lastprivate_variables().begin();
+      auto IRef = C->varlist_begin();
+      auto ISrcRef = C->source_exprs().begin();
+      auto IDestRef = C->destination_exprs().begin();
+      for (auto *AssignOp : C->assignment_ops()) {
+        auto *PrivateVD = cast<VarDecl>(cast<DeclRefExpr>(*IRef)->getDecl());
+        auto *CanonicalVD = PrivateVD->getCanonicalDecl();
+        if (AlreadyEmittedVars.insert(CanonicalVD).second) {
+          auto *Private =
+              C->getModifier() == OMPC_LASTPRIVATE_conditional ? *CLVar : *IRef;
+          CodeGenCopy(*this, AssignOp, Private, *ISrcRef, *IDestRef);
+        }
+        ++CLVar;
+        ++IRef;
+        ++ISrcRef;
+        ++IDestRef;
+      }
+      if (auto *PostUpdate = C->getPostUpdateExpr())
+        EmitIgnoredExpr(PostUpdate);
+    }
+    if (IsLastIterCond)
+      EmitBlock(DoneBB, /*IsFinished=*/true);
+  }
 }
 
 void CodeGenFunction::EmitOMPReductionClauseInit(
@@ -1318,7 +1430,7 @@ void CodeGenFunction::EmitOMPLoopBody(const OMPLoopDirective &D,
 
 void CodeGenFunction::EmitOMPInnerLoop(
     const Stmt &S, bool RequiresCleanup, const Expr *LoopCond,
-    const Expr *IncExpr,
+    const Expr *IncExpr, const Expr *LastprivateIterInitExpr,
     const llvm::function_ref<void(CodeGenFunction &)> &BodyGen,
     const llvm::function_ref<void(CodeGenFunction &)> &PostIncGen) {
   auto LoopExit = getJumpDestInCurrentScope("omp.inner.for.end");
@@ -1351,6 +1463,9 @@ void CodeGenFunction::EmitOMPInnerLoop(
   // Create a block for the increment.
   auto Continue = getJumpDestInCurrentScope("omp.inner.for.inc");
   BreakContinueStack.push_back(BreakContinue(LoopExit, Continue));
+
+  if (LastprivateIterInitExpr)
+    EmitIgnoredExpr(LastprivateIterInitExpr);
 
   BodyGen(*this);
 
@@ -1767,7 +1882,7 @@ void CodeGenFunction::EmitOMPSimdLoop(const OMPLoopDirective &S,
         HasLastprivateClause = CGF.EmitOMPLastprivateClauseInit(S, LoopScope);
       (void)LoopScope.Privatize();
       CGF.EmitOMPInnerLoop(S, LoopScope.requiresCleanups(), S.getCond(),
-                           S.getInc(),
+                           S.getInc(), /*LastprivateIterInitExpr=*/nullptr,
                            [&S](CodeGenFunction &CGF) {
                              CGF.EmitOMPLoopBody(S, JumpDest());
                              CGF.EmitStopPoint(&S);
@@ -1777,7 +1892,9 @@ void CodeGenFunction::EmitOMPSimdLoop(const OMPLoopDirective &S,
           S, [](CodeGenFunction &) -> llvm::Value * { return nullptr; });
       // Emit final copy of the lastprivate variables at the end of loops.
       if (HasLastprivateClause)
-        CGF.EmitOMPLastprivateClauseFinal(S, /*NoFinals=*/true);
+        CGF.EmitOMPLastprivateClauseFinal(S, /*NoFinals=*/true,
+                                          /*IsLastIter=*/nullptr,
+                                          /*UnconditionalKind=*/true);
       CGF.EmitOMPReductionClauseFinal(S, OMPD_simd);
       emitPostUpdateForReductionClause(
           CGF, S, [](CodeGenFunction &) -> llvm::Value * { return nullptr; });
@@ -1917,6 +2034,7 @@ void CodeGenFunction::EmitOMPOuterLoop(
       (isOpenMPLoopBoundSharingDirective(S.getDirectiveKind()) && IsDistribute)
           ? S.getDistInc()
           : S.getInc(),
+      S.getConditionalLastprivateIterInit(),
       [&S, IsDistribute, &CodeGenDistributeLoopContent,
        LoopExit](CodeGenFunction &CGF) {
         if (isOpenMPLoopBoundSharingDirective(S.getDirectiveKind()) &&
@@ -2282,6 +2400,14 @@ bool CodeGenFunction::EmitOMPWorksharingLoop(const OMPLoopDirective &S) {
   auto IVDecl = cast<VarDecl>(IVExpr->getDecl());
   EmitVarDecl(*IVDecl);
 
+  // Emit the conditional lastprivate iteration variable, if required.
+  if (S.getConditionalLastprivateIterVariable()) {
+    auto CLIVExpr =
+        dyn_cast<DeclRefExpr>(S.getConditionalLastprivateIterVariable());
+    auto CLIVDecl = cast<VarDecl>(CLIVExpr->getDecl());
+    EmitVarDecl(*CLIVDecl);
+  }
+
   // Emit the iterations count variable.
   // If it is not a variable, Sema decided to calculate iterations count on each
   // iteration (e.g., it is foldable into a constant).
@@ -2424,19 +2550,19 @@ bool CodeGenFunction::EmitOMPWorksharingLoop(const OMPLoopDirective &S) {
 
         // IV = LB;
         EmitIgnoredExpr(S.getInit());
-        EmitOMPInnerLoop(S, LoopScope.requiresCleanups(),
-                         S.getCond() /* IV < GlobalUB */,
-                         S.getInc() /* Unused */,
-                         [&S, LoopExit](CodeGenFunction &CGF) {
-                           CGF.EmitOMPLoopBody(S, LoopExit);
-                           CGF.EmitStopPoint(&S);
-                         },
-                         [&S](CodeGenFunction &CGF) {
-                           // LB = LB + Stride
-                           CGF.EmitIgnoredExpr(S.getNextLowerBound());
-                           // IV = LB;
-                           CGF.EmitIgnoredExpr(S.getInit());
-                         });
+        EmitOMPInnerLoop(
+            S, LoopScope.requiresCleanups(), S.getCond() /* IV < GlobalUB */,
+            S.getInc() /* Unused */, S.getConditionalLastprivateIterInit(),
+            [&S, LoopExit](CodeGenFunction &CGF) {
+              CGF.EmitOMPLoopBody(S, LoopExit);
+              CGF.EmitStopPoint(&S);
+            },
+            [&S](CodeGenFunction &CGF) {
+              // LB = LB + Stride
+              CGF.EmitIgnoredExpr(S.getNextLowerBound());
+              // IV = LB;
+              CGF.EmitIgnoredExpr(S.getInit());
+            });
         EmitBlock(LoopExit.getBlock());
         // Tell the runtime we are done.
         RT.emitForStaticFinish(*this, S.getLocStart());
@@ -2467,7 +2593,7 @@ bool CodeGenFunction::EmitOMPWorksharingLoop(const OMPLoopDirective &S) {
         EmitIgnoredExpr(S.getInit());
         // while (idx <= UB) { BODY; ++idx; }
         EmitOMPInnerLoop(S, LoopScope.requiresCleanups(), S.getCond(),
-                         S.getInc(),
+                         S.getInc(), S.getConditionalLastprivateIterInit(),
                          [&S, LoopExit](CodeGenFunction &CGF) {
                            CGF.EmitOMPLoopBody(S, LoopExit);
                            CGF.EmitStopPoint(&S);
@@ -2670,7 +2796,8 @@ void CodeGenFunction::EmitSections(const OMPExecutableDirective &S) {
     // IV = LB;
     CGF.EmitStoreOfScalar(CGF.EmitLoadOfScalar(LB, S.getLocStart()), IV);
     // while (idx <= UB) { BODY; ++idx; }
-    CGF.EmitOMPInnerLoop(S, /*RequiresCleanup=*/false, &Cond, &Inc, BodyGen,
+    CGF.EmitOMPInnerLoop(S, /*RequiresCleanup=*/false, &Cond, &Inc,
+                         /*LastprivateIterInitExpr=*/nullptr, BodyGen,
                          [](CodeGenFunction &) {});
     // Tell the runtime we are done.
     auto &&CodeGen = [&S](CodeGenFunction &CGF) {
@@ -3220,6 +3347,11 @@ void CodeGenFunction::EmitOMPFlushDirective(const OMPFlushDirective &S) {
 void CodeGenFunction::EmitOMPLastprivateUpdateDirective(
     const OMPLastprivateUpdateDirective &S) {
   EmitStmt(cast<CapturedStmt>(S.getAssociatedStmt())->getCapturedStmt());
+  if (const auto *LastprivateUpdateClause =
+          S.getSingleClause<OMPLastprivateUpdateClause>()) {
+    for (auto *Expr : LastprivateUpdateClause->varlists())
+      EmitIgnoredExpr(Expr);
+  }
 }
 
 void CodeGenFunction::EmitOMPDistributeLoop(
@@ -3401,6 +3533,7 @@ void CodeGenFunction::EmitOMPDistributeLoop(
         EmitOMPInnerLoop(S, LoopScope.requiresCleanups(),
                          S.getDistCond() /* IV < GlobalUB */,
                          S.getInc() /* Unused */,
+                         /*LastprivateIterInitExpr=*/nullptr,
                          [&S, &LoopExit](CodeGenFunction &CGF) {
                            CGF.EmitOMPLoopBody(S, LoopExit);
                            CGF.EmitStopPoint(&S);
@@ -3446,6 +3579,7 @@ void CodeGenFunction::EmitOMPDistributeLoop(
                          isOpenMPLoopBoundSharingDirective(S.getDirectiveKind())
                              ? S.getDistInc()
                              : S.getInc(),
+                         /*LastprivateIterInitExpr=*/nullptr,
                          [&S, &LoopExit,
                           &CodeGenDistributeLoopContent](CodeGenFunction &CGF) {
                            if (S.getDirectiveKind() == OMPD_distribute ||
@@ -5004,6 +5138,7 @@ void CodeGenFunction::EmitOMPTaskLoopBasedDirective(const OMPLoopDirective &S) {
 
     CGF.EmitOMPInnerLoop(S, LoopScope.requiresCleanups(), S.getCond(),
                          S.getInc(),
+                         /*LastprivateIterInitExpr=*/nullptr,
                          [&S](CodeGenFunction &CGF) {
                            CGF.EmitOMPLoopBody(S, JumpDest());
                            CGF.EmitStopPoint(&S);

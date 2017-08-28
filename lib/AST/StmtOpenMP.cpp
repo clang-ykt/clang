@@ -101,6 +101,8 @@ OMPSimdDirective::Create(const ASTContext &C, SourceLocation StartLoc,
   Dir->setLaneInit(Exprs.LaneInit);
   Dir->setNumLanes(Exprs.NumLanes);
   Dir->setInc(Exprs.Inc);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -157,6 +159,8 @@ OMPForDirective::Create(const ASTContext &C, SourceLocation StartLoc,
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -215,6 +219,8 @@ OMPForSimdDirective::Create(const ASTContext &C, SourceLocation StartLoc,
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -386,6 +392,8 @@ OMPParallelForDirective *OMPParallelForDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -443,6 +451,8 @@ OMPParallelForSimdDirective *OMPParallelForSimdDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -824,6 +834,8 @@ OMPTargetParallelForDirective *OMPTargetParallelForDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -973,6 +985,8 @@ OMPTaskLoopDirective *OMPTaskLoopDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -1030,6 +1044,8 @@ OMPTaskLoopSimdDirective *OMPTaskLoopSimdDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -1086,6 +1102,8 @@ OMPDistributeDirective *OMPDistributeDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -1166,6 +1184,8 @@ OMPDistributeParallelForDirective *OMPDistributeParallelForDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -1228,6 +1248,8 @@ OMPDistributeParallelForSimdDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -1289,6 +1311,8 @@ OMPDistributeSimdDirective *OMPDistributeSimdDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -1349,6 +1373,8 @@ OMPTargetParallelForSimdDirective *OMPTargetParallelForSimdDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -1392,6 +1418,8 @@ OMPTargetSimdDirective::Create(const ASTContext &C, SourceLocation StartLoc,
   Dir->setPreCond(Exprs.PreCond);
   Dir->setCond(Exprs.Cond);
   Dir->setInit(Exprs.Init);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setLaneInit(Exprs.LaneInit);
   Dir->setNumLanes(Exprs.NumLanes);
   Dir->setInc(Exprs.Inc);
@@ -1446,6 +1474,8 @@ OMPTeamsDistributeDirective *OMPTeamsDistributeDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setStrideVariable(Exprs.ST);
   Dir->setEnsureUpperBound(Exprs.EUB);
   Dir->setNextLowerBound(Exprs.NLB);
@@ -1505,6 +1535,8 @@ OMPTeamsDistributeSimdDirective *OMPTeamsDistributeSimdDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setStrideVariable(Exprs.ST);
   Dir->setEnsureUpperBound(Exprs.EUB);
   Dir->setNextLowerBound(Exprs.NLB);
@@ -1566,6 +1598,8 @@ OMPTeamsDistributeParallelForSimdDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setStrideVariable(Exprs.ST);
   Dir->setEnsureUpperBound(Exprs.EUB);
   Dir->setNextLowerBound(Exprs.NLB);
@@ -1630,6 +1664,8 @@ OMPTeamsDistributeParallelForDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setStrideVariable(Exprs.ST);
   Dir->setEnsureUpperBound(Exprs.EUB);
   Dir->setNextLowerBound(Exprs.NLB);
@@ -1716,6 +1752,8 @@ OMPTargetTeamsDistributeDirective *OMPTargetTeamsDistributeDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setStrideVariable(Exprs.ST);
   Dir->setEnsureUpperBound(Exprs.EUB);
   Dir->setNextLowerBound(Exprs.NLB);
@@ -1780,6 +1818,8 @@ OMPTargetTeamsDistributeParallelForDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setStrideVariable(Exprs.ST);
   Dir->setEnsureUpperBound(Exprs.EUB);
   Dir->setNextLowerBound(Exprs.NLB);
@@ -1847,6 +1887,8 @@ OMPTargetTeamsDistributeParallelForSimdDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setStrideVariable(Exprs.ST);
   Dir->setEnsureUpperBound(Exprs.EUB);
   Dir->setNextLowerBound(Exprs.NLB);
@@ -1911,6 +1953,8 @@ OMPTargetTeamsDistributeSimdDirective::Create(
   Dir->setDistInc(Exprs.DistInc);
   Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setInnermostIterationVariable(Exprs.InnermostIterationVarRef);
+  Dir->setConditionalLastprivateIterVariable(Exprs.CLIter);
+  Dir->setConditionalLastprivateIterInit(Exprs.CLIterInit);
   Dir->setStrideVariable(Exprs.ST);
   Dir->setEnsureUpperBound(Exprs.EUB);
   Dir->setNextLowerBound(Exprs.NLB);

@@ -1338,6 +1338,16 @@ public:
                                    Address IL, Address LB,
                                    Address UB, Address ST);
 
+  /// \brief Emit a call to reduce iteration variables for each conditional
+  /// lastprivate variable.
+  /// \param NumVars Number of conditional lastprivate variables.
+  /// \param Array Array of last update iteration values.
+  ///
+  virtual void emitReduceConditionalLastprivateCall(CodeGenFunction &CGF,
+                                                    SourceLocation Loc,
+                                                    llvm::Value *NumVars,
+                                                    llvm::Value *Array);
+
   /// \brief Emits call to void __kmpc_push_num_threads(ident_t *loc, kmp_int32
   /// global_tid, kmp_int32 num_threads) to generate code for 'num_threads'
   /// clause.
