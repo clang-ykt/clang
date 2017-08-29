@@ -2661,6 +2661,8 @@ void ASTStmtReader::VisitOMPLoopDirective(OMPLoopDirective *D) {
   D->setNumLanes(Record.readSubExpr());
   D->setInc(Record.readSubExpr());
   D->setPreInits(Record.readSubStmt());
+  D->setConditionalLastprivateIterVariable(Record.readSubExpr());
+  D->setConditionalLastprivateIterInit(Record.readSubExpr());
   if (isOpenMPWorksharingDirective(D->getDirectiveKind()) ||
       isOpenMPTaskLoopDirective(D->getDirectiveKind()) ||
       isOpenMPDistributeDirective(D->getDirectiveKind())) {
@@ -2677,8 +2679,6 @@ void ASTStmtReader::VisitOMPLoopDirective(OMPLoopDirective *D) {
     D->setDistInc(Record.readSubExpr());
     D->setPrevEnsureUpperBound(Record.readSubExpr());
     D->setInnermostIterationVariable(Record.readSubExpr());
-    D->setConditionalLastprivateIterVariable(Record.readSubExpr());
-    D->setConditionalLastprivateIterInit(Record.readSubExpr());
     D->setNumIterations(Record.readSubExpr());
   }
   SmallVector<Expr *, 4> Sub;

@@ -1854,6 +1854,14 @@ void CodeGenFunction::EmitOMPSimdLoop(const OMPLoopDirective &S,
     // Emit Iteration variable initialization
     CGF.EmitIgnoredExpr(S.getInit());
 
+    // Emit the conditional lastprivate iteration variable, if required.
+    if (S.getConditionalLastprivateIterVariable()) {
+      auto CLIVExpr =
+          dyn_cast<DeclRefExpr>(S.getConditionalLastprivateIterVariable());
+      auto CLIVDecl = cast<VarDecl>(CLIVExpr->getDecl());
+      CGF.EmitVarDecl(*CLIVDecl);
+    }
+
     // Emit the iterations count variable.
     // If it is not a variable, Sema decided to calculate iterations count on
     // each iteration (e.g., it is foldable into a constant).
@@ -1882,7 +1890,7 @@ void CodeGenFunction::EmitOMPSimdLoop(const OMPLoopDirective &S,
         HasLastprivateClause = CGF.EmitOMPLastprivateClauseInit(S, LoopScope);
       (void)LoopScope.Privatize();
       CGF.EmitOMPInnerLoop(S, LoopScope.requiresCleanups(), S.getCond(),
-                           S.getInc(), /*LastprivateIterInitExpr=*/nullptr,
+                           S.getInc(), S.getConditionalLastprivateIterInit(),
                            [&S](CodeGenFunction &CGF) {
                              CGF.EmitOMPLoopBody(S, JumpDest());
                              CGF.EmitStopPoint(&S);

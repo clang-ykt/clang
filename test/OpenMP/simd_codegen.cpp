@@ -22,6 +22,7 @@ void simple(float *a, float *b, float *c, float *d) {
   for (int i = 3; i < 32; i += 5) {
 // CHECK: [[SIMPLE_LOOP1_BODY]]:
 // Start of body: calculate i from IV:
+// CHECK: load i32, i32* [[OMP_IV]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP1_ID]]
 // CHECK: [[IV1_1:%.+]] = load i32, i32* [[OMP_IV]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP1_ID]]
 // CHECK: [[CALC_I_1:%.+]] = mul nsw i32 [[IV1_1]], 5
 // CHECK-NEXT: [[CALC_I_2:%.+]] = add nsw i32 3, [[CALC_I_1]]
@@ -52,6 +53,7 @@ void simple(float *a, float *b, float *c, float *d) {
   for (int i = 10; i > 1; i--) {
 // CHECK: [[SIMPLE_LOOP2_BODY]]:
 // Start of body: calculate i from IV:
+// CHECK: load i32, i32* [[OMP_IV2]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP2_ID]]
 // CHECK: [[IV2_0:%.+]] = load i32, i32* [[OMP_IV2]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP2_ID]]
 // FIXME: It is interesting, why the following "mul 1" was not constant folded?
 // CHECK-NEXT: [[IV2_1:%.+]] = mul nsw i32 [[IV2_0]], 1
@@ -102,6 +104,7 @@ void simple(float *a, float *b, float *c, float *d) {
   for (unsigned long long it = 2000; it >= 600; it-=400) {
 // CHECK: [[SIMPLE_LOOP3_BODY]]:
 // Start of body: calculate it from IV:
+// CHECK: load i64, i64* [[OMP_IV3]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP3_ID]]
 // CHECK: [[IV3_0:%.+]] = load i64, i64* [[OMP_IV3]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP3_ID]]
 // CHECK-NEXT: [[LC_IT_1:%.+]] = mul i64 [[IV3_0]], 400
 // CHECK-NEXT: [[LC_IT_2:%.+]] = sub i64 2000, [[LC_IT_1]]
@@ -144,6 +147,7 @@ void simple(float *a, float *b, float *c, float *d) {
   for (short it = 6; it <= 20; it-=-4) {
 // CHECK: [[SIMPLE_LOOP4_BODY]]:
 // Start of body: calculate it from IV:
+// CHECK: load i32, i32* [[OMP_IV4]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP4_ID]]
 // CHECK: [[IV4_0:%.+]] = load i32, i32* [[OMP_IV4]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP4_ID]]
 // CHECK-NEXT: [[LC_IT_1:%.+]] = mul nsw i32 [[IV4_0]], 4
 // CHECK-NEXT: [[LC_IT_2:%.+]] = add nsw i32 6, [[LC_IT_1]]
@@ -165,6 +169,7 @@ void simple(float *a, float *b, float *c, float *d) {
   for (unsigned char it = 'z'; it >= 'a'; it+=-1) {
 // CHECK: [[SIMPLE_LOOP5_BODY]]:
 // Start of body: calculate it from IV:
+// CHECK: load i32, i32* [[OMP_IV5]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP5_ID]]
 // CHECK: [[IV5_0:%.+]] = load i32, i32* [[OMP_IV5]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP5_ID]]
 // CHECK-NEXT: [[IV5_1:%.+]] = mul nsw i32 [[IV5_0]], 1
 // CHECK-NEXT: [[LC_IT_1:%.+]] = sub nsw i32 122, [[IV5_1]]
@@ -195,6 +200,7 @@ void simple(float *a, float *b, float *c, float *d) {
   for (long long i = -10; i < 10; i += 3) {
 // CHECK: [[SIMPLE_LOOP7_BODY]]:
 // Start of body: calculate i from IV:
+// CHECK: load i64, i64* [[OMP_IV7]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP7_ID]]
 // CHECK: [[IV7_0:%.+]] = load i64, i64* [[OMP_IV7]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP7_ID]]
 // CHECK-NEXT: [[LC_IT_1:%.+]] = mul nsw i64 [[IV7_0]], 3
 // CHECK-NEXT: [[LC_IT_2:%.+]] = add nsw i64 -10, [[LC_IT_1]]
@@ -225,6 +231,7 @@ void simple(float *a, float *b, float *c, float *d) {
   for (long long i = -10; i < 10; i += 3) {
 // CHECK: [[SIMPLE_LOOP8_BODY]]:
 // Start of body: calculate i from IV:
+// CHECK: load i64, i64* [[OMP_IV8]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP8_ID]]
 // CHECK: [[IV8_0:%.+]] = load i64, i64* [[OMP_IV8]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP8_ID]]
 // CHECK-NEXT: [[LC_IT_1:%.+]] = mul nsw i64 [[IV8_0]], 3
 // CHECK-NEXT: [[LC_IT_2:%.+]] = add nsw i64 -10, [[LC_IT_1]]
@@ -266,6 +273,7 @@ int templ1(T a, T *z) {
 // CHECK-NEXT: br i1 [[CMP1]], label %[[T1_BODY:.+]], label %[[T1_END:[^,]+]]
 // CHECK: [[T1_BODY]]:
 // Loop counters i and j updates:
+// CHECK: load i64, i64* [[T1_OMP_IV]]{{.*}}!llvm.mem.parallel_loop_access ![[T1_ID]]
 // CHECK: [[IV1:%.+]] = load i64, i64* [[T1_OMP_IV]]{{.*}}!llvm.mem.parallel_loop_access ![[T1_ID]]
 // CHECK-NEXT: [[I_1:%.+]] = sdiv i64 [[IV1]], 4
 // CHECK-NEXT: [[I_1_MUL1:%.+]] = mul nsw i64 [[I_1]], 1
@@ -382,6 +390,7 @@ void collapsed(float *a, float *b, float *c, float *d) {
         {
 // CHECK: [[COLL1_BODY]]:
 // Start of body: calculate i from index:
+// CHECK: load i32, i32* [[OMP_IV]]{{.+}}!llvm.mem.parallel_loop_access ![[COLL1_LOOP_ID]]
 // CHECK: [[IV1:%.+]] = load i32, i32* [[OMP_IV]]{{.+}}!llvm.mem.parallel_loop_access ![[COLL1_LOOP_ID]]
 // Calculation of the loop counters values.
 // CHECK: [[CALC_I_1:%.+]] = udiv i32 [[IV1]], 60
@@ -506,6 +515,7 @@ void linear(float *a) {
   for (int i = 10; i > 1; i--) {
 // CHECK: [[SIMPLE_LOOP_BODY]]:
 // Start of body: calculate i from IV:
+// CHECK: load i32, i32* [[OMP_IV]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP_ID]]
 // CHECK: [[IV_0:%.+]] = load i32, i32* [[OMP_IV]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP_ID]]
 // FIXME: It is interesting, why the following "mul 1" was not constant folded?
 // CHECK-NEXT: [[IV_1:%.+]] = mul nsw i32 [[IV_0]], 1
@@ -551,6 +561,7 @@ void linear(float *a) {
   for (int i = 10; i > 1; i--) {
 // CHECK: [[SIMPLE_LOOP_BODY]]:
 // Start of body: calculate i from IV:
+// CHECK: load i32, i32* [[OMP_IV]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP_ID]]
 // CHECK: [[IV_0:%.+]] = load i32, i32* [[OMP_IV]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP_ID]]
 // FIXME: It is interesting, why the following "mul 1" was not constant folded?
 // CHECK-NEXT: [[IV_1:%.+]] = mul nsw i32 [[IV_0]], 1
@@ -592,6 +603,7 @@ void linear(float *a) {
   for (int i = 10; i > 1; i--) {
 // CHECK: [[SIMPLE_LOOP_BODY]]:
 // Start of body: calculate i from IV:
+// CHECK: load i32, i32* [[OMP_IV]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP_ID]]
 // CHECK: [[IV_0:%.+]] = load i32, i32* [[OMP_IV]]{{.*}}!llvm.mem.parallel_loop_access ![[SIMPLE_LOOP_ID]]
 // FIXME: It is interesting, why the following "mul 1" was not constant folded?
 // CHECK-NEXT: [[IV_1:%.+]] = mul nsw i32 [[IV_0]], 1

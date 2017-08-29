@@ -2282,6 +2282,8 @@ void ASTStmtWriter::VisitOMPLoopDirective(OMPLoopDirective *D) {
   Record.AddStmt(D->getNumLanes());
   Record.AddStmt(D->getInc());
   Record.AddStmt(D->getPreInits());
+  Record.AddStmt(D->getConditionalLastprivateIterVariable());
+  Record.AddStmt(D->getConditionalLastprivateIterInit());
   if (isOpenMPWorksharingDirective(D->getDirectiveKind()) ||
       isOpenMPTaskLoopDirective(D->getDirectiveKind()) ||
       isOpenMPDistributeDirective(D->getDirectiveKind())) {
@@ -2298,8 +2300,6 @@ void ASTStmtWriter::VisitOMPLoopDirective(OMPLoopDirective *D) {
     Record.AddStmt(D->getDistInc());
     Record.AddStmt(D->getPrevEnsureUpperBound());
     Record.AddStmt(D->getInnermostIterationVariable());
-    Record.AddStmt(D->getConditionalLastprivateIterVariable());
-    Record.AddStmt(D->getConditionalLastprivateIterInit());
     Record.AddStmt(D->getNumIterations());
   }
   for (auto I : D->counters()) {
