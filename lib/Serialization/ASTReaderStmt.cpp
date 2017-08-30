@@ -2778,6 +2778,7 @@ void ASTStmtReader::VisitOMPParallelSectionsDirective(
   Record.skipInts(1);
   VisitOMPExecutableDirective(D);
   D->setHasCancel(Record.readInt());
+  D->setConditionalLastprivateIterVariable(Record.readSubExpr());
 }
 
 void ASTStmtReader::VisitOMPTaskDirective(OMPTaskDirective *D) {

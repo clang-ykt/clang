@@ -479,7 +479,8 @@ OMPParallelForSimdDirective::CreateEmpty(const ASTContext &C,
 
 OMPParallelSectionsDirective *OMPParallelSectionsDirective::Create(
     const ASTContext &C, SourceLocation StartLoc, SourceLocation EndLoc,
-    ArrayRef<OMPClause *> Clauses, Stmt *AssociatedStmt, bool HasCancel) {
+    ArrayRef<OMPClause *> Clauses, Stmt *AssociatedStmt, bool HasCancel,
+    Expr *CLIV) {
   unsigned Size =
       llvm::alignTo(sizeof(OMPParallelSectionsDirective), alignof(OMPClause *));
   void *Mem =
@@ -489,6 +490,7 @@ OMPParallelSectionsDirective *OMPParallelSectionsDirective::Create(
   Dir->setClauses(Clauses);
   Dir->setAssociatedStmt(AssociatedStmt);
   Dir->setHasCancel(HasCancel);
+  Dir->setConditionalLastprivateIterVariable(CLIV);
   return Dir;
 }
 

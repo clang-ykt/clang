@@ -2398,6 +2398,7 @@ void ASTStmtWriter::VisitOMPParallelSectionsDirective(
   Record.push_back(D->getNumClauses());
   VisitOMPExecutableDirective(D);
   Record.push_back(D->hasCancel() ? 1 : 0);
+  Record.AddStmt(D->getConditionalLastprivateIterVariable());
   Code = serialization::STMT_OMP_PARALLEL_SECTIONS_DIRECTIVE;
 }
 

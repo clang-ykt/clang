@@ -2731,6 +2731,8 @@ void CodeGenFunction::EmitSections(const OMPExecutableDirective &S) {
     Expr *CLIVExpr = nullptr;
     if (auto *OSD = dyn_cast<OMPSectionsDirective>(&S))
       CLIVExpr = OSD->getConditionalLastprivateIterVariable();
+    else if (auto *OSD = dyn_cast<OMPParallelSectionsDirective>(&S))
+      CLIVExpr = OSD->getConditionalLastprivateIterVariable();
     assert(CLIVExpr && "Expecting conditional lastprivate iteration variable");
     auto CLIVDRE = dyn_cast<DeclRefExpr>(CLIVExpr);
     assert(CLIVDRE && "Expecting conditional lastprivate iteration variable");
@@ -2977,6 +2979,7 @@ void CodeGenFunction::EmitOMPParallelSectionsDirective(
   // Emit directive as a combined directive that consists of two implicit
   // directives: 'parallel' with 'sections' directive.
   auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
+    OMPLexicalScope Scope(CGF, S);
     CGF.EmitSections(S);
   };
   emitCommonOMPParallelDirective(*this, S, OMPD_sections, CodeGen);

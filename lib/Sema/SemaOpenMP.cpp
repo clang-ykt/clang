@@ -5555,7 +5555,8 @@ Sema::ActOnOpenMPParallelSectionsDirective(ArrayRef<OMPClause *> Clauses,
   getCurFunction()->setHasBranchProtectedScope();
 
   return OMPParallelSectionsDirective::Create(
-      Context, StartLoc, EndLoc, Clauses, AStmt, DSAStack->isCancelRegion());
+      Context, StartLoc, EndLoc, Clauses, AStmt, DSAStack->isCancelRegion(),
+      DSAStack->getLoopIterationVar());
 }
 
 StmtResult Sema::ActOnOpenMPTaskDirective(ArrayRef<OMPClause *> Clauses,

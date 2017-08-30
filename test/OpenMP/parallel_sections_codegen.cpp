@@ -46,6 +46,7 @@ int main() {
 // CHECK:      br i1 [[CMP]], label %[[INNER_LOOP_BODY:.+]], label %[[INNER_LOOP_END:.+]]
 // CHECK:      [[INNER_LOOP_BODY]]
 // <<TRUE>> - > <BODY>
+// CHECK:      load i32, i32* [[IV_PTR]]
 // CHECK:      [[IV:%.+]] = load i32, i32* [[IV_PTR]]
 // CHECK:      switch i32 [[IV]], label %[[SECTIONS_EXIT:.+]] [
 // CHECK-NEXT: i32 0, label %[[SECTIONS_CASE0:.+]]
