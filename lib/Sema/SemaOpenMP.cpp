@@ -1533,9 +1533,19 @@ void Sema::setOpenMPCaptureKind(FieldDecl *FD, ValueDecl *D, unsigned Level) {
 
 bool Sema::isOpenMPConditionalLastprivate(ValueDecl *D) {
   assert(LangOpts.OpenMP && "OpenMP is not allowed");
-  // Get attribute from current top of stack.
-  auto DVar = DSAStack->getTopDSA(D, /*FromParent=*/false);
-  return DVar.CKind == OMPC_lastprivate && DVar.LastprivateUpdateIter;
+  if (DSAStack->getCurrentDirective() == OMPD_section) {
+    // In the case of a section directive, look up its parent sections
+    // directive.
+    auto &&MatchesAlways = [](OpenMPDirectiveKind) -> bool { return true; };
+    auto DVar = DSAStack->hasDSA(
+        D, [](OpenMPClauseKind K) -> bool { return K == OMPC_lastprivate; },
+        MatchesAlways, /*FromParent=*/false);
+    return DVar.LastprivateUpdateIter;
+  } else {
+    // Get attribute from current top of stack.
+    auto DVar = DSAStack->getTopDSA(D, /*FromParent=*/false);
+    return DVar.CKind == OMPC_lastprivate && DVar.LastprivateUpdateIter;
+  }
 }
 
 Expr *Sema::getOpenMPUpdateExprForConditionalLastprivate(ValueDecl *D,
@@ -1543,9 +1553,19 @@ Expr *Sema::getOpenMPUpdateExprForConditionalLastprivate(ValueDecl *D,
                                                          SourceLocation Loc) {
   assert(LangOpts.OpenMP && "OpenMP is not allowed");
   Expr *UpdateExpr = nullptr;
-  // Get attribute from current top of stack.
-  auto DVar = DSAStack->getTopDSA(D, /*FromParent=*/false);
-  UpdateExpr = DVar.LastprivateUpdateIter;
+  if (DSAStack->getCurrentDirective() == OMPD_section) {
+    // In the case of a section directive, look up its parent sections
+    // directive.
+    auto &&MatchesAlways = [](OpenMPDirectiveKind) -> bool { return true; };
+    auto DVar = DSAStack->hasDSA(
+        D, [](OpenMPClauseKind K) -> bool { return K == OMPC_lastprivate; },
+        MatchesAlways, /*FromParent=*/false);
+    UpdateExpr = DVar.LastprivateUpdateIter;
+  } else {
+    // Get attribute from current top of stack.
+    auto DVar = DSAStack->getTopDSA(D, /*FromParent=*/false);
+    UpdateExpr = DVar.LastprivateUpdateIter;
+  }
   assert(UpdateExpr && "Expected update expr for conditional lastprivate.");
   OMPClause *Clause =
       ActOnOpenMPLastprivateUpdateClause(UpdateExpr, Loc, Loc, Loc);
@@ -5281,7 +5301,8 @@ StmtResult Sema::ActOnOpenMPSectionsDirective(ArrayRef<OMPClause *> Clauses,
   getCurFunction()->setHasBranchProtectedScope();
 
   return OMPSectionsDirective::Create(Context, StartLoc, EndLoc, Clauses, AStmt,
-                                      DSAStack->isCancelRegion());
+                                      DSAStack->isCancelRegion(),
+                                      DSAStack->getLoopIterationVar());
 }
 
 StmtResult Sema::ActOnOpenMPSectionDirective(Stmt *AStmt,

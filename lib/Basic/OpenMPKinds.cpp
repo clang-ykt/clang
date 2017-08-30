@@ -915,5 +915,5 @@ bool clang::requiresAdditionalIterationVar(OpenMPDirectiveKind DKind) {
 }
 
 bool clang::isOpenMPConditionalLastprivateDirective(OpenMPDirectiveKind DKind) {
-  return DKind == OMPD_for || DKind == OMPD_simd;
+  return DKind == OMPD_for || DKind == OMPD_simd || DKind == OMPD_sections;
 }

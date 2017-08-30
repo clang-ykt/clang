@@ -2732,6 +2732,7 @@ void ASTStmtReader::VisitOMPSectionsDirective(OMPSectionsDirective *D) {
   Record.skipInts(1);
   VisitOMPExecutableDirective(D);
   D->setHasCancel(Record.readInt());
+  D->setConditionalLastprivateIterVariable(Record.readSubExpr());
 }
 
 void ASTStmtReader::VisitOMPSectionDirective(OMPSectionDirective *D) {

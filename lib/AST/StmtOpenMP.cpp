@@ -242,9 +242,11 @@ OMPForSimdDirective *OMPForSimdDirective::CreateEmpty(const ASTContext &C,
   return new (Mem) OMPForSimdDirective(CollapsedNum, NumClauses);
 }
 
-OMPSectionsDirective *OMPSectionsDirective::Create(
-    const ASTContext &C, SourceLocation StartLoc, SourceLocation EndLoc,
-    ArrayRef<OMPClause *> Clauses, Stmt *AssociatedStmt, bool HasCancel) {
+OMPSectionsDirective *
+OMPSectionsDirective::Create(const ASTContext &C, SourceLocation StartLoc,
+                             SourceLocation EndLoc,
+                             ArrayRef<OMPClause *> Clauses,
+                             Stmt *AssociatedStmt, bool HasCancel, Expr *CLIV) {
   unsigned Size =
       llvm::alignTo(sizeof(OMPSectionsDirective), alignof(OMPClause *));
   void *Mem =
@@ -254,6 +256,7 @@ OMPSectionsDirective *OMPSectionsDirective::Create(
   Dir->setClauses(Clauses);
   Dir->setAssociatedStmt(AssociatedStmt);
   Dir->setHasCancel(HasCancel);
+  Dir->setConditionalLastprivateIterVariable(CLIV);
   return Dir;
 }
 

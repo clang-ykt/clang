@@ -1131,6 +1131,9 @@ class OMPSectionsDirective : public OMPExecutableDirective {
   /// \brief true if current directive has inner cancel directive.
   bool HasCancel;
 
+  /// \brief Iteration variable used for conditional lastprivate codegen.
+  Expr *ConditionalLastprivateIterVariable;
+
   /// \brief Build directive with the given start and end location.
   ///
   /// \param StartLoc Starting location of the directive kind.
@@ -1141,7 +1144,7 @@ class OMPSectionsDirective : public OMPExecutableDirective {
                        unsigned NumClauses)
       : OMPExecutableDirective(this, OMPSectionsDirectiveClass, OMPD_sections,
                                StartLoc, EndLoc, NumClauses, 1),
-        HasCancel(false) {}
+        HasCancel(false), ConditionalLastprivateIterVariable(nullptr) {}
 
   /// \brief Build an empty directive.
   ///
@@ -1151,10 +1154,15 @@ class OMPSectionsDirective : public OMPExecutableDirective {
       : OMPExecutableDirective(this, OMPSectionsDirectiveClass, OMPD_sections,
                                SourceLocation(), SourceLocation(), NumClauses,
                                1),
-        HasCancel(false) {}
+        HasCancel(false), ConditionalLastprivateIterVariable(nullptr) {}
 
   /// \brief Set cancel state.
   void setHasCancel(bool Has) { HasCancel = Has; }
+
+  /// \brief Set iteration variable used for conditional lastprivate codegen.
+  void setConditionalLastprivateIterVariable(Expr *Var) {
+    ConditionalLastprivateIterVariable = Var;
+  }
 
 public:
   /// \brief Creates directive with a list of \a Clauses.
@@ -1168,7 +1176,8 @@ public:
   ///
   static OMPSectionsDirective *
   Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation EndLoc,
-         ArrayRef<OMPClause *> Clauses, Stmt *AssociatedStmt, bool HasCancel);
+         ArrayRef<OMPClause *> Clauses, Stmt *AssociatedStmt, bool HasCancel,
+         Expr *CLIV);
 
   /// \brief Creates an empty directive with the place for \a NumClauses
   /// clauses.
@@ -1181,6 +1190,11 @@ public:
 
   /// \brief Return true if current directive has inner cancel directive.
   bool hasCancel() const { return HasCancel; }
+
+  /// \brief Get iteration variable used for conditional lastprivate codegen.
+  Expr *getConditionalLastprivateIterVariable() const {
+    return ConditionalLastprivateIterVariable;
+  }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == OMPSectionsDirectiveClass;

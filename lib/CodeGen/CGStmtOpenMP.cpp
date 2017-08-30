@@ -2727,10 +2727,22 @@ void CodeGenFunction::EmitSections(const OMPExecutableDirective &S) {
                                   CGF.Builder.getInt32(0));
     // Loop counter.
     LValue IV = createSectionLVal(CGF, KmpInt32Ty, ".omp.sections.iv.");
+    // Emit the conditional lastprivate iteration variable, if required.
+    Expr *CLIVExpr = nullptr;
+    if (auto *OSD = dyn_cast<OMPSectionsDirective>(&S))
+      CLIVExpr = OSD->getConditionalLastprivateIterVariable();
+    assert(CLIVExpr && "Expecting conditional lastprivate iteration variable");
+    auto CLIVDRE = dyn_cast<DeclRefExpr>(CLIVExpr);
+    assert(CLIVDRE && "Expecting conditional lastprivate iteration variable");
+    auto CLIVDecl = cast<VarDecl>(CLIVDRE->getDecl());
+    CGF.EmitVarDecl(*CLIVDecl);
+    auto CLIVLVal = CGF.EmitLValue(CLIVDRE);
     OpaqueValueExpr IVRefExpr(S.getLocStart(), KmpInt32Ty, VK_LValue);
     CodeGenFunction::OpaqueValueMapping OpaqueIV(CGF, &IVRefExpr, IV);
     OpaqueValueExpr UBRefExpr(S.getLocStart(), KmpInt32Ty, VK_LValue);
     CodeGenFunction::OpaqueValueMapping OpaqueUB(CGF, &UBRefExpr, UB);
+    OpaqueValueExpr CLIVRefExpr(S.getLocStart(), C.getSizeType(), VK_LValue);
+    CodeGenFunction::OpaqueValueMapping OpaqueCLIV(CGF, &CLIVRefExpr, CLIVLVal);
     // Generate condition for loop.
     BinaryOperator Cond(&IVRefExpr, &UBRefExpr, BO_LE, C.BoolTy, VK_RValue,
                         OK_Ordinary, S.getLocStart(),
@@ -2738,6 +2750,13 @@ void CodeGenFunction::EmitSections(const OMPExecutableDirective &S) {
     // Increment for loop counter.
     UnaryOperator Inc(&IVRefExpr, UO_PreInc, KmpInt32Ty, VK_RValue, OK_Ordinary,
                       S.getLocStart());
+    // Generate conditional lastprivate iteration variable assignment.
+    ImplicitCastExpr IVCastExpr(ImplicitCastExpr::OnStack, C.getSizeType(),
+                                CK_IntegralCast, &IVRefExpr, VK_RValue);
+    BinaryOperator CLIVAssign(&CLIVRefExpr, &IVCastExpr, BO_Assign,
+                              C.getSizeType(), VK_RValue, OK_Ordinary,
+                              S.getLocStart(),
+                              /*fpContractable=*/false);
     auto BodyGen = [Stmt, CS, &S, &IV](CodeGenFunction &CGF) {
       // Iterate through all sections and emit a switch construct:
       // switch (IV) {
@@ -2805,7 +2824,7 @@ void CodeGenFunction::EmitSections(const OMPExecutableDirective &S) {
     CGF.EmitStoreOfScalar(CGF.EmitLoadOfScalar(LB, S.getLocStart()), IV);
     // while (idx <= UB) { BODY; ++idx; }
     CGF.EmitOMPInnerLoop(S, /*RequiresCleanup=*/false, &Cond, &Inc,
-                         /*LastprivateIterInitExpr=*/nullptr, BodyGen,
+                         /*LastprivateIterInitExpr=*/&CLIVAssign, BodyGen,
                          [](CodeGenFunction &) {});
     // Tell the runtime we are done.
     auto &&CodeGen = [&S](CodeGenFunction &CGF) {
