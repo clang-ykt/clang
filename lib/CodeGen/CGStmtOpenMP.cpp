@@ -2958,6 +2958,7 @@ void CodeGenFunction::EmitOMPParallelForDirective(
   // Emit directive as a combined directive that consists of two implicit
   // directives: 'parallel' with 'for' directive.
   auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
+    OMPLexicalScope Scope(CGF, S);
     OMPCancelStackRAII CancelRegion(CGF, OMPD_parallel_for, S.hasCancel());
     CGF.EmitOMPWorksharingLoop(S);
   };
