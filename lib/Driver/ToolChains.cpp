@@ -4953,16 +4953,18 @@ void CudaToolChain::addClangTargetOptions(
       CC1Args.push_back("-fcuda-approx-transcendentals");
   }
 
-  if (DriverArgs.hasArg(options::OPT_nocudalib) ||
-      (DeviceOffloadingKind == Action::OFK_OpenMP &&
-       DriverArgs.hasArg(options::OPT_S)) ||
-      (DeviceOffloadingKind == Action::OFK_OpenMP &&
-       DriverArgs.hasArg(options::OPT_c)))
+  if (DriverArgs.hasArg(options::OPT_nocudalib))
     return;
 
   std::string LibDeviceFile = CudaInstallation.getLibDeviceFile(GpuArch);
 
   if (LibDeviceFile.empty()) {
+    if ((DeviceOffloadingKind == Action::OFK_OpenMP &&
+         DriverArgs.hasArg(options::OPT_S)) ||
+        (DeviceOffloadingKind == Action::OFK_OpenMP &&
+         DriverArgs.hasArg(options::OPT_c)))
+      return;
+
     getDriver().Diag(diag::err_drv_no_cuda_libdevice) << GpuArch;
     return;
   }
