@@ -2009,7 +2009,21 @@ static LValue EmitGlobalVarDeclLValue(CodeGenFunction &CGF,
       CGF.CGM.getCXXABI().usesThreadWrapperFunction())
     return CGF.CGM.getCXXABI().EmitThreadLocalVarDeclLValue(CGF, VD, T);
 
-  llvm::Value *V = CGF.CGM.GetAddrOfGlobalVar(VD);
+  llvm::Value *V;
+  if (CGF.getLangOpts().OpenMP && CGF.getLangOpts().OpenMPIsDevice &&
+      VD->hasAttr<OMPDeclareTargetDeclAttr>() &&
+      VD->getAttr<OMPDeclareTargetDeclAttr>()->getMapType() ==
+          OMPDeclareTargetDeclAttr::MT_Link) {
+    llvm::GlobalValue *GV =
+        CGF.CGM.getOpenMPRuntime().getOrCreateGlobalLinkPtr(VD);
+    assert(GV && "Link pointer not found");
+    auto Ty = CGF.CGM.getContext().getPointerType(VD->getType());
+    auto PtrAddr = CGF.MakeNaturalAlignAddrLValue(GV, Ty);
+    V = CGF.EmitLoadOfPointerLValue(PtrAddr.getAddress(),
+        Ty->getAs<PointerType>()).getPointer();
+  } else {
+    V = CGF.CGM.GetAddrOfGlobalVar(VD);
+  }
   llvm::Type *RealVarTy = CGF.getTypes().ConvertTypeForMem(VD->getType());
   V = EmitBitCastOfLValueToProperType(CGF, V, RealVarTy);
   CharUnits Alignment = CGF.getContext().getDeclAlign(VD);

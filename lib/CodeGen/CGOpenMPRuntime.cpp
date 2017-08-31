@@ -3786,6 +3786,41 @@ createOffloadingHelperFunction(CodeGenModule &CGM, StringRef Name,
   return Fn;
 }
 
+llvm::GlobalValue *
+CGOpenMPRuntime::getOrCreateGlobalLinkPtr(const VarDecl *VD) {
+  SmallString<64> MN;
+  {
+    llvm::raw_svector_ostream OS(MN);
+    OS << CGM.getMangledName(GlobalDecl(VD)) << "_decl_tgt_link_ptr";
+  }
+
+  llvm::GlobalValue *GV = CGM.GetGlobalValue(MN.str());
+  // If GV has not been emitted yet, emit it now.
+  if (!GV) {
+    // Type is pointer to the original global variable.
+    llvm::Type *LinkPtrType =
+        CGM.getTypes().ConvertType(VD->getType())->getPointerTo();
+    // Initialize the pointer so that it points to the original global variable
+    // (only makes sense on the host, the device does not have any definition of
+    // the original global variable). In order to initialize the host pointer,
+    // its linkage must be external, whereas on the device linkage needs to be
+    // common with nullptr initialization.
+    if (CGM.getLangOpts().OpenMPIsDevice) {
+      GV = new llvm::GlobalVariable(CGM.getModule(), LinkPtrType,
+          /*isConstant=*/false, llvm::GlobalValue::CommonLinkage,
+          llvm::Constant::getNullValue(LinkPtrType), Twine(MN));
+    } else {
+      GV = new llvm::GlobalVariable(CGM.getModule(), LinkPtrType,
+          /*isConstant=*/false, llvm::GlobalValue::ExternalLinkage,
+          CGM.GetAddrOfGlobal(VD), Twine(MN));
+    }
+    // Protect the link pointer from being optimized away.
+    CGM.addUsedGlobal(GV);
+  }
+
+  return GV;
+}
+
 llvm::Function *
 CGOpenMPRuntime::createOffloadingBinaryDescriptorRegistration() {
 
@@ -3976,7 +4011,7 @@ void CGOpenMPRuntime::createOffloadEntriesAndInfoMetadata() {
   // Create the offloading info metadata node.
   llvm::NamedMDNode *MD = M.getOrInsertNamedMetadata("omp_offload.info");
 
-  // Auxiliar methods to create metadata values and strings.
+  // Auxiliary methods to create metadata values and strings.
   auto getMDInt = [&](unsigned v) {
     return llvm::ConstantAsMetadata::get(
         llvm::ConstantInt::get(llvm::Type::getInt32Ty(C), v));
@@ -4071,7 +4106,14 @@ void CGOpenMPRuntime::createOffloadEntriesAndInfoMetadata() {
                          CE->getFlags());
     } else if (auto *CE = dyn_cast<OffloadEntriesInfoManagerTy::
                                        OffloadEntryInfoDeviceGlobalVar>(E)) {
-      assert(CE->getAddress() && "Entry Addr is invalid!");
+      if (!CE->getAddress()) {
+        // If the address is NULL, it means we have seen a variable declaration
+        // but no actual definition. This can happen if a global variable is
+        // "declare target link" in which case the original global object is
+        // replaced by a "link" pointer.
+        continue;
+      }
+
       // The global address can be used as ID.
       if (!CE->getOnlyMetadataFlag()) {
         createOffloadEntry(
@@ -6860,6 +6902,7 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
   // Get mappable expression information.
   MappableExprsHandler MEHandler(D, CGF);
 
+  // Map all captured variables.
   const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
   auto RI = CS.getCapturedRecordDecl()->field_begin();
   auto CV = CapturedVars.begin();
@@ -6956,6 +6999,34 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
     Maps.Sizes.append(CurSizes.begin(), CurSizes.end());
     Maps.MapTypes.append(CurMapTypes.begin(), CurMapTypes.end());
   }
+
+  // Map other list items in the map clause which are not captured variables but
+  // "declare target link" global variables.
+  CurBasePointers.clear();
+  CurPointers.clear();
+  CurSizes.clear();
+  CurMapTypes.clear();
+  PartialStructs.clear();
+  for (auto *C : D.getClausesOfKind<OMPMapClause>()) {
+    for (auto L : C->component_lists()) {
+      if (!L.first)
+        continue;
+      const VarDecl *VD = dyn_cast<VarDecl>(L.first);
+      if (VD && VD->hasAttr<OMPDeclareTargetDeclAttr>() &&
+          VD->getAttr<OMPDeclareTargetDeclAttr>()->getMapType() ==
+              OMPDeclareTargetDeclAttr::MT_Link) {
+        MEHandler.generateInfoForComponentList(C->getMapType(),
+            C->getMapTypeModifier(), L.second, CurBasePointers, CurPointers,
+            CurSizes, CurMapTypes, PartialStructs, true);
+      }
+    }
+  }
+  // "Declare target link" variables do not produce kernel parametes, only
+  // append the generated entries to BasePointers, Pointers, Sizes and MapTypes.
+  Maps.BasePointers.append(CurBasePointers.begin(), CurBasePointers.end());
+  Maps.Pointers.append(CurPointers.begin(), CurPointers.end());
+  Maps.Sizes.append(CurSizes.begin(), CurSizes.end());
+  Maps.MapTypes.append(CurMapTypes.begin(), CurMapTypes.end());
 
   return Maps;
 }
@@ -7367,6 +7438,34 @@ void CGOpenMPRuntime::emitTargetCall(
   CGF.EmitBlock(OffloadContBlock, /*IsFinished=*/true);
 }
 
+/// \brief Return the declare target attribute if the declaration is marked as
+// 'declare target', i.e. the declaration itself, its template declaration, or
+/// any of its redeclarations have the 'declare target' attribute.
+static OMPDeclareTargetDeclAttr *
+IsDeclareTargetDeclaration(const ValueDecl *VD) {
+  const Decl *RelevantDecl = VD;
+
+  // Try to get the original template if any.
+  if (auto *FD = dyn_cast<FunctionDecl>(VD)) {
+    if (auto *Tmpl = FD->getPrimaryTemplate())
+      RelevantDecl = Tmpl;
+  }
+
+  // Check if the declaration or any of its redeclarations have a declare target
+  // attribute.
+  if (auto *Attr = RelevantDecl->getAttr<OMPDeclareTargetDeclAttr>())
+    return Attr;
+
+  if (auto *Attr = VD->getAttr<OMPDeclareTargetDeclAttr>())
+    return Attr;
+
+  for (const Decl *RD : RelevantDecl->redecls())
+    if (auto *Attr = RD->getAttr<OMPDeclareTargetDeclAttr>())
+      return Attr;
+
+  return nullptr;
+}
+
 llvm::Value *MappableExprsHandler::getExprTypeSize(const Expr *E) const {
   auto ExprTy = E->getType().getCanonicalType();
 
@@ -7612,6 +7711,7 @@ void MappableExprsHandler::generateInfoForComponentList(
   // Track if the map information being generated is the first for a list of
   // components.
   bool IsExpressionFirstInfo = true;
+  bool IsLink = false; // Is this variable a "declare target link"?
   llvm::Value *BP = nullptr;
 
   // Variable keeping track of whether or not we have encountered a component
@@ -7629,9 +7729,21 @@ void MappableExprsHandler::generateInfoForComponentList(
     BP = CGF.EmitScalarExpr(ME->getBase());
   } else {
     // The base is the reference to the variable.
-    // BP = &Var.
-    BP = CGF.EmitLValue(cast<DeclRefExpr>(I->getAssociatedExpression()))
-             .getPointer();
+
+    // See whether this variable is "declare target link".
+    auto *VD = dyn_cast<VarDecl>(I->getAssociatedDeclaration());
+    auto *Attr = IsDeclareTargetDeclaration(VD);
+    if (Attr && Attr->getMapType() == OMPDeclareTargetDeclAttr::MT_Link) {
+      IsLink = true;
+      llvm::GlobalValue *GV =
+          CGF.CGM.getOpenMPRuntime().getOrCreateGlobalLinkPtr(VD);
+      assert(GV && "Link pointer not found");
+      BP = GV;
+    } else {
+      // BP = &Var.
+      BP = CGF.EmitLValue(cast<DeclRefExpr>(I->getAssociatedExpression()))
+               .getPointer();
+    }
 
     // If the variable is a pointer and is being dereferenced (i.e. is not
     // the last component), the base has to be the pointer itself, not its
@@ -7763,6 +7875,13 @@ void MappableExprsHandler::generateInfoForComponentList(
             // marked as MEMBER_OF.
             ShouldBeMemberOf = false;
           }
+        }
+
+        // If this is a link pointer, it should be marked as PTR_AND_OBJ as well
+        // as have it TARGET_PARAM flag reset.
+        if (IsLink) {
+          flags |= OMP_MAP_PTR_AND_OBJ;
+          flags &= ~OMP_MAP_TARGET_PARAM;
         }
 
         Types.push_back(flags);
@@ -8194,7 +8313,7 @@ bool CGOpenMPRuntime::emitTargetFunctions(GlobalDecl GD) {
     return false;
 
   // Emit this function normally if it is a device function, but still scan the
-  // function in case if it is marked as 'declare target'.
+  // function in case it is marked as 'declare target'.
   bool EmitNormally = !OffloadEntriesInfoManager.hasDeviceFunctionEntryInfo(
       CGM.getMangledName(GD));
 
@@ -8214,7 +8333,7 @@ bool CGOpenMPRuntime::emitTargetGlobalVariable(GlobalDecl GD) {
   // Check if there are Ctors/Dtors in this declaration and look for target
   // regions in it. We use the complete variant to produce the kernel name
   // mangling.
-  QualType RDTy = cast<VarDecl>(GD.getDecl())->getType();
+  QualType RDTy = dyn_cast<VarDecl>(GD.getDecl())->getType();
   if (auto *RD = RDTy->getBaseElementTypeUnsafe()->getAsCXXRecordDecl()) {
     for (auto *Ctor : RD->ctors()) {
       StringRef ParentName =
@@ -8253,38 +8372,8 @@ bool CGOpenMPRuntime::MustBeEmittedForDevice(GlobalDecl GD) {
       CGM.getMangledName(GD));
 }
 
-/// \brief Return the declare target attribute if the declaration is marked as
-// 'declare target', i.e. the declaration itself, its template declaration, or
-/// any of its redeclarations have the 'declare target' attribute.
-static OMPDeclareTargetDeclAttr *
-IsDeclareTargetDeclaration(const ValueDecl *VD) {
-  const Decl *RelevantDecl = VD;
-
-  // Try to get the original template if any.
-  if (auto *FD = dyn_cast<FunctionDecl>(VD)) {
-    if (auto *Tmpl = FD->getPrimaryTemplate())
-      RelevantDecl = Tmpl;
-  }
-
-  // Check if the declaration or any of its redeclarations have a declare target
-  // attribute.
-  if (auto *Attr = RelevantDecl->getAttr<OMPDeclareTargetDeclAttr>())
-    return Attr;
-
-  if (auto *Attr = VD->getAttr<OMPDeclareTargetDeclAttr>())
-    return Attr;
-
-  for (const Decl *RD : RelevantDecl->redecls())
-    if (auto *Attr = RD->getAttr<OMPDeclareTargetDeclAttr>())
-      return Attr;
-
-  return nullptr;
-}
-
 namespace {
 enum OpenMPOffloadingDeclareTargetFlags {
-  /// \brief Mark the entry has having a 'link' attribute.
-  OMP_DECLARE_TARGET_LINK = 0x01,
   /// \brief Mark the entry has being a global constructor.
   OMP_DECLARE_TARGET_CTOR = 0x02,
   /// \brief Mark the entry has being a global destructor.
@@ -8535,19 +8624,33 @@ llvm::Function *CGOpenMPRuntime::emitRegistrationFunction() {
       assert(Info.VariableAddr && "No variable address defined??");
 
       if (auto *Attr = IsDeclareTargetDeclaration(D)) {
-        // If we have a link attribute we need to set the link flag.
-        int64_t Flags = 0;
-        if (Attr->getMapType() == OMPDeclareTargetDeclAttr::MT_Link)
-          Flags |= OMP_DECLARE_TARGET_LINK;
+        // If we have a link attribute we need to emit a new global variable
+        // which is a pointer to the original global variable.
+        if (Attr->getMapType() == OMPDeclareTargetDeclAttr::MT_Link) {
+          SmallString<64> PtrName;
+          {
+            llvm::raw_svector_ostream OS(PtrName);
+            OS << CGM.getMangledName(GlobalDecl(D)) << "_decl_tgt_link_ptr";
+          }
+          llvm::GlobalValue *GV = getOrCreateGlobalLinkPtr(D);
+          assert(GV && "Link pointer not found");
 
-        // Register the variable as declare target.
-        OffloadEntriesInfoManager.registerDeviceGlobalVarEntryInfo(
-            II->first(), Info.VariableAddr, D->getType(), Flags,
-            D->isExternallyVisible());
+          // Register the link pointer as declare target.
+          OffloadEntriesInfoManager.registerDeviceGlobalVarEntryInfo(
+              PtrName, GV, CGM.getContext().getPointerType(D->getType()),
+              0, D->isExternallyVisible());
 
-        // Emit the ctor/dtor launching if required.
-        if (Info.RequiresCtorDtor)
-          RegisterCtorDtor();
+          // No ctor/dtor should be emitted in this case.
+        } else {
+          // Register the variable as declare target.
+          OffloadEntriesInfoManager.registerDeviceGlobalVarEntryInfo(
+              II->first(), Info.VariableAddr, D->getType(), 0,
+              D->isExternallyVisible());
+
+          // Emit the ctor/dtor launching if required.
+          if (Info.RequiresCtorDtor)
+            RegisterCtorDtor();
+        }
       }
       continue;
     }

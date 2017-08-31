@@ -334,17 +334,6 @@ private:
   /// final array section, is one whose length can't be proved to be one.
   bool isFinalArraySectionExpression(const Expr *E) const;
 
-  /// Generate the base pointers, section pointers, sizes and map type
-  /// bits for the provided map type, map modifier, and expression components.
-  /// \a IsFirstComponent should be set to true if the provided set of
-  /// components is the first associated with a capture.
-  void generateInfoForComponentList(
-      OpenMPMapClauseKind MapType, OpenMPMapClauseKind MapTypeModifier,
-      OMPClauseMappableExprCommon::MappableExprComponentListRef Components,
-      MapBaseValuesArrayTy &BasePointers, MapValuesArrayTy &Pointers,
-      MapValuesArrayTy &Sizes, MapFlagsArrayTy &Types,
-      StructRangeMapTy &PartialStructs, bool IsFirstComponentList) const;
-
   /// Return the adjusted map modifiers if the declaration a capture
   /// refers to appears in a first-private clause. This is expected to be used
   /// only with directives that start with 'target'.
@@ -376,6 +365,17 @@ public:
       for (auto L : C->component_lists())
         DevPointersMap[L.first].push_back(L.second);
   }
+
+  /// Generate the base pointers, section pointers, sizes and map type
+  /// bits for the provided map type, map modifier, and expression components.
+  /// \a IsFirstComponent should be set to true if the provided set of
+  /// components is the first associated with a capture.
+  void generateInfoForComponentList(
+      OpenMPMapClauseKind MapType, OpenMPMapClauseKind MapTypeModifier,
+      OMPClauseMappableExprCommon::MappableExprComponentListRef Components,
+      MapBaseValuesArrayTy &BasePointers, MapValuesArrayTy &Pointers,
+      MapValuesArrayTy &Sizes, MapFlagsArrayTy &Types,
+      StructRangeMapTy &PartialStructs, bool IsFirstComponentList) const;
 
   /// Generate all the base pointers, section pointers, sizes and map
   /// types for the extracted mappable expressions. Also, for each item that
@@ -522,6 +522,11 @@ public:
   void emitCall(CodeGenFunction &CGF, llvm::Value *Callee,
                 ArrayRef<llvm::Value *> Args = llvm::None,
                 SourceLocation Loc = SourceLocation()) const;
+
+  /// \brief For a given global variable VD, get the associated "declare target
+  /// link" pointer. If the pointer has not been created yet, this function
+  /// creates it.
+  llvm::GlobalValue *getOrCreateGlobalLinkPtr(const VarDecl *VD);
 
 private:
   /// \brief Default const ident_t object used for initialization of all other

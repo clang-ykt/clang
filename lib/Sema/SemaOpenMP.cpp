@@ -1447,7 +1447,7 @@ VarDecl *Sema::IsOpenMPCapturedDecl(ValueDecl *D) {
   // 'target' we return true so that this global is also mapped to the device.
   //
   // If the variable is enclosed in a declare target directive, that is not
-  // required.
+  // required unless it has the "link" property.
   //
   auto *VD = dyn_cast<VarDecl>(D);
   if (VD && !VD->hasLocalStorage() &&
