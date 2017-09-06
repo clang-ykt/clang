@@ -431,6 +431,7 @@ void CGOpenMPRuntimeNVPTX::emitDistributeStaticInit(
 
 void CGOpenMPRuntimeNVPTX::emitForStaticFinish(CodeGenFunction &CGF,
                                                SourceLocation Loc,
+                                               OpenMPDirectiveKind DKind,
                                                bool CoalescedDistSchedule) {
   // If we are generating a coalesced schedule for the directive
   // 'target teams distribute parallel for', then the 'distribute' and 'for'
@@ -439,7 +440,7 @@ void CGOpenMPRuntimeNVPTX::emitForStaticFinish(CodeGenFunction &CGF,
   if (CoalescedDistSchedule)
     ParallelNestingLevel--;
 
-  CGOpenMPRuntime::emitForStaticFinish(CGF, Loc);
+  CGOpenMPRuntime::emitForStaticFinish(CGF, Loc, DKind);
 }
 
 static FieldDecl *addFieldToRecordDecl(ASTContext &C, DeclContext *DC,

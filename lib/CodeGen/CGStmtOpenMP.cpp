@@ -2080,7 +2080,8 @@ void CodeGenFunction::EmitOMPOuterLoop(
       CGF.CGM.getOpenMPRuntime().emitForDispatchFinish(CGF, S, S.getLocEnd(),
                                                        IVSize, IVSigned);
     else
-      CGF.CGM.getOpenMPRuntime().emitForStaticFinish(CGF, S.getLocEnd());
+      CGF.CGM.getOpenMPRuntime().emitForStaticFinish(CGF, S.getLocEnd(),
+                                                     S.getDirectiveKind());
   };
   OMPCancelStack.emitExit(*this, S.getDirectiveKind(), CodeGen);
 }
@@ -2573,7 +2574,7 @@ bool CodeGenFunction::EmitOMPWorksharingLoop(const OMPLoopDirective &S) {
             });
         EmitBlock(LoopExit.getBlock());
         // Tell the runtime we are done.
-        RT.emitForStaticFinish(*this, S.getLocStart());
+        RT.emitForStaticFinish(*this, S.getLocStart(), S.getDirectiveKind());
       } else if (RT.isStaticNonchunked(ScheduleKind.Schedule,
                                        /* Chunked */ Chunk != nullptr) &&
                  !Ordered) {
@@ -2610,7 +2611,8 @@ bool CodeGenFunction::EmitOMPWorksharingLoop(const OMPLoopDirective &S) {
         EmitBlock(LoopExit.getBlock());
         // Tell the runtime we are done.
         auto &&CodeGen = [&S](CodeGenFunction &CGF) {
-          CGF.CGM.getOpenMPRuntime().emitForStaticFinish(CGF, S.getLocEnd());
+          CGF.CGM.getOpenMPRuntime().emitForStaticFinish(CGF, S.getLocEnd(),
+                                                         S.getDirectiveKind());
         };
         OMPCancelStack.emitExit(*this, S.getDirectiveKind(), CodeGen);
       } else {
@@ -2830,7 +2832,8 @@ void CodeGenFunction::EmitSections(const OMPExecutableDirective &S) {
                          [](CodeGenFunction &) {});
     // Tell the runtime we are done.
     auto &&CodeGen = [&S](CodeGenFunction &CGF) {
-      CGF.CGM.getOpenMPRuntime().emitForStaticFinish(CGF, S.getLocEnd());
+      CGF.CGM.getOpenMPRuntime().emitForStaticFinish(CGF, S.getLocEnd(),
+                                                     S.getDirectiveKind());
     };
     CGF.OMPCancelStack.emitExit(CGF, S.getDirectiveKind(), CodeGen);
     CGF.EmitOMPReductionClauseFinal(S, OMPD_parallel);
@@ -3576,7 +3579,7 @@ void CodeGenFunction::EmitOMPDistributeLoop(
                          });
         EmitBlock(LoopExit.getBlock());
         // Tell the runtime we are done.
-        RT.emitForStaticFinish(*this, S.getLocStart(),
+        RT.emitForStaticFinish(*this, S.getLocStart(), S.getDirectiveKind(),
                                /*CoalescedDistSchedule=*/true);
         // Emit the parallel reduction.
         EmitOMPReductionClauseFinal(S, OMPD_distribute_parallel_for);
@@ -3626,7 +3629,7 @@ void CodeGenFunction::EmitOMPDistributeLoop(
                          [](CodeGenFunction &) {});
         EmitBlock(LoopExit.getBlock());
         // Tell the runtime we are done.
-        RT.emitForStaticFinish(*this, S.getLocStart());
+        RT.emitForStaticFinish(*this, S.getLocStart(), S.getDirectiveKind());
       } else {
         // Emit the outer loop, which requests its work chunk [LB..UB] from
         // runtime and runs the inner loop to process it.

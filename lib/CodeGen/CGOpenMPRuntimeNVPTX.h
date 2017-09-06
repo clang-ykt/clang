@@ -46,10 +46,12 @@ class CGOpenMPRuntimeNVPTX : public CGOpenMPRuntime {
   ///
   /// \param CGF Reference to current CodeGenFunction.
   /// \param Loc Clang source location.
+  /// \param DKind Kind of the directive for which the static finish is emitted.
   /// \param CoalescedDistSchedule Indicates if coalesced scheduling type is
   /// required.
   ///
   virtual void emitForStaticFinish(CodeGenFunction &CGF, SourceLocation Loc,
+                                   OpenMPDirectiveKind DKind,
                                    bool CoalescedDistSchedule = false) override;
 
   //
