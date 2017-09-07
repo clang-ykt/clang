@@ -1522,6 +1522,32 @@ class OMPLastprivateClause final
     return llvm::makeArrayRef(getDestinationExprs().end(), varlist_size());
   }
 
+  /// \brief Get the list of helper variables storing the last updated
+  /// iteration index for conditional lastprivate variables.
+  void setConditionalLastprivateIterations(ArrayRef<Expr *> LIs);
+
+  /// \brief Get the list of helper lastprivate iteration variables.
+  MutableArrayRef<Expr *> getConditionalLastprivateIterations() {
+    return MutableArrayRef<Expr *>(getAssignmentOps().end(), varlist_size());
+  }
+  ArrayRef<const Expr *> getConditionalLastprivateIterations() const {
+    return llvm::makeArrayRef(getAssignmentOps().end(), varlist_size());
+  }
+
+  /// \brief Get the list of helper variables storing the last updated
+  /// value for conditional lastprivate variables.
+  void setConditionalLastprivateVariables(ArrayRef<Expr *> LIs);
+
+  /// \brief Get the list of helper conditional lastprivate variables.
+  MutableArrayRef<Expr *> getConditionalLastprivateVariables() {
+    return MutableArrayRef<Expr *>(getConditionalLastprivateIterations().end(),
+                                   varlist_size());
+  }
+  ArrayRef<const Expr *> getConditionalLastprivateVariables() const {
+    return llvm::makeArrayRef(getConditionalLastprivateIterations().end(),
+                              varlist_size());
+  }
+
 public:
   /// \brief Creates clause with a list of variables \a VL.
   ///
@@ -1530,6 +1556,8 @@ public:
   /// \param LParenLoc Location of '('.
   /// \param EndLoc Ending location of the clause.
   /// \param VL List of references to the variables.
+  /// \param CLI List of references to the conditional lastprivate iteration.
+  /// \param CLV List of references to the conditional lastprivate variable.
   /// \param SrcExprs List of helper expressions for proper generation of
   /// assignment operation required for lastprivate clause. This list represents
   /// private variables (for arrays, single array element).
@@ -1552,6 +1580,7 @@ public:
   Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation LParenLoc,
          OpenMPLastprivateClauseKind Modifier, SourceLocation ModifierLoc,
          SourceLocation ColonLoc, SourceLocation EndLoc, ArrayRef<Expr *> VL,
+         ArrayRef<Expr *> CLIs, ArrayRef<Expr *> CLVs,
          ArrayRef<Expr *> SrcExprs, ArrayRef<Expr *> DstExprs,
          ArrayRef<Expr *> AssignmentOps, Stmt *PreInit, Expr *PostUpdate);
 
@@ -1617,6 +1646,23 @@ public:
   helper_expr_range assignment_ops() {
     return helper_expr_range(getAssignmentOps().begin(),
                              getAssignmentOps().end());
+  }
+  helper_expr_const_range conditional_lastprivate_iterations() const {
+    return helper_expr_const_range(
+        getConditionalLastprivateIterations().begin(),
+        getConditionalLastprivateIterations().end());
+  }
+  helper_expr_range conditional_lastprivate_iterations() {
+    return helper_expr_range(getConditionalLastprivateIterations().begin(),
+                             getConditionalLastprivateIterations().end());
+  }
+  helper_expr_const_range conditional_lastprivate_variables() const {
+    return helper_expr_const_range(getConditionalLastprivateVariables().begin(),
+                                   getConditionalLastprivateVariables().end());
+  }
+  helper_expr_range conditional_lastprivate_variables() {
+    return helper_expr_range(getConditionalLastprivateVariables().begin(),
+                             getConditionalLastprivateVariables().end());
   }
 
   child_range children() {
@@ -2601,6 +2647,76 @@ public:
 
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_flush;
+  }
+};
+
+/// \brief This represents implicit clause 'update' for the (future)
+/// '#pragma omp lastprivate_update' directive.
+/// This clause does not exist by itself, it can be only as a part of 'omp
+/// lastprivate_update' directive. This clause is introduced to keep the
+/// original structure of \a OMPExecutableDirective class and its derivatives
+/// and to use the existing infrastructure of clauses with the list of
+/// variables.
+///
+/// \code
+/// #pragma omp lastprivate_update(a,b)
+/// \endcode
+/// In this example directive '#pragma omp lastprivate_update' has implicit
+/// clause 'update' with the variables 'a' and 'b'.
+///
+class OMPLastprivateUpdateClause final
+    : public OMPVarListClause<OMPLastprivateUpdateClause>,
+      private llvm::TrailingObjects<OMPLastprivateUpdateClause, Expr *> {
+  friend TrailingObjects;
+  friend OMPVarListClause;
+  /// \brief Build clause with number of variables \a N.
+  ///
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  /// \param N Number of the variables in the clause.
+  ///
+  OMPLastprivateUpdateClause(SourceLocation StartLoc, SourceLocation LParenLoc,
+                             SourceLocation EndLoc, unsigned N)
+      : OMPVarListClause<OMPLastprivateUpdateClause>(
+            OMPC_lastprivate_update, StartLoc, LParenLoc, EndLoc, N) {}
+
+  /// \brief Build an empty clause.
+  ///
+  /// \param N Number of variables.
+  ///
+  explicit OMPLastprivateUpdateClause(unsigned N)
+      : OMPVarListClause<OMPLastprivateUpdateClause>(
+            OMPC_lastprivate_update, SourceLocation(), SourceLocation(),
+            SourceLocation(), N) {}
+
+public:
+  /// \brief Creates clause with a list of variables \a VL.
+  ///
+  /// \param C AST context.
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  /// \param VL List of references to the variables.
+  ///
+  static OMPLastprivateUpdateClause *
+  Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation LParenLoc,
+         SourceLocation EndLoc, ArrayRef<Expr *> VL);
+  /// \brief Creates an empty clause with \a N variables.
+  ///
+  /// \param C AST context.
+  /// \param N The number of variables.
+  ///
+  static OMPLastprivateUpdateClause *CreateEmpty(const ASTContext &C,
+                                                 unsigned N);
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
+                       reinterpret_cast<Stmt **>(varlist_end()));
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_lastprivate_update;
   }
 };
 

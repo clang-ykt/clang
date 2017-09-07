@@ -31,28 +31,14 @@ class CGOpenMPRuntimeNVPTX : public CGOpenMPRuntime {
   /// \param CGF Reference to current CodeGenFunction.
   /// \param Loc Clang source location.
   /// \param SchedKind Schedule kind, specified by the 'dist_schedule' clause.
-  /// \param IVSize Size of the iteration variable in bits.
-  /// \param IVSigned Sign of the interation variable.
-  /// \param Ordered true if loop is ordered, false otherwise.
-  /// \param IL Address of the output variable in which the flag of the
-  /// last iteration is returned.
-  /// \param LB Address of the output variable in which the lower iteration
-  /// number is returned.
-  /// \param UB Address of the output variable in which the upper iteration
-  /// number is returned.
-  /// \param ST Address of the output variable in which the stride value is
-  /// returned nesessary to generated the static_chunked scheduled loop.
-  /// \param Chunk Value of the chunk for the static_chunked scheduled loop.
-  /// For the default (nullptr) value, the chunk 1 will be used.
+  /// \param Values Input arguments for the construct.
   /// \param CoalescedDistSchedule Indicates if coalesced scheduling type is
   /// required.
   ///
   virtual void
   emitDistributeStaticInit(CodeGenFunction &CGF, SourceLocation Loc,
                            OpenMPDistScheduleClauseKind SchedKind,
-                           unsigned IVSize, bool IVSigned, bool Ordered,
-                           Address IL, Address LB, Address UB, Address ST,
-                           llvm::Value *Chunk = nullptr,
+                           const StaticRTInput &Values,
                            bool CoalescedDistSchedule = false) override;
 
   /// \brief Call the appropriate runtime routine to notify that we finished
@@ -60,10 +46,12 @@ class CGOpenMPRuntimeNVPTX : public CGOpenMPRuntime {
   ///
   /// \param CGF Reference to current CodeGenFunction.
   /// \param Loc Clang source location.
+  /// \param DKind Kind of the directive for which the static finish is emitted.
   /// \param CoalescedDistSchedule Indicates if coalesced scheduling type is
   /// required.
   ///
   virtual void emitForStaticFinish(CodeGenFunction &CGF, SourceLocation Loc,
+                                   OpenMPDirectiveKind DKind,
                                    bool CoalescedDistSchedule = false) override;
 
   //
@@ -275,7 +263,8 @@ private:
           RequiresOMPRuntime(true), RequiresDataSharing(true),
           MayContainOrphanedParallel(true),
           HasAtMostOneNestedParallelInLexicalScope(false),
-          MasterSharedDataSize(0) {
+          MasterSharedDataSize(0), ReductionVariableCount(0),
+          ReductionSizeInBytes(0) {
       assert(isOpenMPTargetExecutionDirective(D.getDirectiveKind()) &&
              "Expecting a target execution directive.");
       setExecutionMode();
@@ -284,7 +273,7 @@ private:
       setRequiresOMPRuntime();
       setMayContainOrphanedParallel();
       setHasAtMostOneNestedParallelInLexicalScope();
-      setHasTeamsReduction();
+      setTeamsReductionInfo();
     };
 
     CGOpenMPRuntimeNVPTX::ExecutionMode getExecutionMode() const {
@@ -315,7 +304,11 @@ private:
 
     unsigned masterSharedDataSize() const { return MasterSharedDataSize; }
 
-    bool hasTeamsReduction() const { return HasTeamsReduction; }
+    unsigned getReductionVariableCount() const {
+      return ReductionVariableCount;
+    }
+
+    unsigned getReductionSizeInBytes() const { return ReductionSizeInBytes; }
 
   private:
     const CodeGenModule &CGM;
@@ -341,8 +334,10 @@ private:
     // Approximate the size in bytes of variables to be shared from master
     // to workers.
     unsigned MasterSharedDataSize;
-    // Indicate whether this target region has a teams reduction clause.
-    bool HasTeamsReduction;
+    // Number of teams reduction variables on the target construct.
+    unsigned ReductionVariableCount;
+    // Total size of teams reduction variables in bytes.
+    unsigned ReductionSizeInBytes;
 
     void setExecutionMode();
 
@@ -359,7 +354,7 @@ private:
 
     void setMasterSharedDataSize();
 
-    void setHasTeamsReduction();
+    void setTeamsReductionInfo();
   };
 
   class EntryFunctionState {
@@ -367,7 +362,7 @@ private:
     const TargetKernelProperties &TP;
     llvm::BasicBlock *ExitBB;
 
-    EntryFunctionState(const TargetKernelProperties &TP)
+    EntryFunctionState(CodeGenModule &CGM, const TargetKernelProperties &TP)
         : TP(TP), ExitBB(nullptr){};
   };
 
@@ -448,6 +443,24 @@ private:
   void createOffloadEntry(llvm::Constant *ID, llvm::Constant *Addr,
                           uint64_t Size, uint64_t Flags = 0u) override;
 
+  // Create a unique global struct per target region to store kernel properties.
+  // This global data structure is used by the offload library to setup the
+  // launch parameters.
+  void SetTargetKernelProperties(CodeGenModule &CGM, StringRef TargetName,
+                                 CGOpenMPRuntimeNVPTX::ExecutionMode Mode,
+                                 unsigned ReductionVariableCount,
+                                 unsigned ReductionSizeInBytes);
+
+  /// \brief Helper to emit outline 'target' directive. This creates a wrapper
+  /// with device specific arguments.
+  /// \brief Returns a pointer to the outlined function.
+  /// \param D Directive to emit.
+  /// \param Name Name of the outlined function.
+  /// \param CodeGen Lambda codegen specific to an accelerator device.
+  virtual llvm::Function *
+  outlineTargetDirective(const OMPExecutableDirective &D, StringRef Name,
+                         const RegionCodeGenTy &CodeGen) override;
+
   /// \brief Emit outlined function specialized for the Fork-Join
   /// programming model for applicable target directives on the NVPTX device.
   /// \param D Directive to emit.
@@ -495,7 +508,8 @@ private:
                                   llvm::Function *&OutlinedFn,
                                   llvm::Constant *&OutlinedFnID,
                                   bool IsOffloadEntry,
-                                  const RegionCodeGenTy &CodeGen) override;
+                                  const RegionCodeGenTy &CodeGen,
+                                  unsigned CaptureLevel) override;
 
   /// \brief Emits call to void __kmpc_push_num_threads(ident_t *loc, kmp_int32
   /// global_tid, kmp_int32 num_threads) to generate code for 'num_threads'
@@ -787,7 +801,7 @@ public:
 
   /// Emits call of the outlined function with the provided arguments.
   void emitOutlinedFunctionCall(
-      CodeGenFunction &CGF, llvm::Value *OutlinedFn,
+      CodeGenFunction &CGF, SourceLocation Loc, llvm::Value *OutlinedFn,
       ArrayRef<llvm::Value *> Args = llvm::None) const override;
 };
 

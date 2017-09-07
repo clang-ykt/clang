@@ -1,7 +1,7 @@
 // RUN: %clang_cc1  -verify -fopenmp -x c++ -std=c++11 -triple powerpc64le-unknown-unknown -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm-bc %s -o %t-ppc-host.bc
-// RUN: %clang_cc1  -verify -fopenmp -x c++ -std=c++11 -triple nvptx64-unknown-unknown -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm %s -fopenmp-is-device -fopenmp-host-ir-file-path %t-ppc-host.bc -o - | FileCheck %s --check-prefix TCHECK --check-prefix TCHECK-64
+// RUN: %clang_cc1  -verify -fopenmp -x c++ -std=c++11 -triple nvptx64-unknown-unknown -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm %s -fopenmp-is-device -debug-info-kind=limited -fopenmp-host-ir-file-path %t-ppc-host.bc -o - | FileCheck %s --check-prefix TCHECK --check-prefix TCHECK-64
 // RUN: %clang_cc1  -verify -fopenmp -x c++ -std=c++11 -triple i386-unknown-unknown -fopenmp-targets=nvptx-nvidia-cuda -emit-llvm-bc %s -o %t-x86-host.bc
-// RUN: %clang_cc1  -verify -fopenmp -x c++ -std=c++11 -triple nvptx-unknown-unknown -fopenmp-targets=nvptx-nvidia-cuda -emit-llvm %s -fopenmp-is-device -fopenmp-host-ir-file-path %t-x86-host.bc -o - | FileCheck %s --check-prefix TCHECK --check-prefix TCHECK-32
+// RUN: %clang_cc1  -verify -fopenmp -x c++ -std=c++11 -triple nvptx-unknown-unknown -fopenmp-targets=nvptx-nvidia-cuda -emit-llvm %s -fopenmp-is-device -debug-info-kind=limited -fopenmp-host-ir-file-path %t-x86-host.bc -o - | FileCheck %s --check-prefix TCHECK --check-prefix TCHECK-32
 // expected-no-diagnostics
 #ifndef HEADER
 #define HEADER
@@ -32,7 +32,7 @@ int foo(int n) {
   }
 
   // generate both private variables
-  // TCHECK:  define {{.*}}void @__omp_offloading_{{.+[0-9]}}()
+  // TCHECK:  define {{.*}}void @__omp_offloading_{{[^(]+}}()
   // TCHECK:  [[A:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  [[A2:%.+]] = alloca i{{[0-9]+}},
   // TCHECK-NOT: store {{.+}}, {{.+}} [[A]],
@@ -45,7 +45,7 @@ int foo(int n) {
   {
   }
 
-  // TCHECK:  define {{.*}}void @__omp_offloading_{{.+[0-9]}}()
+  // TCHECK:  define {{.*}}void @__omp_offloading_{{[^(]+}}()
   // TCHECK:  [[A:%.+]] = alloca i{{[0-9]+}},
   // TCHECK-NOT: store {{.+}}, {{.+}} [[A]],
   // TCHECK:  ret void  
@@ -57,7 +57,7 @@ int foo(int n) {
 
   // because of firstprivate, a.addr and a parameter are
   // created. This is fine, as long as we do not use a.addr
-  // TCHECK:  define {{.*}}void @__omp_offloading_{{.+[0-9]}}({{.+}})
+  // TCHECK:  define {{.*}}void @__omp_offloading_{{[^(]+}}({{.+}})
   // TCHECK:  [[A_ADDR:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  [[ATE:%.+]] = alloca i{{[0-9]+}},
   // TCHECK-NOT: store {{.+}}, i{{[0-9]+}}* [[ATE]],
@@ -69,7 +69,7 @@ int foo(int n) {
     a = 1;
   }
 
-  // TCHECK:  define {{.*}}void @__omp_offloading_{{.+[0-9]}}()
+  // TCHECK:  define {{.*}}void @__omp_offloading_{{[^(]+}}()
   // TCHECK:  [[ATA:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  [[ATE:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  store i{{[0-9]+}} 1, i{{[0-9]+}}* [[ATE]],
@@ -82,7 +82,7 @@ int foo(int n) {
     a = 1;
   }
 
-  // TCHECK:  define {{.*}}void @__omp_offloading_{{.+[0-9]}}()
+  // TCHECK:  define {{.*}}void @__omp_offloading_{{[^(]+}}()
   // TCHECK:  [[A:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  store i{{[0-9]+}} 1, i{{[0-9]+}}* [[A]],
   // TCHECK:  ret void
@@ -94,7 +94,7 @@ int foo(int n) {
   }
 
   // check that we store in a without looking at the parameter
-  // TCHECK:  define {{.*}}void @__omp_offloading_{{.+[0-9]}}({{.+}})
+  // TCHECK:  define {{.*}}void @__omp_offloading_{{[^(]+}}({{.+}})
   // TCHECK:  [[A_ADDR:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  [[ATE:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  store i{{[0-9]+}} 1, i{{[0-9]+}}* [[ATE]],
@@ -107,7 +107,7 @@ int foo(int n) {
     aa = 1;
   }
 
-  // TCHECK:  define {{.*}}void @__omp_offloading_{{.+[0-9]}}()
+  // TCHECK:  define {{.*}}void @__omp_offloading_{{[^(]+}}()
   // TCHECK:  [[ATA:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  [[A2TA:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  [[ATE:%.+]] = alloca i{{[0-9]+}},
@@ -123,7 +123,7 @@ int foo(int n) {
     aa = 1;
   }
 
-  // TCHECK:  define {{.*}}void @__omp_offloading_{{.+[0-9]}}()
+  // TCHECK:  define {{.*}}void @__omp_offloading_{{[^(]+}}()
   // TCHECK:  [[A:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  [[A2:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  store i{{[0-9]+}} 1, i{{[0-9]+}}* [[A]],
@@ -140,7 +140,7 @@ int foo(int n) {
   }
 
   // check that we are not using the firstprivate parameter
-  // TCHECK:  define {{.*}}void @__omp_offloading_{{.+[0-9]}}({{.+}})
+  // TCHECK:  define {{.*}}void @__omp_offloading_{{[^(]+}}({{.+}})
   // TCHECK:  [[A_ADDR:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  [[A2_ADDR:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  [[ATE:%.+]] = alloca i{{[0-9]+}},
@@ -163,7 +163,7 @@ int foo(int n) {
     d.Y = 1;
   }
 
-  // TCHECK:  define {{.*}}void @__omp_offloading_{{.+[0-9]}}()
+  // TCHECK:  define {{.*}}void @__omp_offloading_{{[^(]+}}()
   // TCHECK:  [[ATA:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  [[BTA:%.+]] = alloca [10 x float],
   // TCHECK:  [[CTA:%.+]] = alloca [5 x [10 x double]],
@@ -193,7 +193,7 @@ int foo(int n) {
     d.Y = 1;
   }
 
-  // TCHECK:  define {{.*}}void @__omp_offloading_{{.+[0-9]}}()
+  // TCHECK:  define {{.*}}void @__omp_offloading_{{[^(]+}}()
   // TCHECK:  [[A:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  [[B:%.+]] = alloca [10 x float],
   // TCHECK:  [[C:%.+]] = alloca [5 x [10 x double]],
@@ -219,7 +219,7 @@ int foo(int n) {
     d.Y = 1;
   }
 
-  // TCHECK:  define {{.*}}void @__omp_offloading_{{.+[0-9]}}({{.+}})
+  // TCHECK:  define {{.*}}void @__omp_offloading_{{[^(]+}}({{.+}})
   // TCHECK:  [[A_ADDR:%.+]] = alloca i{{[0-9]+}},
   // TCHECK:  [[B_ADDR:%.+]] = alloca [10 x float]*,
   // TCHECK:  [[C_ADDR:%.+]] = alloca [5 x [10 x double]]*,
@@ -292,7 +292,7 @@ int fstatic(int n) {
     b[2] = 1;
   }
 
-// TCHECK: define {{.*}}void @__omp_offloading_{{.+[0-9]}}()
+// TCHECK: define {{.*}}void @__omp_offloading_{{[^(]+}}()
 // TCHECK:  [[ATA:%.+]] = alloca i{{[0-9]+}},
 // TCHECK:  [[A2TA:%.+]] = alloca i{{[0-9]+}},
 // TCHECK:  [[A3TA:%.+]] = alloca i{{[0-9]+}},
@@ -317,7 +317,7 @@ int fstatic(int n) {
     b[2] = 1;
   }
 
-// TCHECK: define {{.*}}void @__omp_offloading_{{.+[0-9]}}()
+// TCHECK: define {{.*}}void @__omp_offloading_{{[^(]+}}()
 // TCHECK:  [[A:%.+]] = alloca i{{[0-9]+}},
 // TCHECK:  [[A2:%.+]] = alloca i{{[0-9]+}},
 // TCHECK:  [[A3:%.+]] = alloca i{{[0-9]+}},
@@ -338,7 +338,7 @@ int fstatic(int n) {
     b[2] = 1;
   }
 
-// TCHECK: define {{.*}}void @__omp_offloading_{{.+[0-9]}}({{.+}})
+// TCHECK: define {{.*}}void @__omp_offloading_{{[^(]+}}({{.+}})
 // TCHECK:  [[A_ADDR:%.+]] = alloca i{{[0-9]+}},
 // TCHECK:  [[A2_ADDR:%.+]] = alloca i{{[0-9]+}},
 // TCHECK:  [[A3_ADDR:%.+]] = alloca i{{[0-9]+}},
@@ -371,7 +371,7 @@ struct S1 {
       c[1][1] = ++a;
     }
 
-  // TCHECK: define {{.*}}void @__omp_offloading_{{.+[0-9]}}([[S1]]* [[TH:%.+]])
+  // TCHECK: define {{.*}}void @__omp_offloading_{{[^(]+}}([[S1]]* [[TH:%.+]])
   // TCHECK: [[TH_ADDR:%.+]] = alloca [[S1]]*,
   // TCHECK: [[BTA:%.+]] = alloca i{{[0-9]+}},
   // TCHECK: [[CTA:%.+]] = alloca [2 x [5 x i{{[0-9]+}}]],
@@ -398,14 +398,16 @@ struct S1 {
   // TCHECK: store i{{[0-9]+}} [[A_FIELD_INC_CONV]], i{{[0-9]+}}* [[C_1_1_REF]],
   // TCHECK: ret void
     
-#pragma omp target
+    int tmp;
+#pragma omp target map(tmp)
 #pragma omp teams private(b,c)
     {
+      tmp = 1;
       this->a = (double)b + 1.5;
       c[1][1] = ++a;
     }
 
-  // TCHECK: define {{.*}}void @__omp_offloading_{{.+[0-9]}}([[S1]]* [[TH:%.+]])
+  // TCHECK: define {{.*}}void @__omp_offloading_{{[^(]+}}(i{{[0-9]+}}{{.+}}* {{.+}} {{[^,^)]+}}, [[S1]]* [[TH:%.+]])
   // TCHECK: [[TH_ADDR:%.+]] = alloca [[S1]]*,
   // TCHECK: [[B:%.+]] = alloca i{{[0-9]+}},
   // TCHECK: [[C:%.+]] = alloca [2 x [5 x i{{[0-9]+}}]],
@@ -440,7 +442,7 @@ struct S1 {
     return c[1][1] + (int)b;
   }
 
-  // TCHECK: define {{.*}}void @__omp_offloading_{{.+[0-9]}}([[S1]]* [[TH:%.+]], i{{[0-9]+}}{{.+}})
+  // TCHECK: define {{.*}}void @__omp_offloading_{{[^(]+}}([[S1]]* [[TH:%.+]], i{{[0-9]+}}{{.+}})
   // TCHECK: [[TH_ADDR:%.+]] = alloca [[S1]]*,
   // TCHECK: [[B_ADDR:%.+]] = alloca i{{[0-9]+}},
   // TCHECK: [[C_ADDR:%.+]] = alloca [2 x [5 x i{{[0-9]+}}]]*,
@@ -482,7 +484,7 @@ int bar(int n){
 }
 
 // template
-// TCHECK: define {{.*}}void @__omp_offloading_{{.+[0-9]}}()
+// TCHECK: define {{.*}}void @__omp_offloading_{{[^(]+}}()
 // TCHECK: [[ATA:%.+]] = alloca i{{[0-9]+}},
 // TCHECK: [[A2TA:%.+]] = alloca i{{[0-9]+}},
 // TCHECK: [[BTA:%.+]] = alloca [10 x i{{[0-9]+}}],
@@ -495,7 +497,7 @@ int bar(int n){
 // TCHECK: store i{{[0-9]+}} 1, i{{[0-9]+}}* [[B_GEP]],
 // TCHECK: ret void
 
-// TCHECK: define {{.*}}void @__omp_offloading_{{.+[0-9]}}()
+// TCHECK: define {{.*}}void @__omp_offloading_{{[^(]+}}()
 // TCHECK: [[A:%.+]] = alloca i{{[0-9]+}},
 // TCHECK: [[A2:%.+]] = alloca i{{[0-9]+}},
 // TCHECK: [[B:%.+]] = alloca [10 x i{{[0-9]+}}],
@@ -505,7 +507,7 @@ int bar(int n){
 // TCHECK: store i{{[0-9]+}} 1, i{{[0-9]+}}* [[B_GEP]],
 // TCHECK: ret void
 
-// TCHECK: define {{.*}}void @__omp_offloading_{{.+[0-9]}}({{.+}})
+// TCHECK: define {{.*}}void @__omp_offloading_{{[^(]+}}({{.+}})
 // TCHECK: [[A_ADDR:%.+]] = alloca i{{[0-9]+}},
 // TCHECK: [[A2_ADDR:%.+]] = alloca i{{[0-9]+}},
 // TCHECK: [[B_ADDR:%.+]] = alloca [10 x i{{[0-9]+}}]*,

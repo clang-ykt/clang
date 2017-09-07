@@ -4,7 +4,7 @@
 // Test implicit declare target extension
 ///==========================================================================///
 // RUN: %clang_cc1 -fopenmp-implicit-declare-target -DCK1 -verify -fopenmp -x c++ -triple powerpc64le-unknown-unknown -fopenmp-targets=powerpc64le-ibm-linux-gnu -emit-llvm-bc %s -o %t-ppc-host.bc
-// RUN: %clang_cc1 -fopenmp-implicit-declare-target -DCK1  -verify -fopenmp -x c++ -triple nvptx64-unknown-unknown -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm %s -fopenmp-is-device -fopenmp-host-ir-file-path %t-ppc-host.bc -o - | FileCheck %s --check-prefix CK1 --check-prefix CK1-64
+// RUN: %clang_cc1 -fopenmp-implicit-declare-target -DCK1  -verify -fopenmp -x c++ -triple nvptx64-unknown-unknown -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm %s -fopenmp-is-device -debug-info-kind=limited -fopenmp-host-ir-file-path %t-ppc-host.bc -o - | FileCheck %s --check-prefix CK1 --check-prefix CK1-64
 #ifdef CK1
 
 __thread int id;
@@ -46,7 +46,7 @@ t bar(t i) { return i;}
 
 
 // RUN: %clang_cc1 -fopenmp-implicit-declare-target -DCK2 -verify -fopenmp -x c++ -triple powerpc64le-unknown-unknown -fopenmp-targets=powerpc64le-ibm-linux-gnu -emit-llvm-bc %s -o %t-ppc-host.bc
-// RUN: %clang_cc1 -fopenmp-implicit-declare-target -DCK2  -verify -fopenmp -x c++ -triple nvptx64-unknown-unknown -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm %s -fopenmp-is-device -fopenmp-host-ir-file-path %t-ppc-host.bc -o - | FileCheck %s --check-prefix CK2 --check-prefix CK2-64
+// RUN: %clang_cc1 -fopenmp-implicit-declare-target -DCK2  -verify -fopenmp -x c++ -triple nvptx64-unknown-unknown -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm %s -fopenmp-is-device -debug-info-kind=limited -fopenmp-host-ir-file-path %t-ppc-host.bc -o - | FileCheck %s --check-prefix CK2 --check-prefix CK2-64
 #ifdef CK2
 template<typename t>
 class waldo
@@ -140,7 +140,7 @@ int fooz()
 
 
 // RUN: %clang_cc1 -fopenmp-implicit-declare-target -x c++ -std=c++11 -DCK3 -verify -fopenmp -x c++ -triple powerpc64le-unknown-unknown -fopenmp-targets=powerpc64le-ibm-linux-gnu -emit-llvm-bc %s -o %t-ppc-host.bc
-// RUN: %clang_cc1 -fopenmp-implicit-declare-target -x c++ -std=c++11 -DCK3  -verify -fopenmp -x c++ -triple nvptx64-unknown-unknown -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm %s -fopenmp-is-device -fopenmp-host-ir-file-path %t-ppc-host.bc -o - | FileCheck %s --check-prefix CK3 --check-prefix CK3-64
+// RUN: %clang_cc1 -fopenmp-implicit-declare-target -x c++ -std=c++11 -DCK3  -verify -fopenmp -x c++ -triple nvptx64-unknown-unknown -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm %s -fopenmp-is-device -debug-info-kind=limited -fopenmp-host-ir-file-path %t-ppc-host.bc -o - | FileCheck %s --check-prefix CK3 --check-prefix CK3-64
 #ifdef CK3
 
 template<typename T, typename F>
@@ -169,7 +169,7 @@ void fooz()
 
     funky(a, b, n, bar);
 }
-  // CK3:    %class.anon* dereferenceable(1) %plugh
+  // CK3:    %class.anon* noalias %plugh
   // CK3:    %plugh.addr = alloca %class.anon*, align 8
   // CK3:    %bar = alloca %class.anon.0, align 1
   // CK3:    store %class.anon* %plugh, %class.anon** %plugh.addr, align 8

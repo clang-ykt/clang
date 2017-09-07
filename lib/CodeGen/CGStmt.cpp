@@ -237,6 +237,9 @@ void CodeGenFunction::EmitStmt(const Stmt *S) {
   case Stmt::OMPFlushDirectiveClass:
     EmitOMPFlushDirective(cast<OMPFlushDirective>(*S));
     break;
+  case Stmt::OMPLastprivateUpdateDirectiveClass:
+    EmitOMPLastprivateUpdateDirective(cast<OMPLastprivateUpdateDirective>(*S));
+    break;
   case Stmt::OMPOrderedDirectiveClass:
     EmitOMPOrderedDirective(cast<OMPOrderedDirective>(*S));
     break;

@@ -8200,6 +8200,15 @@ public:
   /// \p D.
   void setOpenMPCaptureKind(FieldDecl *FD, ValueDecl *D, unsigned Level);
 
+  /// \brief Check if the specified variable is used in a conditional
+  /// 'lastprivate' clause.
+  bool isOpenMPConditionalLastprivate(ValueDecl *D);
+
+  /// \brief Get the last update iteration expression for the specified variable
+  /// if it is a conditional 'lastprivate' clause.
+  Expr *getOpenMPUpdateExprForConditionalLastprivate(ValueDecl *D, Expr *Assign,
+                                                     SourceLocation Loc);
+
   /// \brief Check if the specified variable is captured  by 'target' directive.
   /// \param Level Relative level of nested OpenMP construct for that the check
   /// is performed.
@@ -8252,9 +8261,11 @@ public:
   /// \brief Finish current declare reduction construct initializer.
   void ActOnOpenMPDeclareReductionCombinerEnd(Decl *D, Expr *Combiner);
   /// \brief Initialize declare reduction construct initializer.
-  void ActOnOpenMPDeclareReductionInitializerStart(Scope *S, Decl *D);
+  /// \return omp_priv variable.
+  VarDecl *ActOnOpenMPDeclareReductionInitializerStart(Scope *S, Decl *D);
   /// \brief Finish current declare reduction construct initializer.
-  void ActOnOpenMPDeclareReductionInitializerEnd(Decl *D, Expr *Initializer);
+  void ActOnOpenMPDeclareReductionInitializerEnd(Decl *D, Expr *Initializer,
+                                                 VarDecl *OmpPrivParm);
   /// \brief Called at the end of '#pragma omp declare reduction'.
   DeclGroupPtrTy ActOnOpenMPDeclareReductionDirectiveEnd(
       Scope *S, DeclGroupPtrTy DeclReductions, bool IsValid);
@@ -8279,7 +8290,8 @@ public:
   void checkDeclImplicitlyUsedOpenMPTargetContext(Decl *D);
 
   /// \brief Initialization of captured region for OpenMP region.
-  void ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope);
+  void ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope,
+                              bool HasDependClause);
   /// \brief End of OpenMP region.
   ///
   /// \param S Statement associated with the current OpenMP region.
@@ -8290,7 +8302,8 @@ public:
   StmtResult ActOnOpenMPExecutableDirective(
       OpenMPDirectiveKind Kind, const DeclarationNameInfo &DirName,
       OpenMPDirectiveKind CancelRegion, ArrayRef<OMPClause *> Clauses,
-      Stmt *AStmt, SourceLocation StartLoc, SourceLocation EndLoc);
+      Stmt *AStmt, SourceLocation StartLoc, SourceLocation EndLoc,
+      bool HasDependClause);
   /// \brief Called on well-formed '\#pragma omp parallel' after parsing
   /// of the  associated statement.
   StmtResult ActOnOpenMPParallelDirective(ArrayRef<OMPClause *> Clauses,
@@ -8379,6 +8392,11 @@ public:
   StmtResult ActOnOpenMPFlushDirective(ArrayRef<OMPClause *> Clauses,
                                        SourceLocation StartLoc,
                                        SourceLocation EndLoc);
+  /// \brief Called on well-formed '\#pragma omp lastprivate_update'.
+  StmtResult
+  ActOnOpenMPLastprivateUpdateDirective(ArrayRef<OMPClause *> Clauses,
+                                        Stmt *AStmt, SourceLocation StartLoc,
+                                        SourceLocation EndLoc);
   /// \brief Called on well-formed '\#pragma omp ordered' after parsing of the
   /// associated statement.
   StmtResult ActOnOpenMPOrderedDirective(ArrayRef<OMPClause *> Clauses,
@@ -8746,6 +8764,11 @@ public:
                                     SourceLocation StartLoc,
                                     SourceLocation LParenLoc,
                                     SourceLocation EndLoc);
+  /// \brief Called on well-formed 'lastprivate_update' pseudo clause.
+  OMPClause *ActOnOpenMPLastprivateUpdateClause(ArrayRef<Expr *> VarList,
+                                                SourceLocation StartLoc,
+                                                SourceLocation LParenLoc,
+                                                SourceLocation EndLoc);
   /// \brief Called on well-formed 'depend' clause.
   OMPClause *
   ActOnOpenMPDependClause(OpenMPDependClauseKind DepKind, SourceLocation DepLoc,

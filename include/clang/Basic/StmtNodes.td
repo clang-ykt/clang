@@ -216,6 +216,7 @@ def OMPBarrierDirective : DStmt<OMPExecutableDirective>;
 def OMPTaskwaitDirective : DStmt<OMPExecutableDirective>;
 def OMPTaskgroupDirective : DStmt<OMPExecutableDirective>;
 def OMPFlushDirective : DStmt<OMPExecutableDirective>;
+def OMPLastprivateUpdateDirective : DStmt<OMPExecutableDirective>;
 def OMPOrderedDirective : DStmt<OMPExecutableDirective>;
 def OMPAtomicDirective : DStmt<OMPExecutableDirective>;
 def OMPTargetDirective : DStmt<OMPExecutableDirective>;

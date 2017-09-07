@@ -77,6 +77,7 @@ const OMPClauseWithPreInit *OMPClauseWithPreInit::get(const OMPClause *C) {
   case OMPC_mergeable:
   case OMPC_threadprivate:
   case OMPC_flush:
+  case OMPC_lastprivate_update:
   case OMPC_read:
   case OMPC_write:
   case OMPC_update:
@@ -144,6 +145,7 @@ const OMPClauseWithPostUpdate *OMPClauseWithPostUpdate::get(const OMPClause *C) 
   case OMPC_mergeable:
   case OMPC_threadprivate:
   case OMPC_flush:
+  case OMPC_lastprivate_update:
   case OMPC_read:
   case OMPC_write:
   case OMPC_update:
@@ -260,19 +262,38 @@ void OMPLastprivateClause::setAssignmentOps(ArrayRef<Expr *> AssignmentOps) {
             getDestinationExprs().end());
 }
 
+void OMPLastprivateClause::setConditionalLastprivateIterations(
+    ArrayRef<Expr *> LIs) {
+  assert(LIs.size() == varlist_size() && "Number of conditional lastprivate "
+                                         "iterations is not the same as the "
+                                         "preallocated buffer");
+  std::copy(LIs.begin(), LIs.end(), getAssignmentOps().end());
+}
+
+void OMPLastprivateClause::setConditionalLastprivateVariables(
+    ArrayRef<Expr *> LIs) {
+  assert(LIs.size() == varlist_size() && "Number of conditional lastprivate "
+                                         "variables is not the same as the "
+                                         "preallocated buffer");
+  std::copy(LIs.begin(), LIs.end(),
+            getConditionalLastprivateIterations().end());
+}
+
 OMPLastprivateClause *OMPLastprivateClause::Create(
     const ASTContext &C, SourceLocation StartLoc, SourceLocation LParenLoc,
     OpenMPLastprivateClauseKind Modifier, SourceLocation ModifierLoc,
     SourceLocation ColonLoc, SourceLocation EndLoc, ArrayRef<Expr *> VL,
-    ArrayRef<Expr *> SrcExprs, ArrayRef<Expr *> DstExprs,
-    ArrayRef<Expr *> AssignmentOps, Stmt *PreInit,
+    ArrayRef<Expr *> CLIs, ArrayRef<Expr *> CLVs, ArrayRef<Expr *> SrcExprs,
+    ArrayRef<Expr *> DstExprs, ArrayRef<Expr *> AssignmentOps, Stmt *PreInit,
     Expr *PostUpdate) {
-  void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(5 * VL.size()));
+  void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(7 * VL.size()));
   OMPLastprivateClause *Clause =
       new (Mem) OMPLastprivateClause(StartLoc, LParenLoc, Modifier,
                                      ModifierLoc, ColonLoc, EndLoc,
                                      VL.size());
   Clause->setVarRefs(VL);
+  Clause->setConditionalLastprivateIterations(CLIs);
+  Clause->setConditionalLastprivateVariables(CLVs);
   Clause->setSourceExprs(SrcExprs);
   Clause->setDestinationExprs(DstExprs);
   Clause->setAssignmentOps(AssignmentOps);
@@ -283,7 +304,7 @@ OMPLastprivateClause *OMPLastprivateClause::Create(
 
 OMPLastprivateClause *OMPLastprivateClause::CreateEmpty(const ASTContext &C,
                                                         unsigned N) {
-  void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(5 * N));
+  void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(7 * N));
   return new (Mem) OMPLastprivateClause(N);
 }
 
@@ -532,6 +553,23 @@ OMPFlushClause *OMPFlushClause::Create(const ASTContext &C,
 OMPFlushClause *OMPFlushClause::CreateEmpty(const ASTContext &C, unsigned N) {
   void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(N));
   return new (Mem) OMPFlushClause(N);
+}
+
+OMPLastprivateUpdateClause *
+OMPLastprivateUpdateClause::Create(const ASTContext &C, SourceLocation StartLoc,
+                                   SourceLocation LParenLoc,
+                                   SourceLocation EndLoc, ArrayRef<Expr *> VL) {
+  void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(VL.size() + 1));
+  OMPLastprivateUpdateClause *Clause = new (Mem)
+      OMPLastprivateUpdateClause(StartLoc, LParenLoc, EndLoc, VL.size());
+  Clause->setVarRefs(VL);
+  return Clause;
+}
+
+OMPLastprivateUpdateClause *
+OMPLastprivateUpdateClause::CreateEmpty(const ASTContext &C, unsigned N) {
+  void *Mem = C.Allocate(totalSizeToAlloc<Expr *>(N));
+  return new (Mem) OMPLastprivateUpdateClause(N);
 }
 
 OMPDependClause *OMPDependClause::Create(

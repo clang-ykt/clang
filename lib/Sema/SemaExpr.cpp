@@ -11202,7 +11202,25 @@ ExprResult Sema::CreateBuiltinBinOp(SourceLocation OpLoc,
   else if (const ObjCIvarRefExpr *OIRE =
            dyn_cast<ObjCIvarRefExpr>(LHS.get()->IgnoreParenCasts()))
     DiagnoseDirectIsaAccess(*this, OIRE, OpLoc, RHS.get());
-  
+
+  if (getLangOpts().OpenMP && CompResultTy.isNull() && BO_Assign == Opc) {
+    auto *RefExpr = LHS.get()->IgnoreParenCasts();
+    auto *DE = dyn_cast_or_null<DeclRefExpr>(RefExpr);
+    auto *ME = dyn_cast_or_null<MemberExpr>(RefExpr);
+    if (DE || ME) {
+      auto *Var = DE ? DE->getDecl() : ME->getMemberDecl();
+      if (Var) {
+        if (isOpenMPConditionalLastprivate(Var)) {
+          ExprResult PAssign = new (Context)
+              BinaryOperator(LHS.get(), RHS.get(), Opc, ResultTy, VK, OK, OpLoc,
+                             FPFeatures.fp_contract);
+
+          return getOpenMPUpdateExprForConditionalLastprivate(
+              Var, PAssign.get(), OpLoc);
+        }
+      }
+    }
+  }
   if (CompResultTy.isNull())
     return new (Context) BinaryOperator(LHS.get(), RHS.get(), Opc, ResultTy, VK,
                                         OK, OpLoc, FPFeatures.fp_contract);
@@ -13842,6 +13860,7 @@ bool Sema::tryCaptureVariable(
   bool IsGlobal = !Var->hasLocalStorage();
   if (IsGlobal && !(LangOpts.OpenMP && IsOpenMPCapturedDecl(Var)))
     return true;
+  Var = Var->getCanonicalDecl();
 
   // Walk up the stack to determine whether we can capture the variable,
   // performing the "simple" checks that don't depend on type. We stop when

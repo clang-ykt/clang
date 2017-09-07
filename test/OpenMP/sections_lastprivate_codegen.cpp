@@ -66,6 +66,7 @@ int main() {
     // LAMBDA: alloca i{{[0-9]+}},
     // LAMBDA: alloca i{{[0-9]+}},
     // LAMBDA: alloca i{{[0-9]+}},
+    // LAMBDA: alloca i{{[0-9]+}},
     // LAMBDA: [[G_PRIVATE_ADDR:%.+]] = alloca i{{[0-9]+}},
     // LAMBDA: [[SIVAR1_PRIVATE_ADDR:%.+]] = alloca i{{[0-9]+}},
 
@@ -133,6 +134,7 @@ int main() {
 #pragma omp sections lastprivate(g, sivar)
   {
     // BLOCKS: define{{.*}} internal{{.*}} void [[OMP_REGION]](i32* noalias [[GTID:%.+]], i32* noalias %{{.+}}, i32* dereferenceable(4) [[SIVAR:%.+]])
+    // BLOCKS: alloca i{{[0-9]+}},
     // BLOCKS: alloca i{{[0-9]+}},
     // BLOCKS: alloca i{{[0-9]+}},
     // BLOCKS: alloca i{{[0-9]+}},
@@ -295,6 +297,7 @@ int main() {
 // CHECK: ret
 //
 // CHECK: define internal void [[TMAIN_MICROTASK]](i{{[0-9]+}}* noalias [[GTID_ADDR:%.+]], i{{[0-9]+}}* noalias %{{.+}},
+// CHECK: alloca i{{[0-9]+}},
 // CHECK: alloca i{{[0-9]+}},
 // CHECK: alloca i{{[0-9]+}},
 // CHECK: alloca i{{[0-9]+}},

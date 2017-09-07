@@ -157,6 +157,7 @@ int main() {
     // LAMBDA: alloca i{{[0-9]+}},
     // LAMBDA: alloca i{{[0-9]+}},
     // LAMBDA: alloca i{{[0-9]+}},
+    // LAMBDA: alloca i{{[0-9]+}},
     // LAMBDA: [[A_PRIV:%.+]] = alloca i{{[0-9]+}},
     // LAMBDA: [[B_PRIV:%.+]] = alloca i{{[0-9]+}},
     // LAMBDA: [[C_PRIV:%.+]] = alloca i{{[0-9]+}},
@@ -180,6 +181,7 @@ int main() {
     // LAMBDA: ret void
 
     // LAMBDA: define{{.*}} internal{{.*}} void [[OMP_REGION]](i32* noalias %{{.+}}, i32* noalias %{{.+}})
+    // LAMBDA: alloca i{{[0-9]+}},
     // LAMBDA: alloca i{{[0-9]+}},
     // LAMBDA: [[G_START_ADDR:%.+]] = alloca i{{[0-9]+}},
     // LAMBDA: alloca i{{[0-9]+}},
@@ -232,6 +234,7 @@ int main() {
 #pragma omp for linear(g, g1:5)
   for (int i = 0; i < 2; ++i) {
     // BLOCKS: define{{.*}} internal{{.*}} void [[OMP_REGION]](i32* noalias %{{.+}}, i32* noalias %{{.+}})
+    // BLOCKS: alloca i{{[0-9]+}},
     // BLOCKS: alloca i{{[0-9]+}},
     // BLOCKS: [[G_START_ADDR:%.+]] = alloca i{{[0-9]+}},
     // BLOCKS: alloca i{{[0-9]+}},
@@ -298,6 +301,7 @@ int main() {
 // BLOCKS: ret void
 
 // BLOCKS: define internal void @{{.+}}(i{{[0-9]+}}* noalias [[GTID_ADDR:%.+]], i{{[0-9]+}}* noalias %{{.+}}, [[SS_TY]]* %{{.+}}, i32* {{.+}}, i32* {{.+}}, i32* {{.+}})
+// BLOCKS: alloca i{{[0-9]+}},
 // BLOCKS: alloca i{{[0-9]+}},
 // BLOCKS: alloca i{{[0-9]+}},
 // BLOCKS: alloca i{{[0-9]+}},
@@ -419,9 +423,11 @@ int main() {
 // CHECK: alloca i{{[0-9]+}},
 // CHECK: alloca i{{[0-9]+}},
 // CHECK: alloca i{{[0-9]+}},
+// CHECK: alloca i{{[0-9]+}},
 // CHECK: [[A_PRIV:%.+]] = alloca i{{[0-9]+}},
 // CHECK: [[B_PRIV:%.+]] = alloca i{{[0-9]+}},
 // CHECK: [[C_PRIV:%.+]] = alloca i{{[0-9]+}},
+// CHECK: call void @__kmpc_barrier(
 // CHECK: store i{{[0-9]+}}* [[A_PRIV]], i{{[0-9]+}}** [[REFA:%.+]],
 // CHECK: store i{{[0-9]+}}* [[C_PRIV]], i{{[0-9]+}}** [[REFC:%.+]],
 // CHECK: call void @__kmpc_for_static_init_4(

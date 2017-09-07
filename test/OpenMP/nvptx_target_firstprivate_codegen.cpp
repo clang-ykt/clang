@@ -180,7 +180,6 @@ struct S1 {
   // TCHECK:  store [[S1]]* [[TH]], [[S1]]** [[TH_ADDR]],
   // TCHECK:  store i{{[0-9]+}} [[B_IN]], i{{[0-9]+}}* [[B_ADDR]],
   // TCHECK:  [[TH_ADDR_REF:%.+]] = load [[S1]]*, [[S1]]** [[TH_ADDR]],
-  // TCHECK-64:  [[B_ADDR_CONV:%.+]] = bitcast i{{[0-9]+}}* [[B_ADDR]] to i{{[0-9]+}}*
 
   // firstprivate(b)
   // TCHECK-NOT:  store i{{[0-9]+}} %{{.+}}, i{{[0-9]+}}*

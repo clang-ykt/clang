@@ -2226,6 +2226,8 @@ static void AddGoldPlugin(const ToolChain &ToolChain, const ArgList &Args,
       CmdArgs.push_back("-plugin-opt=-debugger-tune=lldb");
     else if (A->getOption().matches(options::OPT_gsce))
       CmdArgs.push_back("-plugin-opt=-debugger-tune=sce");
+    else if (A->getOption().matches(options::OPT_gcuda_gdb))
+      CmdArgs.push_back("-plugin-opt=-debugger-tune=cuda-gdb");
     else
       CmdArgs.push_back("-plugin-opt=-debugger-tune=gdb");
   }
@@ -3007,6 +3009,9 @@ static void RenderDebugEnablingArgs(const ArgList &Args, ArgStringList &CmdArgs,
     break;
   case llvm::DebuggerKind::SCE:
     CmdArgs.push_back("-debugger-tuning=sce");
+    break;
+  case llvm::DebuggerKind::CudaGDB:
+    CmdArgs.push_back("-debugger-tuning=cuda-gdb");
     break;
   default:
     break;
@@ -4890,6 +4895,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       DebuggerTuning = llvm::DebuggerKind::LLDB;
     else if (A->getOption().matches(options::OPT_gsce))
       DebuggerTuning = llvm::DebuggerKind::SCE;
+    else if (A->getOption().matches(options::OPT_gcuda_gdb))
+      DebuggerTuning = llvm::DebuggerKind::CudaGDB;
     else
       DebuggerTuning = llvm::DebuggerKind::GDB;
   }
@@ -4953,13 +4960,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (DebugInfoKind == codegenoptions::LimitedDebugInfo && NeedFullDebug)
     DebugInfoKind = codegenoptions::FullDebugInfo;
 
-  if (!(IsOpenMPDevice && getToolChain().getTriple().isNVPTX()) ||
-      (IsOpenMPDevice &&
-       Args.hasFlag(options::OPT_fopenmp_debug, options::OPT_fno_openmp_debug,
-                    /*Default=*/false))) {
-    RenderDebugEnablingArgs(Args, CmdArgs, DebugInfoKind, DwarfVersion,
-                            DebuggerTuning);
-  }
+  RenderDebugEnablingArgs(Args, CmdArgs, DebugInfoKind, DwarfVersion,
+                          DebuggerTuning);
 
   // -ggnu-pubnames turns on gnu style pubnames in the backend.
   if (Args.hasArg(options::OPT_ggnu_pubnames)) {
@@ -12231,8 +12233,17 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.append(CmdPtxasArgs.begin(), CmdPtxasArgs.end());
 
   // In OpenMP we need to generate relocatable code.
-  if (JA.isOffloading(Action::OFK_OpenMP))
+  if (JA.isOffloading(Action::OFK_OpenMP)) {
     CmdArgs.push_back("-c");
+    bool O0Opt = true;
+    if (Arg *A = Args.getLastArg(options::OPT_O_Group))
+      O0Opt = A->getOption().matches(options::OPT_O0);
+    if (O0Opt && Args.hasArg(options::OPT_g_Flag)) {
+      CmdArgs.push_back("-g");
+      CmdArgs.push_back("--dont-merge-basicblocks");
+      CmdArgs.push_back("--return-at-end");
+    }
+  }
 
   const char *Exec;
   if (Arg *A = Args.getLastArg(options::OPT_ptxas_path_EQ))
