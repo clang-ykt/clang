@@ -12170,8 +12170,12 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
 
   ArgStringList CmdArgs;
   CmdArgs.push_back(TC.getTriple().isArch64Bit() ? "-m64" : "-m32");
+  // In OpenMP with debug info generation mode - ignore optimization level.
+  bool OpenMPDebugInfo =
+      JA.isOffloading(Action::OFK_OpenMP) && Args.hasArg(options::OPT_g_Flag);
   if (Args.hasFlag(options::OPT_cuda_noopt_device_debug,
-                   options::OPT_no_cuda_noopt_device_debug, false)) {
+                   options::OPT_no_cuda_noopt_device_debug, false) ||
+      OpenMPDebugInfo) {
     // ptxas does not accept -g option if optimization is enabled, so
     // we ignore the compiler's -O* options if we want debug info.
     CmdArgs.push_back("-g");
@@ -12233,17 +12237,8 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.append(CmdPtxasArgs.begin(), CmdPtxasArgs.end());
 
   // In OpenMP we need to generate relocatable code.
-  if (JA.isOffloading(Action::OFK_OpenMP)) {
+  if (JA.isOffloading(Action::OFK_OpenMP))
     CmdArgs.push_back("-c");
-    bool O0Opt = true;
-    if (Arg *A = Args.getLastArg(options::OPT_O_Group))
-      O0Opt = A->getOption().matches(options::OPT_O0);
-    if (O0Opt && Args.hasArg(options::OPT_g_Flag)) {
-      CmdArgs.push_back("-g");
-      CmdArgs.push_back("--dont-merge-basicblocks");
-      CmdArgs.push_back("--return-at-end");
-    }
-  }
 
   const char *Exec;
   if (Arg *A = Args.getLastArg(options::OPT_ptxas_path_EQ))

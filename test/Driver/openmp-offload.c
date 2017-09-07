@@ -604,9 +604,9 @@
 // CHK-CUDA-DEBUG-SAME: "-dwarf-version=2"
 // CHK-CUDA-DEBUG-SAME: "-debugger-tuning=cuda-gdb"
 // CHK-CUDA-DEBUG: ptxas
-// CHK-CUDA-DEBUG-SAME: "-c"
 // CHK-CUDA-DEBUG-SAME: "-g"
 // CHK-CUDA-DEBUG-SAME: "--dont-merge-basicblocks"
 // CHK-CUDA-DEBUG-SAME: "--return-at-end"
+// CHK-CUDA-DEBUG-SAME: "-c"
 // CHK-CUDA-DEBUG: nvlink
 // CHK-CUDA-DEBUG-SAME: "-g"
