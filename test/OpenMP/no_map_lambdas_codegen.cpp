@@ -12,7 +12,7 @@
 
 // CHECK: [[ANON_T:%.+]] = type { i32*, i32* }
 // CHECK: [[SIZES:@.+]] = private {{.+}} constant [1 x i[[PTRSZ:32|64]]] [i{{32|64}} {{8|16}}]
-// CHECK: [[TYPES:@.+]] = private {{.+}} constant [1 x i64] [i64 545]
+// CHECK: [[TYPES:@.+]] = private {{.+}} constant [1 x i64] [i64 673]
 
 // CHECK: define {{.*}}[[MAIN:@.+]](
 int main()

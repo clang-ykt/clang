@@ -169,6 +169,22 @@ public:
 
 } // namespace
 
+LValue CodeGenFunction::EmitOMPSharedLValue(const Expr *E) {
+  if (auto *OrigDRE = dyn_cast<DeclRefExpr>(E)) {
+    if (auto *OrigVD = dyn_cast<VarDecl>(OrigDRE->getDecl())) {
+      OrigVD = OrigVD->getCanonicalDecl();
+      bool IsCaptured =
+          LambdaCaptureFields.lookup(OrigVD) ||
+          (CapturedStmtInfo && CapturedStmtInfo->lookup(OrigVD)) ||
+          (CurCodeDecl && isa<BlockDecl>(CurCodeDecl));
+      DeclRefExpr DRE(const_cast<VarDecl *>(OrigVD), IsCaptured,
+                      OrigDRE->getType(), VK_LValue, OrigDRE->getExprLoc());
+      return EmitLValue(&DRE);
+    }
+  }
+  return EmitLValue(E);
+}
+
 llvm::Value *CodeGenFunction::getTypeSize(QualType Ty) {
   auto &C = getContext();
   llvm::Value *Size = nullptr;
@@ -4319,11 +4335,12 @@ void CodeGenFunction::EmitOMPTargetDirective(const OMPTargetDirective &S) {
     TargetCodegen(CGF, Action, S);
   };
 
-  OMPLexicalScope TaskScope(*this, S, true);
   llvm::SmallVector<llvm::Value *, 16> CapturedVars;
   OMPMapArrays MapArrays;
-  generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
-
+  {
+    OMPLexicalScope TaskScope(*this, S, true);
+    generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
+  }
   if (S.hasClausesOfKind<OMPDependClause>()) {
     OMPTaskDataTy Data;
 

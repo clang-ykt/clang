@@ -378,7 +378,8 @@ public:
       OMPClauseMappableExprCommon::MappableExprComponentListRef Components,
       MapBaseValuesArrayTy &BasePointers, MapValuesArrayTy &Pointers,
       MapValuesArrayTy &Sizes, MapFlagsArrayTy &Types,
-      StructRangeMapTy &PartialStructs, bool IsFirstComponentList) const;
+      StructRangeMapTy &PartialStructs, bool IsFirstComponentList,
+      bool IsImplicit) const;
 
   /// Generate all the base pointers, section pointers, sizes and map
   /// types for the extracted mappable expressions. Also, for each item that

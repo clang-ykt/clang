@@ -989,18 +989,7 @@ static void EmitOMPAggregateInit(CodeGenFunction &CGF, Address DestAddr,
 }
 
 LValue ReductionCodeGen::emitSharedLValue(CodeGenFunction &CGF, const Expr *E) {
-  if (const auto *OASE = dyn_cast<OMPArraySectionExpr>(E))
-    return CGF.EmitOMPArraySectionExpr(OASE);
-  if (const auto *ASE = dyn_cast<ArraySubscriptExpr>(E))
-    return CGF.EmitLValue(ASE);
-  auto *OrigVD = cast<VarDecl>(cast<DeclRefExpr>(E)->getDecl());
-  DeclRefExpr DRE(const_cast<VarDecl *>(OrigVD),
-                  CGF.CapturedStmtInfo &&
-                      CGF.CapturedStmtInfo->lookup(OrigVD) != nullptr,
-                  E->getType(), VK_LValue, E->getExprLoc());
-  // Store the address of the original variable associated with the LHS
-  // implicit variable.
-  return CGF.EmitLValue(&DRE);
+  return CGF.EmitOMPSharedLValue(E);
 }
 
 LValue ReductionCodeGen::emitSharedLValueUB(CodeGenFunction &CGF,
@@ -7156,7 +7145,7 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
               OMPDeclareTargetDeclAttr::MT_Link) {
         MEHandler.generateInfoForComponentList(C->getMapType(),
             C->getMapTypeModifier(), L.second, CurBasePointers, CurPointers,
-            CurSizes, CurMapTypes, PartialStructs, true);
+            CurSizes, CurMapTypes, PartialStructs, true, C->isImplicit());
       }
     }
   }
@@ -7729,7 +7718,8 @@ void MappableExprsHandler::generateInfoForComponentList(
     OMPClauseMappableExprCommon::MappableExprComponentListRef Components,
     MapBaseValuesArrayTy &BasePointers, MapValuesArrayTy &Pointers,
     MapValuesArrayTy &Sizes, MapFlagsArrayTy &Types,
-    StructRangeMapTy &PartialStructs, bool IsFirstComponentList) const {
+    StructRangeMapTy &PartialStructs, bool IsFirstComponentList,
+    bool IsImplicit) const {
 
   // The following summarizes what has to be generated for each map and the
   // types bellow. The generated information is expressed in this order:
@@ -7884,8 +7874,7 @@ void MappableExprsHandler::generateInfoForComponentList(
       BP = GV;
     } else {
       // BP = &Var.
-      BP = CGF.EmitLValue(cast<DeclRefExpr>(I->getAssociatedExpression()))
-               .getPointer();
+      BP = CGF.EmitOMPSharedLValue(I->getAssociatedExpression()).getPointer();
     }
 
     // If the variable is a pointer and is being dereferenced (i.e. is not
@@ -7963,7 +7952,8 @@ void MappableExprsHandler::generateInfoForComponentList(
               isa<OMPArraySectionExpr>(Next->getAssociatedExpression())) &&
              "Unexpected expression");
 
-      auto *LB = CGF.EmitLValue(I->getAssociatedExpression()).getPointer();
+      auto *LB =
+          CGF.EmitOMPSharedLValue(I->getAssociatedExpression()).getPointer();
       auto *Size = getExprTypeSize(I->getAssociatedExpression());
 
       // If we have a member expression and the current component is a
@@ -7998,9 +7988,9 @@ void MappableExprsHandler::generateInfoForComponentList(
         // same expression except for the first one. We also need to signal
         // this map is the first one that relates with the current capture
         // (there is a set of entries for each capture).
-        uint64_t flags =
-            getMapTypeBits(MapType, MapTypeModifier, !IsExpressionFirstInfo,
-                           IsCaptureFirstInfo);
+        uint64_t flags = IsImplicit ? OMP_MAP_IMPLICIT : 0;
+        flags |= getMapTypeBits(MapType, MapTypeModifier,
+                                !IsExpressionFirstInfo, IsCaptureFirstInfo);
 
         if (!IsExpressionFirstInfo) {
           // If we have a PTR_AND_OBJ pair where the OBJ is a pointer as well,
@@ -8064,7 +8054,6 @@ void MappableExprsHandler::generateInfoForComponentList(
 
       IsExpressionFirstInfo = false;
       IsCaptureFirstInfo = false;
-      continue;
     }
   }
 }
@@ -8076,20 +8065,19 @@ void MappableExprsHandler::generateAllInfo(
 
   struct MapInfo {
     OMPClauseMappableExprCommon::MappableExprComponentListRef Components;
-    OpenMPMapClauseKind MapType;
-    OpenMPMapClauseKind MapTypeModifier;
-    bool ReturnDevicePointer;
+    OpenMPMapClauseKind MapType = OMPC_MAP_unknown;
+    OpenMPMapClauseKind MapTypeModifier = OMPC_MAP_unknown;
+    bool ReturnDevicePointer = false;
+    bool IsImplicit = false;
 
-    MapInfo()
-        : MapType(OMPC_MAP_unknown), MapTypeModifier(OMPC_MAP_unknown),
-          ReturnDevicePointer(false) {}
+    MapInfo() = default;
     MapInfo(
         OMPClauseMappableExprCommon::MappableExprComponentListRef Components,
         OpenMPMapClauseKind MapType, OpenMPMapClauseKind MapTypeModifier,
-        bool ReturnDevicePointer)
+        bool ReturnDevicePointer, bool IsImplicit)
         : Components(Components), MapType(MapType),
           MapTypeModifier(MapTypeModifier),
-          ReturnDevicePointer(ReturnDevicePointer) {}
+          ReturnDevicePointer(ReturnDevicePointer), IsImplicit(IsImplicit) {}
   };
 
   // We have to process the component lists that relate with the same
@@ -8103,15 +8091,17 @@ void MappableExprsHandler::generateAllInfo(
       const ValueDecl *D,
       OMPClauseMappableExprCommon::MappableExprComponentListRef L,
       OpenMPMapClauseKind MapType, OpenMPMapClauseKind MapModifier,
-      bool ReturnDevicePointer = false) {
+      bool ReturnDevicePointer = false, bool IsImplicit = false) {
     const ValueDecl *VD = D ? cast<ValueDecl>(D->getCanonicalDecl()) : nullptr;
-    Info[VD].push_back({L, MapType, MapModifier, ReturnDevicePointer});
+    Info[VD].emplace_back(L, MapType, MapModifier, ReturnDevicePointer,
+                          IsImplicit);
   };
 
   // FIXME: MSVC 2013 seems to require this-> to find member CurDir.
   for (auto *C : this->CurDir.getClausesOfKind<OMPMapClause>())
     for (auto L : C->component_lists())
-      InfoGen(L.first, L.second, C->getMapType(), C->getMapTypeModifier());
+      InfoGen(L.first, L.second, C->getMapType(), C->getMapTypeModifier(),
+              /*ReturnDevicePointer=*/false, C->isImplicit());
   for (auto *C : this->CurDir.getClausesOfKind<OMPToClause>())
     for (auto L : C->component_lists())
       InfoGen(L.first, L.second, OMPC_MAP_to, OMPC_MAP_unknown);
@@ -8201,7 +8191,7 @@ void MappableExprsHandler::generateAllInfo(
       // FIXME: MSVC 2013 seems to require this-> to find the member method.
       this->generateInfoForComponentList(
           L.MapType, L.MapTypeModifier, L.Components, BasePointers, Pointers,
-          Sizes, Types, PartialStructs, IsFirstComponentList);
+          Sizes, Types, PartialStructs, IsFirstComponentList, L.IsImplicit);
 
       // If this entry relates with a device pointer, set the relevant
       // declaration and add the 'return pointer' flag.
@@ -8288,7 +8278,8 @@ void MappableExprsHandler::generateInfoForCapture(
              "Not expecting declaration with no component lists.");
       generateInfoForComponentList(C->getMapType(), C->getMapTypeModifier(),
                                    L.second, BasePointers, Pointers, Sizes,
-                                   Types, PartialStructs, IsFirstComponentList);
+                                   Types, PartialStructs, IsFirstComponentList,
+                                   C->isImplicit());
       IsFirstComponentList = false;
     }
 

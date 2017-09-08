@@ -12,9 +12,9 @@
 
 // CHECK: [[ANON_T:%.+]] = type { i32*, i32* }
 // CHECK-DAG: [[SIZES_TEMPLATE:@.+]] = private {{.+}} constant [5 x i[[PTRSZ:32|64]]] [i{{32|64}} 4, i{{32|64}} 4, i{{32|64}} {{8|16}}, i{{32|64}} 0, i{{32|64}} 0]
-// CHECK-DAG: [[TYPES_TEMPLATE:@.+]] = private {{.+}} constant [5 x i64] [i64 800, i64 800, i64 545, i64 844424930131987, i64 844424930131987]
+// CHECK-DAG: [[TYPES_TEMPLATE:@.+]] = private {{.+}} constant [5 x i64] [i64 800, i64 800, i64 673, i64 844424930131987, i64 844424930131987]
 // CHECK-DAG: [[SIZES:@.+]] = private {{.+}} constant [3 x i[[PTRSZ:32|64]]] [i{{32|64}} {{8|16}}, i{{32|64}} 0, i{{32|64}} 0]
-// CHECK-DAG: [[TYPES:@.+]] = private {{.+}} constant [3 x i64] [i64 545, i64 281474976710675, i64 281474976710675]
+// CHECK-DAG: [[TYPES:@.+]] = private {{.+}} constant [3 x i64] [i64 673, i64 281474976710675, i64 281474976710675]
 
 template <typename F>
 void omp_loop(int start, int end, F body) {

@@ -2792,6 +2792,9 @@ public:
   LValue EmitOMPHelperVar(const DeclRefExpr *Helper);
   void EmitOMPHelperVar(const VarDecl *VDecl);
 
+  /// Emits the lvalue for the expression with possibly captured variable.
+  LValue EmitOMPSharedLValue(const Expr *E);
+
 private:
   /// Helpers for blocks
   llvm::Value *EmitBlockLiteral(const CGBlockInfo &Info);

@@ -1105,7 +1105,7 @@ StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective(
     }
     Directive = Actions.ActOnOpenMPExecutableDirective(
         DKind, DirName, CancelRegion, Clauses, AssociatedStmt.get(), Loc,
-        EndLoc, hasDependClause);
+        EndLoc);
 
     // Exit scope.
     Actions.EndOpenMPDSABlock(Directive.get());
