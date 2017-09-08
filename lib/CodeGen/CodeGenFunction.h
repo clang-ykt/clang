@@ -2656,8 +2656,7 @@ public:
       TaskGenTy;
   void EmitOMPTaskBasedDirective(const OMPExecutableDirective &S,
                                  const RegionCodeGenTy &BodyGen,
-                                 const TaskGenTy &TaskGen, OMPTaskDataTy &Data,
-                                 unsigned MapSize = 0);
+                                 const TaskGenTy &TaskGen, OMPTaskDataTy &Data);
 
   void EmitOMPParallelDirective(const OMPParallelDirective &S);
   void EmitOMPSimdDirective(const OMPSimdDirective &S);
