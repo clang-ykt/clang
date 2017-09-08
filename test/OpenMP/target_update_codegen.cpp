@@ -283,4 +283,36 @@ void depend_nowait(int arg, float arg2) {
   {++arg;}
 }
 #endif
+#ifdef CK6
+// RUN: %clang_cc1 -DCK6 -verify -fopenmp -fopenmp-targets=powerpc64le-ibm-linux-gnu -x c++ -triple powerpc64le-unknown-unknown -emit-llvm %s -o - | FileCheck %s --check-prefix CK6
+// CK6: %struct.kmp_depend_info = type { i64, i64, i8 }
+
+// CK6-LABEL: depend_no_nowait
+void depend_no_nowait(int arg, float arg2) {
+  // CK6:       [[ARG:%.+]] = alloca i32,
+  // CK6:       [[ARG2:%.+]] = alloca float,
+  // CK6:       [[DEP:%.+]] = alloca [2 x %struct.kmp_depend_info],
+  // CK6:       [[DEP0:%.+]] = getelementptr inbounds [2 x %struct.kmp_depend_info], [2 x %struct.kmp_depend_info]* [[DEP]], i64 0, i64 0
+  // CK6-NEXT:  getelementptr inbounds %struct.kmp_depend_info, %struct.kmp_depend_info* [[DEP0]], i32 0, i32 0
+  // CK6-NEXT:  ptrtoint i32* [[ARG]] to i64
+  // CK6-NEXT:  store i64 %{{.+}}, i64* %{{.+}},
+  // CK6-NEXT:  getelementptr inbounds %struct.kmp_depend_info, %struct.kmp_depend_info* [[DEP0]], i32 0, i32 1
+  // CK6-NEXT:  store i64 4, i64* %{{.+}},
+  // CK6-NEXT:  getelementptr inbounds %struct.kmp_depend_info, %struct.kmp_depend_info* [[DEP0]], i32 0, i32 2
+  // CK6-NEXT:  store i8 3, i8* %{{.+}},
+  // CK6:       [[DEP1:%.+]] = getelementptr inbounds [2 x %struct.kmp_depend_info], [2 x %struct.kmp_depend_info]* [[DEP]], i64 0, i64 1
+  // CK6-NEXT:  getelementptr inbounds %struct.kmp_depend_info, %struct.kmp_depend_info* [[DEP1]], i32 0, i32 0
+  // CK6-NEXT:  ptrtoint float* [[ARG2]] to i64
+  // CK6-NEXT:  store i64 %{{.+}}, i64* %{{.+}},
+  // CK6-NEXT:  getelementptr inbounds %struct.kmp_depend_info, %struct.kmp_depend_info* [[DEP1]], i32 0, i32 1
+  // CK6-NEXT:  store i64 4, i64* %{{.+}},
+  // CK6-NEXT:  getelementptr inbounds %struct.kmp_depend_info, %struct.kmp_depend_info* [[DEP1]], i32 0, i32 2
+  // CK6-NEXT:  store i8 1, i8* %{{.+}},
+  // CK6-NEXT:  getelementptr inbounds [2 x %struct.kmp_depend_info], [2 x %struct.kmp_depend_info]* [[DEP]], i32 0, i32 0
+  // CK6-NEXT:  bitcast %struct.kmp_depend_info* %{{.+}} to i8*
+  // CK6-NEXT:  call void @__tgt_target_data_update_depend(i64 -1, i32 1, i8** %{{.+}}, i8** %{{.+}}, i64* getelementptr inbounds ([1 x i64], [1 x i64]* @{{.+}}, i32 0, i32 0), i64* getelementptr inbounds ([1 x i64], [1 x i64]* @{{.+}}, i32 0, i32 0), i32 2, i8* %{{.+}}, i32 0, i8* null)
+  #pragma omp target update from(arg) depend(out: arg) depend(in : arg2)
+  {++arg;}
+}
+#endif
 #endif

@@ -765,6 +765,11 @@ enum OpenMPRTLFunction {
   // *arg_types, in32_t depNum, void *depList, int32_t noAliasDepNum, void
   // *noAliasDepList);
   OMPRTL__tgt_target_data_begin_nowait_depend,
+  // Call to void __tgt_target_data_begin_depend(int64_t device_id,
+  // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+  // *arg_types, in32_t depNum, void *depList, int32_t noAliasDepNum, void
+  // *noAliasDepList);
+  OMPRTL__tgt_target_data_begin_depend,
   // Call to void __tgt_target_data_end(int64_t device_id, int32_t arg_num,
   // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
   OMPRTL__tgt_target_data_end,
@@ -777,6 +782,11 @@ enum OpenMPRTLFunction {
   // *arg_types, in32_t depNum, void *depList, int32_t noAliasDepNum, void
   // *noAliasDepList);
   OMPRTL__tgt_target_data_end_nowait_depend,
+  // Call to void __tgt_target_data_end_depend(int64_t device_id,
+  // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+  // *arg_types, in32_t depNum, void *depList, int32_t noAliasDepNum, void
+  // *noAliasDepList);
+  OMPRTL__tgt_target_data_end_depend,
   // Call to void __tgt_target_data_update(int64_t device_id, int32_t arg_num,
   // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
   OMPRTL__tgt_target_data_update,
@@ -789,6 +799,11 @@ enum OpenMPRTLFunction {
   // *arg_types, in32_t depNum, void *depList, int32_t noAliasDepNum, void
   // *noAliasDepList);
   OMPRTL__tgt_target_data_update_nowait_depend,
+  // Call to void __tgt_target_data_update_depend(int64_t device_id,
+  // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes, int64_t
+  // *arg_types, in32_t depNum, void *depList, int32_t noAliasDepNum, void
+  // *noAliasDepList);
+  OMPRTL__tgt_target_data_update_depend,
   // Call to kmp_task_t * __kmpc_omp_target_task_alloc(ident_t *, kmp_int32
   // gtid,
   // kmp_int32 flags, size_t sizeof_kmp_task_t, size_t sizeof_shareds,
@@ -2345,6 +2360,28 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
                                       "__tgt_target_data_begin_nowait_depend");
     break;
   }
+  case OMPRTL__tgt_target_data_begin_depend: {
+    // Build void __tgt_target_data_begin_depend(int64_t device_id,
+    // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
+    // int64_t *arg_types, int32_t depNum, void *depList, int32_t noAliasDepNum,
+    // void *noAliasDepList);
+    llvm::Type *TypeParams[] = {
+        CGM.Int64Ty,
+        CGM.Int32Ty,
+        CGM.VoidPtrPtrTy,
+        CGM.VoidPtrPtrTy,
+        CGM.SizeTy->getPointerTo(),
+        CGM.Int64Ty->getPointerTo(),
+        CGM.Int32Ty,
+        CGM.VoidPtrTy,
+        CGM.Int32Ty,
+        CGM.VoidPtrTy,
+    };
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+    RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_begin_depend");
+    break;
+  }
   case OMPRTL__tgt_target_data_end: {
     // Build void __tgt_target_data_end(int64_t device_id, int32_t arg_num,
     // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
@@ -2397,6 +2434,29 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
         CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_end_nowait_depend");
     break;
   }
+  case OMPRTL__tgt_target_data_end_depend: {
+    // Build void __tgt_target_data_end_depend(int64_t device_id,
+    // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
+    // int64_t *arg_types, int32_t depNum, void *depList, int32_t noAliasDepNum,
+    // void *noAliasDepList);
+    llvm::Type *TypeParams[] = {
+        CGM.Int64Ty,
+        CGM.Int32Ty,
+        CGM.VoidPtrPtrTy,
+        CGM.VoidPtrPtrTy,
+        CGM.SizeTy->getPointerTo(),
+        CGM.Int64Ty->getPointerTo(),
+        CGM.Int32Ty,
+        CGM.VoidPtrTy,
+        CGM.Int32Ty,
+        CGM.VoidPtrTy,
+    };
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+    RTLFn =
+        CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_end_depend");
+    break;
+  }
   case OMPRTL__tgt_target_data_update: {
     // Build void __tgt_target_data_update(int64_t device_id, int32_t arg_num,
     // void** args_base, void **args, size_t *arg_sizes, int64_t *arg_types);
@@ -2447,6 +2507,28 @@ CGOpenMPRuntime::createRuntimeFunction(unsigned Function) {
         llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
     RTLFn = CGM.CreateRuntimeFunction(FnTy,
                                       "__tgt_target_data_update_nowait_depend");
+    break;
+  }
+  case OMPRTL__tgt_target_data_update_depend: {
+    // Build void __tgt_target_data_update_depend(int64_t device_id,
+    // int32_t arg_num, void** args_base, void **args, size_t *arg_sizes,
+    // int64_t *arg_types, int32_t depNum, void *depList, int32_t noAliasDepNum,
+    // void *noAliasDepList);
+    llvm::Type *TypeParams[] = {
+        CGM.Int64Ty,
+        CGM.Int32Ty,
+        CGM.VoidPtrPtrTy,
+        CGM.VoidPtrPtrTy,
+        CGM.SizeTy->getPointerTo(),
+        CGM.Int64Ty->getPointerTo(),
+        CGM.Int32Ty,
+        CGM.VoidPtrTy,
+        CGM.Int32Ty,
+        CGM.VoidPtrTy,
+    };
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+    RTLFn = CGM.CreateRuntimeFunction(FnTy, "__tgt_target_data_update_depend");
     break;
   }
   case OMPRTL__kmpc_tgt_target_task_alloc: {
@@ -9053,7 +9135,10 @@ void CGOpenMPRuntime::emitTargetDataStandAloneCall(
         else
           RTLFn = OMPRTL__tgt_target_data_begin_nowait;
       } else {
-        RTLFn = OMPRTL__tgt_target_data_begin;
+        if (HasDepend)
+          RTLFn = OMPRTL__tgt_target_data_begin_depend;
+        else
+          RTLFn = OMPRTL__tgt_target_data_begin;
       }
       break;
     case OMPD_target_exit_data:
@@ -9063,7 +9148,10 @@ void CGOpenMPRuntime::emitTargetDataStandAloneCall(
         else
           RTLFn = OMPRTL__tgt_target_data_end_nowait;
       } else {
-        RTLFn = OMPRTL__tgt_target_data_end;
+        if (HasDepend)
+          RTLFn = OMPRTL__tgt_target_data_end_depend;
+        else
+          RTLFn = OMPRTL__tgt_target_data_end;
       }
       break;
     case OMPD_target_update:
@@ -9073,13 +9161,16 @@ void CGOpenMPRuntime::emitTargetDataStandAloneCall(
         else
           RTLFn = OMPRTL__tgt_target_data_update_nowait;
       } else {
-        RTLFn = OMPRTL__tgt_target_data_update;
+        if (HasDepend)
+          RTLFn = OMPRTL__tgt_target_data_update_depend;
+        else
+          RTLFn = OMPRTL__tgt_target_data_update;
       }
       break;
     }
     llvm::SmallVector<llvm::Value *, llvm::array_lengthof(OffloadingArgs)> Args(
         std::begin(OffloadingArgs), std::end(OffloadingArgs));
-    if (hasNowait && HasDepend) {
+    if (HasDepend) {
       Args.reserve(Args.size() + 4);
       llvm::SmallVector<DependenceType, 4> Dependences;
       for (const auto *C : D.getClausesOfKind<OMPDependClause>())
