@@ -5133,8 +5133,16 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // preprocessed inputs and configure concludes that -fPIC is not supported.
   Args.ClaimAllArgs(options::OPT_D);
 
-  bool IsOpenMPCudaDebug =
-      IsOpenMPDevice && DebuggerTuning == llvm::DebuggerKind::CudaGDB;
+  bool IsOpenMPCudaDebug = false;
+  if (Arg *A = Args.getLastArg(options::OPT_g_Group)) {
+    IsOpenMPCudaDebug =
+        IsOpenMPDevice && DebuggerTuning == llvm::DebuggerKind::CudaGDB;
+    // If the last option explicitly specified a debug-info level, use it.
+    if (A->getOption().matches(options::OPT_gN_Group)) {
+      IsOpenMPCudaDebug = IsOpenMPCudaDebug && DebugLevelToInfoKind(*A) !=
+                                                   codegenoptions::NoDebugInfo;
+    }
+  }
   // Manually translate -O4 to -O3; let clang reject others.
   if (IsOpenMPCudaDebug) {
     CmdArgs.emplace_back("-O0");
