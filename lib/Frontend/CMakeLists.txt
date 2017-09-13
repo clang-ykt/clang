@@ -46,7 +46,6 @@ add_clang_library(clangFrontend
   TextDiagnosticBuffer.cpp
   TextDiagnosticPrinter.cpp
   VerifyDiagnosticConsumer.cpp
-  StaticFeatureCollector.cpp
 
 
   DEPENDS
