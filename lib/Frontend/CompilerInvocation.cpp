@@ -1190,10 +1190,6 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
       Opts.ProgramAction = frontend::MigrateSource; break;
     case OPT_Eonly:
       Opts.ProgramAction = frontend::RunPreprocessorOnly; break;
-    // XXX-FEATURE
-    case OPT_feature:
-      Opts.ProgramAction = frontend::StaticFeatureCollect; break;
-
     }
   }
 
@@ -2372,10 +2368,6 @@ static void ParsePreprocessorOutputArgs(PreprocessorOutputOptions &Opts,
   case frontend::RewriteTest:
   case frontend::RunAnalysis:
   case frontend::MigrateSource:
- 
-  // XXX-FEATURE
-  case frontend::StaticFeatureCollect:
-
     Opts.ShowCPP = 0;
     break;
 

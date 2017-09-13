@@ -491,12 +491,6 @@ def rewrite_macros : Flag<["-"], "rewrite-macros">,
   HelpText<"Expand macros without full preprocessing">;
 def migrate : Flag<["-"], "migrate">,
   HelpText<"Migrate source code">;
-
-// XXX-FEATURE
-def feature : Flag<["-"], "feature">,
-  HelpText<"Process AST and print out static features">;
-
-
 }
 
 def emit_llvm_uselists : Flag<["-"], "emit-llvm-uselists">,

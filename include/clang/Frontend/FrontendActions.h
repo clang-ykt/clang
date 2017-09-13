@@ -247,16 +247,7 @@ protected:
 
   bool hasPCHSupport() const override { return true; }
 };
- 
-
-// XXX-FEATURE
-
-class StaticFeatureCollectAction : public ASTFrontendAction {
-protected:
-  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
-                                                 StringRef InFile) override;
-};
- 
+  
 }  // end namespace clang
 
 #endif

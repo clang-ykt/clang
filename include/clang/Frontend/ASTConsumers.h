@@ -15,7 +15,6 @@
 #define LLVM_CLANG_FRONTEND_ASTCONSUMERS_H
 
 #include "clang/Basic/LLVM.h"
-#include "clang/AST/ASTContext.h"
 #include <memory>
 
 namespace clang {
@@ -53,11 +52,6 @@ std::unique_ptr<ASTConsumer> CreateASTViewer();
 // DeclContext printer: prints out the DeclContext tree in human-readable form
 // to stderr; this is intended for debugging.
 std::unique_ptr<ASTConsumer> CreateDeclContextPrinter();
-
-// XXX-FEATURE
-// collect static features and print them
-std::unique_ptr<ASTConsumer> CreateStaticFeatureCollector(ASTContext *context);
-
 
 } // end clang namespace
 

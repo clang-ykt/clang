@@ -151,13 +151,6 @@ GenerateModuleAction::CreateASTConsumer(CompilerInstance &CI,
   return llvm::make_unique<MultiplexConsumer>(std::move(Consumers));
 }
 
-// XXX-FEATURE
-
-std::unique_ptr<ASTConsumer>
-StaticFeatureCollectAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
-  return CreateStaticFeatureCollector(&CI.getASTContext());
-}
-
 bool GenerateModuleAction::BeginSourceFileAction(CompilerInstance &CI, 
                                                  StringRef Filename) {
   // Set up embedding for any specified files. Do this before we load any

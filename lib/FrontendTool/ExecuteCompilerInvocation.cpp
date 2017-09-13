@@ -109,10 +109,6 @@ CreateFrontendBaseAction(CompilerInstance &CI) {
   case RunAnalysis:            Action = "RunAnalysis"; break;
 #endif
   case RunPreprocessorOnly:    return llvm::make_unique<PreprocessOnlyAction>();
-
-// XXX-FEATURE
-  case StaticFeatureCollect:    return llvm::make_unique<StaticFeatureCollectAction>();
-
   }
 
 #if !defined(CLANG_ENABLE_ARCMT) || !defined(CLANG_ENABLE_STATIC_ANALYZER) \
