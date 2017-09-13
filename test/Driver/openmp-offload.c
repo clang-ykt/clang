@@ -604,9 +604,40 @@
 // CHK-CUDA-DEBUG-SAME: "-dwarf-version=2"
 // CHK-CUDA-DEBUG-SAME: "-debugger-tuning=cuda-gdb"
 // CHK-CUDA-DEBUG: ptxas
-// CHK-CUDA-DEBUG-SAME: "-c"
 // CHK-CUDA-DEBUG-SAME: "-g"
 // CHK-CUDA-DEBUG-SAME: "--dont-merge-basicblocks"
 // CHK-CUDA-DEBUG-SAME: "--return-at-end"
+// CHK-CUDA-DEBUG-SAME: "-c"
 // CHK-CUDA-DEBUG: nvlink
 // CHK-CUDA-DEBUG-SAME: "-g"
+
+/// Check debug command lines for NVPTX target
+// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -g -O3 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-CUDA-DEBUG-O3 %s
+// CHK-CUDA-DEBUG-O3: "-cc1"
+// CHK-CUDA-DEBUG-O3-SAME: "-triple" "powerpc64le-ibm-linux-gnu"
+// CHK-CUDA-DEBUG-O3: "-cc1"
+// CHK-CUDA-DEBUG-O3-SAME: "-triple" "nvptx64-nvidia-cuda"
+// CHK-CUDA-DEBUG-O3-SAME: "-dwarf-column-info"
+// CHK-CUDA-DEBUG-O3-SAME: "-debug-info-kind=limited"
+// CHK-CUDA-DEBUG-O3-SAME: "-dwarf-version=2"
+// CHK-CUDA-DEBUG-O3-SAME: "-debugger-tuning=cuda-gdb"
+// CHK-CUDA-DEBUG-O3: ptxas
+// CHK-CUDA-DEBUG-O3-SAME: "-g"
+// CHK-CUDA-DEBUG-O3-SAME: "--dont-merge-basicblocks"
+// CHK-CUDA-DEBUG-O3-SAME: "--return-at-end"
+// CHK-CUDA-DEBUG-O3-SAME: "-c"
+// CHK-CUDA-DEBUG-O3: nvlink
+// CHK-CUDA-DEBUG-O3-SAME: "-g"
+
+/// Check debug command lines for NVPTX target
+// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -O3 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-CUDA-O3 %s
+// CHK-CUDA-O3: "-cc1"
+// CHK-CUDA-O3-SAME: "-triple" "powerpc64le-ibm-linux-gnu"
+// CHK-CUDA-O3: "-cc1"
+// CHK-CUDA-O3-SAME: "-triple" "nvptx64-nvidia-cuda"
+// CHK-CUDA-O3-SAME: "-O3"
+// CHK-CUDA-O3: ptxas
+// CHK-CUDA-O3-SAME: "-O3"
+// CHK-CUDA-O3-SAME: "-c"

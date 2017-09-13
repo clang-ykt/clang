@@ -2991,8 +2991,7 @@ void CodeGenFunction::EmitOMPParallelSectionsDirective(
 void CodeGenFunction::EmitOMPTaskBasedDirective(const OMPExecutableDirective &S,
                                                 const RegionCodeGenTy &BodyGen,
                                                 const TaskGenTy &TaskGen,
-                                                OMPTaskDataTy &Data,
-                                                unsigned MapSize) {
+                                                OMPTaskDataTy &Data) {
   // Emit outlined function for task construct.
   auto CS = cast<CapturedStmt>(S.getAssociatedStmt());
   auto *I = CS->getCapturedDecl()->param_begin();
@@ -3095,8 +3094,8 @@ void CodeGenFunction::EmitOMPTaskBasedDirective(const OMPExecutableDirective &S,
   for (const auto *C : S.getClausesOfKind<OMPDependClause>())
     for (auto *IRef : C->varlists())
       Data.Dependences.push_back(std::make_pair(C->getDependencyKind(), IRef));
-  auto &&CodeGen = [&Data, &S, CS, &BodyGen, &LastprivateDstsOrigs,
-                    MapSize](CodeGenFunction &CGF, PrePostActionTy &Action) {
+  auto &&CodeGen = [&Data, &S, CS, &BodyGen, &LastprivateDstsOrigs](
+                       CodeGenFunction &CGF, PrePostActionTy &Action) {
     // Set proper addresses for generated private copies.
     OMPPrivateScope Scope(CGF);
     if (!Data.PrivateVars.empty() || !Data.FirstprivateVars.empty() ||
@@ -4388,8 +4387,7 @@ void CodeGenFunction::EmitOMPTargetDirective(const OMPTargetDirective &S) {
           /* IfCond = */ nullptr, Data, &MapArrays);
     };
 
-    EmitOMPTaskBasedDirective(S, TargetTaskBodyGen, TargetTaskGen, Data,
-                              MapArrays.BasePointers.size());
+    EmitOMPTaskBasedDirective(S, TargetTaskBodyGen, TargetTaskGen, Data);
   } else
     emitCommonOMPTargetDirective(*this, S, OMPD_target, CodeGen, CapturedVars,
                                  MapArrays);
