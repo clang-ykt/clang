@@ -1145,6 +1145,8 @@ def fopenmp_ignore_unmappable_types : Flag<["-"], "fopenmp-ignore-unmappable-typ
 def fnoopenmp_ignore_unmappable_types : Flag<["-"], "fnoopenmp-ignore-unmappable-types">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fopenmp_implicit_declare_target : Flag<["-"], "fopenmp-implicit-declare-target">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fnoopenmp_implicit_declare_target : Flag<["-"], "fnoopenmp-implicit-declare-target">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
+def fopenmp_implicit_map_lambdas : Flag<["-"], "fopenmp-implicit-map-lambdas">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
+def fnoopenmp_implicit_map_lambdas : Flag<["-"], "fno-openmp-implicit-map-lambdas">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fopenmp_nvptx_spmd : Flag<["-"], "fopenmp-nvptx-spmd">, Group<f_Group>, Flags<[NoArgumentUnused]>;
 def fopenmp_nvptx_nospmd : Flag<["-"], "fopenmp-nvptx-nospmd">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fopenmp_nvptx_requireruntime : Flag<["-"], "fopenmp-nvptx-requireruntime">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;

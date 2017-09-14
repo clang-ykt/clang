@@ -6576,6 +6576,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    /*Default=*/false))
     CmdArgs.push_back("-fopenmp-implicit-declare-target");
 
+  if(Args.hasFlag(options::OPT_fopenmp_implicit_map_lambdas,
+                  options::OPT_fnoopenmp_implicit_map_lambdas,
+                  false))
+    CmdArgs.push_back("-fopenmp-implicit-map-lambdas");
+
   if (Args.hasFlag(options::OPT_fopenmp_nvptx_nospmd,
                    options::OPT_fopenmp_nvptx_spmd,
                    /*Default=*/false)) {

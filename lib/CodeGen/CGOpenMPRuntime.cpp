@@ -6709,6 +6709,38 @@ emitMapTypesArray(CodeGenFunction &CGF,
   Info.MapTypesArray = MapTypesArrayGbl;
 }
 
+/// Amend the offload arrays to contain mapping information for pointers
+/// inside lambda closures.
+/// This allows the use of device pointers inside lambdas when
+/// -fopenmp-implicit-map-lambdas is enabled
+static void emitLambdaOffloadArgs(CodeGenFunction &CGF,
+                                  OMPMapArrays &MapArrays) {
+
+  for (std::size_t I = 0; I < MapArrays.Lambdas.size(); ++I) {
+    if (const auto *Lambda = MapArrays.Lambdas[I]) {
+      auto OmpMapMemberFlag = MappableExprsHandler::getMemberOfFlag(I);
+      llvm::Value *Record = *MapArrays.BasePointers[I];
+      LValue RecordLValue = CGF.MakeNaturalAlignAddrLValue(
+          Record, Lambda->getTypeForDecl()->getCanonicalTypeInternal());
+
+      for (const auto *FD : Lambda->fields()) {
+        if (!FD->getType()->isPointerType())
+          continue;
+        LValue Base = CGF.EmitLValueForField(RecordLValue, FD);
+        RValue Offload =
+            CGF.EmitLoadOfLValue(Base, FD->getSourceRange().getBegin());
+        MapArrays.BasePointers.push_back(Base.getPointer());
+        MapArrays.Pointers.push_back(Offload.getScalarVal());
+        MapArrays.MapTypes.push_back(MappableExprsHandler::OMP_MAP_TO |
+                                     MappableExprsHandler::OMP_MAP_FROM |
+                                     MappableExprsHandler::OMP_MAP_PTR_AND_OBJ |
+                                     OmpMapMemberFlag);
+        MapArrays.Sizes.push_back(llvm::ConstantInt::get(CGF.SizeTy, /*V=*/0));
+      }
+    }
+  }
+}
+
 /// \brief Emit the arrays used to pass the captures and map information to the
 /// offloading runtime library. If there is no map or capture information,
 /// return nullptr by reference.
@@ -6996,6 +7028,7 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
   MappableExprsHandler::MapValuesArrayTy CurPointers;
   MappableExprsHandler::MapValuesArrayTy CurSizes;
   MappableExprsHandler::MapFlagsArrayTy CurMapTypes;
+  MappableExprsHandler::MapLambdasArrayTy CurLambdas;
 
   MappableExprsHandler::StructRangeMapTy PartialStructs;
 
@@ -7016,6 +7049,7 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
     CurPointers.clear();
     CurSizes.clear();
     CurMapTypes.clear();
+    CurLambdas.clear();
     PartialStructs.clear();
 
     // VLA sizes are passed to the outlined region by copy and do not have map
@@ -7034,7 +7068,8 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
                                        CurSizes, CurMapTypes, PartialStructs);
       if (CurBasePointers.empty())
         MEHandler.generateDefaultMapInfo(*CI, **RI, *CV, CurBasePointers,
-                                         CurPointers, CurSizes, CurMapTypes);
+                                         CurPointers, CurSizes, CurMapTypes,
+                                         CurLambdas);
     }
     // We expect to have at least an element of information for this capture.
     assert(!CurBasePointers.empty() && "Non-existing map pointer for capture!");
@@ -7098,6 +7133,7 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
     Maps.Pointers.append(CurPointers.begin(), CurPointers.end());
     Maps.Sizes.append(CurSizes.begin(), CurSizes.end());
     Maps.MapTypes.append(CurMapTypes.begin(), CurMapTypes.end());
+    Maps.Lambdas.append(CurLambdas.begin(), CurLambdas.end());
   }
 
   // Map other list items in the map clause which are not captured variables but
@@ -7380,6 +7416,10 @@ void CGOpenMPRuntime::emitTargetCall(
                     OffloadErrorQType, &D, hasNowait, &MapArrays, hasDepend,
                     &Data](CodeGenFunction &CGF, PrePostActionTy &) {
     auto &RT = CGF.CGM.getOpenMPRuntime();
+
+    if (CGF.getLangOpts().OpenMPImplicitMapLambdas)
+      emitLambdaOffloadArgs(CGF, MapArrays);
+
     // Emit the offloading arrays.
     TargetDataInfo Info;
     if (!hasDepend)
@@ -8255,12 +8295,14 @@ void MappableExprsHandler::generateInfoForCapture(
 void MappableExprsHandler::generateDefaultMapInfo(
     const CapturedStmt::Capture &CI, const FieldDecl &RI, llvm::Value *CV,
     MapBaseValuesArrayTy &CurBasePointers, MapValuesArrayTy &CurPointers,
-    MapValuesArrayTy &CurSizes, MapFlagsArrayTy &CurMapTypes) {
+    MapValuesArrayTy &CurSizes, MapFlagsArrayTy &CurMapTypes,
+    MapLambdasArrayTy &CurLambdas) {
 
   // Do the default mapping.
   if (CI.capturesThis()) {
     CurBasePointers.push_back(CV);
     CurPointers.push_back(CV);
+    CurLambdas.emplace_back(nullptr);
     const PointerType *PtrTy = cast<PointerType>(RI.getType().getTypePtr());
     CurSizes.push_back(CGF.getTypeSize(PtrTy->getPointeeType()));
     // Default map type.
@@ -8268,6 +8310,7 @@ void MappableExprsHandler::generateDefaultMapInfo(
   } else if (CI.capturesVariableByCopy()) {
     CurBasePointers.push_back(CV);
     CurPointers.push_back(CV);
+    CurLambdas.emplace_back(nullptr);
     if (!RI.getType()->isAnyPointerType()) {
       // We have to signal to the runtime captures passed by value that are
       // not pointers.
@@ -8283,6 +8326,7 @@ void MappableExprsHandler::generateDefaultMapInfo(
     assert(CI.capturesVariable() && "Expected captured reference.");
     CurBasePointers.push_back(CV);
     CurPointers.push_back(CV);
+    CurLambdas.emplace_back(nullptr);
 
     const ReferenceType *PtrTy = cast<ReferenceType>(RI.getType().getTypePtr());
     QualType ElementType = PtrTy->getPointeeType();
@@ -8300,6 +8344,13 @@ void MappableExprsHandler::generateDefaultMapInfo(
     // clause.
     CurMapTypes.back() =
         adjustMapModifiersForPrivateClauses(CI, CurMapTypes.back());
+
+    if (CGF.getLangOpts().OpenMPImplicitMapLambdas) {
+      if (const auto *RD = RI.getType()->getPointeeCXXRecordDecl()) {
+        if (RD->isLambda())
+          CurLambdas.back() = RD;
+      }
+    }
   }
   // Every default map produces a single argument, so, it is always the
   // first one.

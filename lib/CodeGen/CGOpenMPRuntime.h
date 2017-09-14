@@ -272,6 +272,9 @@ public:
   typedef SmallVector<BasePointerInfo, 16> MapBaseValuesArrayTy;
   typedef SmallVector<llvm::Value *, 16> MapValuesArrayTy;
   typedef SmallVector<uint64_t, 16> MapFlagsArrayTy;
+  // Need to store the index into the other map arrays as well as the lambda
+  // itself.
+  typedef SmallVector<const clang::RecordDecl *, 16> MapLambdasArrayTy;
 
   /// Map between a struct and the its lowest & highest elements which have been
   /// mapped.
@@ -402,7 +405,8 @@ public:
                               MapBaseValuesArrayTy &CurBasePointers,
                               MapValuesArrayTy &CurPointers,
                               MapValuesArrayTy &CurSizes,
-                              MapFlagsArrayTy &CurMapTypes);
+                              MapFlagsArrayTy &CurMapTypes,
+                              MapLambdasArrayTy &CurLambdas);
 };
 
 enum OpenMPOffloadingReservedDeviceIDs {
@@ -416,6 +420,7 @@ struct OMPMapArrays final {
   MappableExprsHandler::MapValuesArrayTy Pointers;
   MappableExprsHandler::MapValuesArrayTy Sizes;
   MappableExprsHandler::MapFlagsArrayTy MapTypes;
+  MappableExprsHandler::MapLambdasArrayTy Lambdas;
   MappableExprsHandler::MapValuesArrayTy KernelArgs;
   const Expr *DeviceExpr = nullptr;
   OMPMapArrays() = default;
