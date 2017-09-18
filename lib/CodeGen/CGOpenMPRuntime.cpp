@@ -7061,11 +7061,13 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
       // Copy to the device as an argument. No need to retrieve it.
       CurMapTypes.push_back(MappableExprsHandler::OMP_MAP_LITERAL |
                             MappableExprsHandler::OMP_MAP_TARGET_PARAM);
+      CurLambdas.emplace_back(nullptr);
     } else {
       // If we have any information in the map clause, we use it, otherwise we
       // just do a default mapping.
       MEHandler.generateInfoForCapture(CI, *CV, CurBasePointers, CurPointers,
                                        CurSizes, CurMapTypes, PartialStructs);
+      CurLambdas.resize(CurBasePointers.size(), nullptr);
       if (CurBasePointers.empty())
         MEHandler.generateDefaultMapInfo(*CI, **RI, *CV, CurBasePointers,
                                          CurPointers, CurSizes, CurMapTypes,
@@ -7076,6 +7078,7 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
     assert(CurBasePointers.size() == CurPointers.size() &&
            CurBasePointers.size() == CurSizes.size() &&
            CurBasePointers.size() == CurMapTypes.size() &&
+           CurBasePointers.size() == CurLambdas.size() &&
            "Inconsistent map information sizes!");
 
     // If there is an entry in PartialStructs it means we have a struct with
