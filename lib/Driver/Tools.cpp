@@ -4960,8 +4960,17 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (DebugInfoKind == codegenoptions::LimitedDebugInfo && NeedFullDebug)
     DebugInfoKind = codegenoptions::FullDebugInfo;
 
-  RenderDebugEnablingArgs(Args, CmdArgs, DebugInfoKind, DwarfVersion,
-                          DebuggerTuning);
+  bool IsOpenMPCudaDeviceDebug =
+      IsOpenMPDevice && DebuggerTuning == llvm::DebuggerKind::CudaGDB &&
+      (!areOptimizationsEnabled(Args) ||
+        Args.hasFlag(options::OPT_cuda_noopt_device_debug,
+                     options::OPT_no_cuda_noopt_device_debug,
+                     /*Default=*/false));
+  if (IsOpenMPCudaDeviceDebug || !IsOpenMPDevice ||
+      DebuggerTuning != llvm::DebuggerKind::CudaGDB) {
+    RenderDebugEnablingArgs(Args, CmdArgs, DebugInfoKind, DwarfVersion,
+                            DebuggerTuning);
+  }
 
   // -ggnu-pubnames turns on gnu style pubnames in the backend.
   if (Args.hasArg(options::OPT_ggnu_pubnames)) {
@@ -5133,18 +5142,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // preprocessed inputs and configure concludes that -fPIC is not supported.
   Args.ClaimAllArgs(options::OPT_D);
 
-  bool IsOpenMPCudaDebug = false;
-  if (Arg *A = Args.getLastArg(options::OPT_g_Group)) {
-    IsOpenMPCudaDebug =
-        IsOpenMPDevice && DebuggerTuning == llvm::DebuggerKind::CudaGDB;
-    // If the last option explicitly specified a debug-info level, use it.
-    if (A->getOption().matches(options::OPT_gN_Group)) {
-      IsOpenMPCudaDebug = IsOpenMPCudaDebug && DebugLevelToInfoKind(*A) !=
-                                                   codegenoptions::NoDebugInfo;
-    }
-  }
   // Manually translate -O4 to -O3; let clang reject others.
-  if (IsOpenMPCudaDebug) {
+  if (IsOpenMPCudaDeviceDebug) {
     CmdArgs.emplace_back("-O0");
   } else if (Arg *A = Args.getLastArg(options::OPT_O_Group)) {
     if (A->getOption().matches(options::OPT_O4)) {
@@ -12189,7 +12188,11 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back(TC.getTriple().isArch64Bit() ? "-m64" : "-m32");
   bool IsOpenMPDebug = false;
   if (Arg *A = Args.getLastArg(options::OPT_g_Group)) {
-    IsOpenMPDebug = JA.isOffloading(Action::OFK_OpenMP);
+    IsOpenMPDebug = JA.isOffloading(Action::OFK_OpenMP) &&
+                    (!areOptimizationsEnabled(Args) ||
+                     Args.hasFlag(options::OPT_cuda_noopt_device_debug,
+                                  options::OPT_no_cuda_noopt_device_debug,
+                                  /*Default=*/false));
     // If the last option explicitly specified a debug-info level, use it.
     if (A->getOption().matches(options::OPT_gN_Group)) {
       IsOpenMPDebug = IsOpenMPDebug &&

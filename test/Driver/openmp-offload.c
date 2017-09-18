@@ -612,23 +612,42 @@
 // CHK-CUDA-DEBUG-SAME: "-g"
 
 /// Check debug command lines for NVPTX target
-// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -g -O3 2>&1 \
-// RUN:   | FileCheck -check-prefix=CHK-CUDA-DEBUG-O3 %s
-// CHK-CUDA-DEBUG-O3: "-cc1"
-// CHK-CUDA-DEBUG-O3-SAME: "-triple" "powerpc64le-ibm-linux-gnu"
-// CHK-CUDA-DEBUG-O3: "-cc1"
-// CHK-CUDA-DEBUG-O3-SAME: "-triple" "nvptx64-nvidia-cuda"
-// CHK-CUDA-DEBUG-O3-SAME: "-dwarf-column-info"
-// CHK-CUDA-DEBUG-O3-SAME: "-debug-info-kind=limited"
-// CHK-CUDA-DEBUG-O3-SAME: "-dwarf-version=2"
-// CHK-CUDA-DEBUG-O3-SAME: "-debugger-tuning=cuda-gdb"
-// CHK-CUDA-DEBUG-O3: ptxas
-// CHK-CUDA-DEBUG-O3-SAME: "-g"
-// CHK-CUDA-DEBUG-O3-SAME: "--dont-merge-basicblocks"
-// CHK-CUDA-DEBUG-O3-SAME: "--return-at-end"
-// CHK-CUDA-DEBUG-O3-SAME: "-c"
-// CHK-CUDA-DEBUG-O3: nvlink
-// CHK-CUDA-DEBUG-O3-SAME: "-g"
+// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -g --no-cuda-noopt-device-debug 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-CUDA-DEBUGO0-NODEBUG %s
+// CHK-CUDA-DEBUGO0-NODEBUG: "-cc1"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-triple" "powerpc64le-ibm-linux-gnu"
+// CHK-CUDA-DEBUGO0-NODEBUG: "-cc1"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-triple" "nvptx64-nvidia-cuda"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-dwarf-column-info"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-debug-info-kind=limited"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-dwarf-version=2"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-debugger-tuning=cuda-gdb"
+// CHK-CUDA-DEBUGO0-NODEBUG: ptxas
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-g"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "--dont-merge-basicblocks"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "--return-at-end"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-c"
+// CHK-CUDA-DEBUGO0-NODEBUG: nvlink
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-g"
+
+/// Check debug command lines for NVPTX target
+// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -g -O3 --cuda-noopt-device-debug 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-CUDA-DEBUG-O3-DEBUG %s
+// CHK-CUDA-DEBUG-O3-DEBUG: "-cc1"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-triple" "powerpc64le-ibm-linux-gnu"
+// CHK-CUDA-DEBUG-O3-DEBUG: "-cc1"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-triple" "nvptx64-nvidia-cuda"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-dwarf-column-info"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-debug-info-kind=limited"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-dwarf-version=2"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-debugger-tuning=cuda-gdb"
+// CHK-CUDA-DEBUG-O3-DEBUG: ptxas
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-g"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "--dont-merge-basicblocks"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "--return-at-end"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-c"
+// CHK-CUDA-DEBUG-O3-DEBUG: nvlink
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-g"
 
 /// Check debug command lines for NVPTX target
 // RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -O3 2>&1 \
@@ -641,3 +660,15 @@
 // CHK-CUDA-O3: ptxas
 // CHK-CUDA-O3-SAME: "-O3"
 // CHK-CUDA-O3-SAME: "-c"
+
+/// Check debug command lines for NVPTX target
+// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -O3 --no-cuda-noopt-device-debug 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-CUDA-O3-NODEBUG %s
+// CHK-CUDA-O3-NODEBUG: "-cc1"
+// CHK-CUDA-O3-NODEBUG-SAME: "-triple" "powerpc64le-ibm-linux-gnu"
+// CHK-CUDA-O3-NODEBUG: "-cc1"
+// CHK-CUDA-O3-NODEBUG-SAME: "-triple" "nvptx64-nvidia-cuda"
+// CHK-CUDA-O3-NODEBUG-SAME: "-O3"
+// CHK-CUDA-O3-NODEBUG: ptxas
+// CHK-CUDA-O3-NODEBUG-SAME: "-O3"
+// CHK-CUDA-O3-NODEBUG-SAME: "-c"
