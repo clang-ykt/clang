@@ -1816,6 +1816,7 @@ CudaInstallationDetector::CudaInstallationDetector(
   else if (char *env = ::getenv("CUDAPATH"))
     CudaPathCandidates.push_back(D.SysRoot + env);
   else {
+    CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda-9.0");
     CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda-8.0");
     CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda");
     CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda-8.0");
@@ -1914,6 +1915,13 @@ CudaInstallationDetector::CudaInstallationDetector(
           CudaArchStrs.push_back("sm_52");
           CudaArchStrs.push_back("sm_53");
         }
+      } else if (GpuArch == "10") {
+        LibDeviceMap["sm_60"] = FilePath;
+        LibDeviceMap["sm_61"] = FilePath;
+        LibDeviceMap["sm_62"] = FilePath;
+        CudaArchStrs.push_back("sm_60");
+        CudaArchStrs.push_back("sm_61");
+        CudaArchStrs.push_back("sm_62");
       }
     }
 
@@ -4905,7 +4913,7 @@ Tool *DragonFly::buildLinker() const {
 // macro for it. Also, select the default PTX version to be used. We use 4.2 for
 // compute capabilities older than 6.0 and 5.0 otherwise.
 #ifndef OPENMP_NVPTX_COMPUTE_CAPABILITY
-#define OPENMP_NVPTX_COMPUTE_CAPABILITY 35
+#define OPENMP_NVPTX_COMPUTE_CAPABILITY 60
 #endif
 
 //#if OPENMP_NVPTX_COMPUTE_CAPABILITY < 60
