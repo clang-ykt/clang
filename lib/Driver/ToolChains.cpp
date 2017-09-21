@@ -1929,20 +1929,20 @@ CudaInstallationDetector::CudaInstallationDetector(
           }
         }
       }
-    }
 
-    // This code prevents IsValid from being set when
-    // no libdevice has been found.
-    bool allEmpty = true;
-    std::string LibDeviceFile;
-    for (auto key : CudaArchStrs) {
-      LibDeviceFile = LibDeviceMap.lookup(key);
-      if (!LibDeviceFile.empty())
-        allEmpty = false;
-    }
+      // This code prevents IsValid from being set when
+      // no libdevice has been found.
+      bool allEmpty = true;
+      std::string LibDeviceFile;
+      for (auto key : CudaArchStrs) {
+        LibDeviceFile = LibDeviceMap.lookup(key);
+        if (!LibDeviceFile.empty())
+          allEmpty = false;
+      }
 
-    if (allEmpty)
-      continue;
+      if (allEmpty)
+        continue;
+    }
 
     IsValid = true;
     break;
