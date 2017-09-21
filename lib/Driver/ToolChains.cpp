@@ -1863,18 +1863,20 @@ CudaInstallationDetector::CudaInstallationDetector(
       Version = ParseCudaVersionFile((*VersionFile)->getBuffer());
     }
 
+    SmallVector<std::string, 20> CudaArchStrs;
     if (Version == CudaVersion::CUDA_90) {
       // CUDA-9 uses single libdevice file for all GPU variants.
       std::string FilePath = LibDevicePath + "/libdevice.10.bc";
       if (FS.exists(FilePath)) {
         for (const char *GpuArch :
             {"sm_20", "sm_30", "sm_32", "sm_35", "sm_50", "sm_52", "sm_53",
-             "sm_60", "sm_61", "sm_62", "sm_70"})
+             "sm_60", "sm_61", "sm_62", "sm_70"}) {
           LibDeviceMap[GpuArch] = FilePath;
+          CudaArchStrs.push_back(CudaArchToString(GpuArch));
+        }
       }
     } else {
       std::error_code EC;
-      SmallVector<std::string, 20> CudaArchStrs;
       for (llvm::sys::fs::directory_iterator LI(LibDevicePath, EC), LE;
            !EC && LI != LE; LI = LI.increment(EC)) {
         StringRef FilePath = LI->path();
@@ -1929,20 +1931,20 @@ CudaInstallationDetector::CudaInstallationDetector(
           }
         }
       }
-
-      // This code prevents IsValid from being set when
-      // no libdevice has been found.
-      bool allEmpty = true;
-      std::string LibDeviceFile;
-      for (auto key : CudaArchStrs) {
-        LibDeviceFile = LibDeviceMap.lookup(key);
-        if (!LibDeviceFile.empty())
-          allEmpty = false;
-      }
-
-      if (allEmpty)
-        continue;
     }
+
+    // This code prevents IsValid from being set when
+    // no libdevice has been found.
+    bool allEmpty = true;
+    std::string LibDeviceFile;
+    for (auto key : CudaArchStrs) {
+      LibDeviceFile = LibDeviceMap.lookup(key);
+      if (!LibDeviceFile.empty())
+        allEmpty = false;
+    }
+
+    if (allEmpty)
+      continue;
 
     IsValid = true;
     break;
