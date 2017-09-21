@@ -1305,6 +1305,7 @@ bool Sema::IsOpenMPCapturedByRef(ValueDecl *D, unsigned Level) {
   bool IsByRef = true;
 
   // Find the directive that is associated with the provided scope.
+  D = cast<ValueDecl>(D->getCanonicalDecl());
   auto Ty = D->getType();
 
   if (DSAStack->hasExplicitDirective(isOpenMPTargetExecutionDirective, Level)) {
@@ -2025,6 +2026,7 @@ class DSAAttrChecker : public StmtVisitor<DSAAttrChecker, void> {
   llvm::SmallVector<Expr *, 8> ImplicitFirstprivate;
   llvm::DenseMap<ValueDecl *, Expr *> VarsWithInheritedDSA;
   llvm::SmallVector<Expr *, 8> ImplicitlyMappedVars;
+  llvm::DenseSet<ValueDecl *> ImplicitDeclarations;
   bool RequiresImplicitMaps;
 
 public:
@@ -2033,13 +2035,14 @@ public:
         E->containsUnexpandedParameterPack() || E->isInstantiationDependent())
       return;
     if (auto *VD = dyn_cast<VarDecl>(E->getDecl())) {
+      VD = VD->getCanonicalDecl();
       // Skip internally declared variables.
       if (VD->isLocalVarDecl() && !CS->capturesVariable(VD))
         return;
 
       auto DVar = Stack->getTopDSA(VD, false);
       // Check if the variable has explicit DSA set and stop analysis if it so.
-      if (DVar.RefExpr)
+      if (DVar.RefExpr || !ImplicitDeclarations.insert(VD).second)
         return;
 
       auto DKind = Stack->getCurrentDirective();
@@ -2131,7 +2134,7 @@ public:
         auto DVar = Stack->getTopDSA(FD, false);
         // Check if the variable has explicit DSA set and stop analysis if it
         // so.
-        if (DVar.RefExpr)
+        if (DVar.RefExpr || !ImplicitDeclarations.insert(FD).second)
           return;
 
         auto ELoc = E->getExprLoc();
@@ -2859,7 +2862,7 @@ StmtResult Sema::ActOnOpenMPExecutableDirective(
   llvm::DenseMap<ValueDecl *, Expr *> VarsWithInheritedDSA;
   bool ErrorFound = false;
   ClausesWithImplicit.append(Clauses.begin(), Clauses.end());
-  if (AStmt) {
+  if (AStmt && !CurContext->isDependentContext()) {
     assert(isa<CapturedStmt>(AStmt) && "Captured statement expected");
 
     // do we need to create implicit maps for all implicitly captured vars?
