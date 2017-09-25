@@ -4921,7 +4921,7 @@ Tool *DragonFly::buildLinker() const {
 // macro for it. Also, select the default PTX version to be used. We use 4.2 for
 // compute capabilities older than 6.0 and 5.0 otherwise.
 #ifndef OPENMP_NVPTX_COMPUTE_CAPABILITY
-#define OPENMP_NVPTX_COMPUTE_CAPABILITY 60
+#define OPENMP_NVPTX_COMPUTE_CAPABILITY 35
 #endif
 
 //#if OPENMP_NVPTX_COMPUTE_CAPABILITY < 60
