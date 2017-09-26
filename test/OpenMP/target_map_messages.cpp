@@ -356,6 +356,8 @@ void SAclient(int arg) {
 // expected-note@+1 {{used here}}
 #pragma omp target map(s1.p->p->p->a)
   { s1.a++; } // expected-error {{variable already marked as mapped in current construct}}
+#pragma omp target map(s1.s.s.b[:2])
+  { s1.s.s.b[0]++; }
 }
 void foo() {
 }

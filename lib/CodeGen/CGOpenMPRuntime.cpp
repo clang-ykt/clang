@@ -7276,7 +7276,6 @@ void CGOpenMPRuntime::emitTaskCall(
 
   TaskResultTy Result = emitTaskInit(CGF, Loc, D, TaskFunction, SharedsTy,
                                      Shareds, Data, *MapArrays, Info);
-  //, Info);
   llvm::Value *NewTask = Result.NewTask;
   llvm::Value *TaskEntry = Result.TaskEntry;
   llvm::Value *NewTaskNewTaskTTy = Result.NewTaskNewTaskTTy;
