@@ -1,4 +1,4 @@
-bar_sync//===--- BuiltinsPTX.def - PTX Builtin function database ----*- C++ -*-===//
+//===--- BuiltinsPTX.def - PTX Builtin function database ----*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
