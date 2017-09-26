@@ -84,12 +84,9 @@
 __MAKE_SHUFFLES(__shfl, __nvvm_shfl_idx_i32, __nvvm_shfl_idx_f32, 0x1f);
 // We use 0 rather than 31 as our mask, because shfl.up applies to lanes >=
 // maxLane.
-// __MAKE_SHUFFLES(__shfl_up, __nvvm_shfl_up_i32, __nvvm_shfl_up_f32, 0);
-__MAKE_SYNC_SHUFFLES(__shfl_up_sync, __nvvm_shfl_sync_up_i32, __nvvm_shfl_sync_up_f32, 0);
-// __MAKE_SHUFFLES(__shfl_down, __nvvm_shfl_down_i32, __nvvm_shfl_down_f32, 0x1f);
-__MAKE_SYNC_SHUFFLES(__shfl_down_sync, __nvvm_shfl_sync_down_i32, __nvvm_shfl_sync_down_f32, 0x1f);
-// __MAKE_SHUFFLES(__shfl_xor, __nvvm_shfl_bfly_i32, __nvvm_shfl_bfly_f32, 0x1f);
-__MAKE_SYNC_SHUFFLES(__shfl_xor_sync, __nvvm_shfl_sync_bfly_i32, __nvvm_shfl_sync_bfly_f32, 0x1f);
+__MAKE_SHUFFLES(__shfl_up, __nvvm_shfl_up_i32, __nvvm_shfl_up_f32, 0);
+__MAKE_SHUFFLES(__shfl_down, __nvvm_shfl_down_i32, __nvvm_shfl_down_f32, 0x1f);
+__MAKE_SHUFFLES(__shfl_xor, __nvvm_shfl_bfly_i32, __nvvm_shfl_bfly_f32, 0x1f);
 
 #pragma pop_macro("__MAKE_SHUFFLES")
 
@@ -115,11 +112,11 @@ inline __device__ int __any_sync(unsigned int mask, int pred) {
 }
 
 inline __device__ int __uni_sync(unsigned int mask, int pred) {
-  return __nvvm_vote_ballot_sync(mask, pred);
+  return __nvvm_vote_uni_sync(mask, pred);
 }
 
 inline __device__ unsigned int __ballot_sync(unsigned int mask, int pred) {
-  return __nvvm_vote_sync_ballot(mask, pred);
+  return __nvvm_vote_ballot_sync(mask, pred);
 }
 
 inline __device__ unsigned int __activemask() { return __nvvm_vote_ballot(1); }
