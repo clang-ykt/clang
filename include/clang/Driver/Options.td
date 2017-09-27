@@ -1153,6 +1153,8 @@ def fopenmp_nvptx_requireruntime : Flag<["-"], "fopenmp-nvptx-requireruntime">, 
 def fopenmp_nvptx_norequireruntime : Flag<["-"], "fopenmp-nvptx-norequireruntime">, Group<f_Group>, Flags<[NoArgumentUnused]>;
 def fopenmp_targets_EQ : CommaJoined<["-"], "fopenmp-targets=">, Flags<[DriverOption, CC1Option]>,
   HelpText<"Specify comma-separated list of triples OpenMP offloading targets to be supported">;
+def fopenmp_ptx_EQ : Joined<["-"], "fopenmp-ptx=">, Flags<[DriverOption]>,
+  HelpText<"Pass a PTX version +ptxXX, default +ptx42 (for PTX version 4.2) used by OpenMP device offloading.">;
 def fopenmp_dump_offload_linker_script : Flag<["-"], "fopenmp-dump-offload-linker-script">, Group<f_Group>, 
   Flags<[NoArgumentUnused]>;
 def fno_optimize_sibling_calls : Flag<["-"], "fno-optimize-sibling-calls">, Group<f_Group>;

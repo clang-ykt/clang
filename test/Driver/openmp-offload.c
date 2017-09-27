@@ -592,6 +592,16 @@
 
 /// ###########################################################################
 
+/// Check PTX version is passed from the driver.
+// RUN:   %clang -### -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda -fopenmp-ptx=+ptx52 -save-temps -no-canonical-prefixes %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-PTXAS-VERSION %s
+
+// CHK-PTXAS-VERSION: clang{{.*}}.bc" {{.*}}"-target-feature" "+ptx52"
+// CHK-PTXAS-VERSION-NEXT: clang{{.*}}.bc" {{.*}}"-target-feature" "+ptx52"
+// CHK-PTXAS-VERSION-NEXT: clang{{.*}}.bc" {{.*}}"-target-feature" "+ptx52"
+
+/// ###########################################################################
+
 /// Check debug command lines for NVPTX target
 // RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -g 2>&1 \
 // RUN:   | FileCheck -check-prefix=CHK-CUDA-DEBUG %s

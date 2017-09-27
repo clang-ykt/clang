@@ -4918,17 +4918,10 @@ Tool *DragonFly::buildLinker() const {
 /// together object files from the assembler into a single blob.
 
 // Define the default compute capability for OpenMP and create a stringification
-// macro for it. Also, select the default PTX version to be used. We use 4.2 for
-// compute capabilities older than 6.0 and 5.0 otherwise.
+// macro for it.
 #ifndef OPENMP_NVPTX_COMPUTE_CAPABILITY
 #define OPENMP_NVPTX_COMPUTE_CAPABILITY 35
 #endif
-
-//#if OPENMP_NVPTX_COMPUTE_CAPABILITY < 60
-#define OPENMP_NVPTX_PTX_VERSION_STR "ptx42"
-//#else
-//#define OPENMP_NVPTX_PTX_VERSION_STR "ptx50"
-//#endif
 
 #define OPENMP_NVPTX_COMPUTE_CAPABILITY_STRT1(X) #X
 #define OPENMP_NVPTX_COMPUTE_CAPABILITY_STRT2(X)                               \
@@ -4988,7 +4981,13 @@ void CudaToolChain::addClangTargetOptions(
   CC1Args.push_back("-mlink-cuda-bitcode");
   CC1Args.push_back(DriverArgs.MakeArgString(LibDeviceFile));
 
-  if (CudaInstallation.version() >= CudaVersion::CUDA_90) {
+  if (DeviceOffloadingKind == Action::OFK_OpenMP &&
+      DriverArgs.hasArg(options::OPT_fopenmp_ptx_EQ)) {
+    // Use the PTX version that the user specified.
+    const Arg *A = DriverArgs.getLastArg(options::OPT_fopenmp_ptx_EQ);
+    CC1Args.push_back("-target-feature");
+    CC1Args.push_back(A->getValue());
+  } else if (CudaInstallation.version() >= CudaVersion::CUDA_90) {
     // CUDA-9 uses new instructions that are only available in PTX6.0
     CC1Args.push_back("-target-feature");
     CC1Args.push_back("+ptx60");
@@ -5001,9 +5000,6 @@ void CudaToolChain::addClangTargetOptions(
   }
 
   if (DeviceOffloadingKind == Action::OFK_OpenMP) {
-    // Override the default ptx version by the version that should be used for
-    // OpenMP codes.
-    CC1Args.back() = "+" OPENMP_NVPTX_PTX_VERSION_STR;
     SmallVector<std::string, 8> LibraryPaths;
     if (char *env = ::getenv("LIBRARY_PATH")) {
       StringRef CompilerPath = env;
