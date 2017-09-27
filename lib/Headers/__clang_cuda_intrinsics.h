@@ -93,7 +93,9 @@ __MAKE_SHUFFLES(__shfl_xor, __nvvm_shfl_bfly_i32, __nvvm_shfl_bfly_f32, 0x1f);
 #endif // !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 300
 
 // __shfl_sync_* variants available in CUDA-9
-#if CUDA_VERSION >= 9000 && (!defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 300)
+#if CUDA_VERSION >= 9000
+#if (!defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 300)
+// __shfl_sync_* variants available in CUDA-9
 #pragma push_macro("__MAKE_SYNC_SHUFFLES")
 #define __MAKE_SYNC_SHUFFLES(__FnName, __IntIntrinsic, __FloatIntrinsic,       \
                              __Mask)                                           \
@@ -148,13 +150,12 @@ __MAKE_SYNC_SHUFFLES(__shfl_sync, __nvvm_shfl_sync_idx_i32,
                      __nvvm_shfl_sync_idx_f32, 0x1f);
 // We use 0 rather than 31 as our mask, because shfl.up applies to lanes >=
 // maxLane.
-__MAKE_SYNC_SHUFFLES(__shfl_sync_up, __nvvm_shfl_sync_up_i32,
+__MAKE_SYNC_SHUFFLES(__shfl_up_sync, __nvvm_shfl_sync_up_i32,
                      __nvvm_shfl_sync_up_f32, 0);
-__MAKE_SYNC_SHUFFLES(__shfl_sync_down, __nvvm_shfl_sync_down_i32,
+__MAKE_SYNC_SHUFFLES(__shfl_down_sync, __nvvm_shfl_sync_down_i32,
                      __nvvm_shfl_sync_down_f32, 0x1f);
-__MAKE_SYNC_SHUFFLES(__shfl_sync_xor, __nvvm_shfl_sync_bfly_i32,
+__MAKE_SYNC_SHUFFLES(__shfl_xor_sync, __nvvm_shfl_sync_bfly_i32,
                      __nvvm_shfl_sync_bfly_f32, 0x1f);
-
 #pragma pop_macro("__MAKE_SYNC_SHUFFLES")
 
 inline __device__ void __syncwarp(unsigned int mask = 0xffffffff) {
