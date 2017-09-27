@@ -1409,7 +1409,10 @@ static llvm::Value *emitParallelOrTeamsOutlinedFunction(
     unsigned ImplicitParamStop) {
   assert(ThreadIDVar->getType()->isPointerType() &&
          "thread id variable must be of type kmp_int32 *");
-  const CapturedStmt *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    CS = cast<CapturedStmt>(CS->getCapturedStmt());
   CodeGenFunction CGF(CGM, true);
   bool HasCancel = false;
   if (auto *OPD = dyn_cast<OMPParallelDirective>(&D))
@@ -1447,7 +1450,10 @@ llvm::Value *CGOpenMPRuntime::emitSimdOutlinedFunction(
     const OMPExecutableDirective &D, const VarDecl *LaneIDVar,
     const VarDecl *NumLanesVar, OpenMPDirectiveKind InnermostKind,
     const RegionCodeGenTy &CodeGen) {
-  const CapturedStmt *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    CS = cast<CapturedStmt>(CS->getCapturedStmt());
   CodeGenFunction CGF(CGM, true);
   CGOpenMPSimdOutlinedRegionInfo CGInfo(*CS, LaneIDVar, NumLanesVar, CodeGen,
                                         InnermostKind);
@@ -4789,8 +4795,7 @@ static void emitPrivatesInit(CodeGenFunction &CGF,
                              const RecordDecl *KmpTaskTWithPrivatesQTyRD,
                              QualType SharedsTy, QualType SharedsPtrTy,
                              const OMPTaskDataTy &Data,
-                             ArrayRef<PrivateDataTy> Privates, bool ForDup,
-                             const CGOpenMPRuntime::TargetDataInfo &Info) {
+                             ArrayRef<PrivateDataTy> Privates, bool ForDup) {
   auto &C = CGF.getContext();
   auto FI = std::next(KmpTaskTWithPrivatesQTyRD->field_begin());
   LValue PrivatesBase = CGF.EmitLValueForField(TDBase, *FI);
@@ -4869,23 +4874,27 @@ static void emitPrivatesInit(CodeGenFunction &CGF,
     LValue PrivateLValue = CGF.EmitLValueForField(PrivatesBase, *FI);
     CharUnits Align = getIdentAlign(CGF.CGM);
     QualType BasesAndPtrsType = C.getConstantArrayType(
-        C.getUIntPtrType(), llvm::APInt(32, Info.NumberOfPtrs),
+        C.getUIntPtrType(), llvm::APInt(32, Data.NumberOfPointers),
         ArrayType::Normal, /* IndexTypeQuals = */ 0);
-    CGF.EmitAggregateAssign(PrivateLValue.getAddress(),
-                            Address(Info.BasePointersArray, Align),
-                            BasesAndPtrsType);
+    CGF.EmitAggregateAssign(
+        PrivateLValue.getAddress(),
+        Address(Data.TargetArrays[OMPTaskDataTy::OMP_BASE_PTRS], Align),
+        BasesAndPtrsType);
     ++FI;
     PrivateLValue = CGF.EmitLValueForField(PrivatesBase, *FI);
-    CGF.EmitAggregateAssign(PrivateLValue.getAddress(),
-                            Address(Info.PointersArray, Align),
-                            BasesAndPtrsType);
+    CGF.EmitAggregateAssign(
+        PrivateLValue.getAddress(),
+        Address(Data.TargetArrays[OMPTaskDataTy::OMP_PTRS], Align),
+        BasesAndPtrsType);
     ++FI;
     PrivateLValue = CGF.EmitLValueForField(PrivatesBase, *FI);
     QualType SizesType = C.getConstantArrayType(
-        C.getSizeType(), llvm::APInt(32, Info.NumberOfPtrs), ArrayType::Normal,
+        C.getSizeType(), llvm::APInt(32, Data.NumberOfPointers),
+        ArrayType::Normal,
         /* IndexTypeQuals = */ 0);
-    CGF.EmitAggregateAssign(PrivateLValue.getAddress(),
-                            Address(Info.SizesArray, Align), SizesType);
+    CGF.EmitAggregateAssign(
+        PrivateLValue.getAddress(),
+        Address(Data.TargetArrays[OMPTaskDataTy::OMP_SIZES], Align), SizesType);
   }
 }
 
@@ -4976,8 +4985,7 @@ emitTaskDupFunction(CodeGenModule &CGM, SourceLocation Loc,
         CGF.getNaturalTypeAlignment(SharedsTy));
   }
   emitPrivatesInit(CGF, D, KmpTaskSharedsPtr, TDBase, KmpTaskTWithPrivatesQTyRD,
-                   SharedsTy, SharedsPtrTy, Data, Privates, /*ForDup=*/true,
-                   CGOpenMPRuntime::TargetDataInfo());
+                   SharedsTy, SharedsPtrTy, Data, Privates, /*ForDup=*/true);
   CGF.FinishFunction();
   return TaskDup;
 }
@@ -5000,8 +5008,7 @@ checkDestructorsRequired(const RecordDecl *KmpTaskTWithPrivatesQTyRD) {
 CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
     CodeGenFunction &CGF, SourceLocation Loc, const OMPExecutableDirective &D,
     llvm::Value *TaskFunction, QualType SharedsTy, Address Shareds,
-    const OMPTaskDataTy &Data, const OMPMapArrays &MapArrays,
-    const TargetDataInfo &Info) {
+    const OMPTaskDataTy &Data) {
   auto &C = CGM.getContext();
   llvm::SmallVector<PrivateDataTy, 4> Privates;
   // Aggregate privates and sort them by the alignment.
@@ -5041,7 +5048,7 @@ CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
         Data.FirstprivateSimpleArrayImplicit
             [OMPTaskDataTy::ImplicitMapArray::OMP_BASE_PTRS];
     QualType BasesAndPtrsType = C.getConstantArrayType(
-        C.getUIntPtrType(), llvm::APInt(32, Info.NumberOfPtrs),
+        C.getUIntPtrType(), llvm::APInt(32, Data.NumberOfPointers),
         ArrayType::Normal, /* IndexTypeQuals = */ 0);
     auto *BasePtrsFakePrivate = ImplicitParamDecl::Create(
         C, C.getUIntPtrType(), ImplicitParamDecl::ImplicitParamKind::Other);
@@ -5067,7 +5074,8 @@ CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
         Data.FirstprivateSimpleArrayImplicit
             [OMPTaskDataTy::ImplicitMapArray::OMP_SIZES];
     QualType SizesType = C.getConstantArrayType(
-        C.getSizeType(), llvm::APInt(32, Info.NumberOfPtrs), ArrayType::Normal,
+        C.getSizeType(), llvm::APInt(32, Data.NumberOfPointers),
+        ArrayType::Normal,
         /* IndexTypeQuals = */ 0);
     auto *SizesFakePrivate = ImplicitParamDecl::Create(
         C, SizesType, ImplicitParamDecl::ImplicitParamKind::Other);
@@ -5157,34 +5165,15 @@ CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
           : CGF.Builder.getInt32(Data.Final.getInt() ? FinalFlag : 0);
   TaskFlags = CGF.Builder.CreateOr(TaskFlags, CGF.Builder.getInt32(Flags));
   auto *SharedsSize = CGM.getSize(C.getTypeSizeInChars(SharedsTy));
-  llvm::CallInst *NewTask = nullptr;
-  if (Data.HasImplicitTargetArrays) {
-    // Emit device ID if any.
-    llvm::Value *DeviceID;
-    if (MapArrays.DeviceExpr) {
-      DeviceID =
-          CGF.Builder.CreateIntCast(CGF.EmitScalarExpr(MapArrays.DeviceExpr),
-                                    CGF.Int64Ty, /*isSigned=*/true);
-    } else {
-      DeviceID = CGF.Builder.getInt64(OMP_DEVICEID_UNDEF);
-    }
-    llvm::Value *AllocArgs[] = {emitUpdateLocation(CGF, Loc),
-                                getThreadID(CGF, Loc), TaskFlags,
-                                KmpTaskTWithPrivatesTySize, SharedsSize,
-                                CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
-                                    TaskEntry, KmpRoutineEntryPtrTy),
-                                DeviceID};
-    NewTask = CGF.EmitRuntimeCall(
-        createRuntimeFunction(OMPRTL__kmpc_tgt_target_task_alloc), AllocArgs);
-  } else {
-    llvm::Value *AllocArgs[] = {emitUpdateLocation(CGF, Loc),
-                                getThreadID(CGF, Loc), TaskFlags,
-                                KmpTaskTWithPrivatesTySize, SharedsSize,
-                                CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
-                                    TaskEntry, KmpRoutineEntryPtrTy)};
-    NewTask = CGF.EmitRuntimeCall(
-        createRuntimeFunction(OMPRTL__kmpc_omp_task_alloc), AllocArgs);
-  }
+  llvm::Value *AllocArgs[] = {emitUpdateLocation(CGF, Loc),
+                              getThreadID(CGF, Loc),
+                              TaskFlags,
+                              KmpTaskTWithPrivatesTySize,
+                              SharedsSize,
+                              CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
+                                  TaskEntry, KmpRoutineEntryPtrTy)};
+  llvm::CallInst *NewTask = CGF.EmitRuntimeCall(
+      createRuntimeFunction(OMPRTL__kmpc_omp_task_alloc), AllocArgs);
   auto *NewTaskNewTaskTTy = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
       NewTask, KmpTaskTWithPrivatesPtrTy);
   LValue Base = CGF.MakeNaturalAlignAddrLValue(NewTaskNewTaskTTy,
@@ -5209,7 +5198,7 @@ CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
   if (!Privates.empty()) {
     emitPrivatesInit(CGF, D, KmpTaskSharedsPtr, Base, KmpTaskTWithPrivatesQTyRD,
                      SharedsTy, SharedsPtrTy, Data, Privates,
-                     /*ForDup=*/false, Info);
+                     /*ForDup=*/false);
     if (isOpenMPTaskLoopDirective(D.getDirectiveKind()) &&
         (!Data.LastprivateVars.empty() || checkInitIsRequired(CGF, Privates))) {
       Result.TaskDupFn = emitTaskDupFunction(
@@ -5259,8 +5248,7 @@ void CGOpenMPRuntime::emitTaskLoopCall(CodeGenFunction &CGF, SourceLocation Loc,
   if (!CGF.HaveInsertPoint())
     return;
   TaskResultTy Result =
-      emitTaskInit(CGF, Loc, D, TaskFunction, SharedsTy, Shareds, Data,
-                   OMPMapArrays(), TargetDataInfo());
+      emitTaskInit(CGF, Loc, D, TaskFunction, SharedsTy, Shareds, Data);
   // NOTE: routine and part_id fields are intialized by __kmpc_omp_task_alloc()
   // libcall.
   // Call to void __kmpc_taskloop(ident_t *loc, int gtid, kmp_task_t *task, int
@@ -6361,7 +6349,11 @@ llvm::Function *
 CGOpenMPRuntime::outlineTargetDirective(const OMPExecutableDirective &D,
                                         StringRef Name,
                                         const RegionCodeGenTy &CodeGen) {
-  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  bool HasDependClause = D.hasClausesOfKind<OMPDependClause>();
+  const auto *C = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (HasDependClause)
+    C = cast<CapturedStmt>(C->getCapturedStmt());
+  const CapturedStmt &CS = *C;
 
   CodeGenFunction CGF(CGM, true);
   CGOpenMPTargetRegionInfo CGInfo(CS, CodeGen, Name);
@@ -6370,7 +6362,6 @@ CGOpenMPRuntime::outlineTargetDirective(const OMPExecutableDirective &D,
   // When a target region has a depend clause, generate a new task
   // that contains the target region invocation, instead of generating it in
   // place. The task will take care of the depend logic.
-  bool HasDependClause = D.hasClausesOfKind<OMPDependClause>();
   bool UseCapturedArgumentsOnly =
       isOpenMPParallelDirective(D.getDirectiveKind()) ||
       isOpenMPTeamsDirective(D.getDirectiveKind()) || HasDependClause;
@@ -6451,7 +6442,11 @@ static const Stmt *ignoreCompoundStmts(const Stmt *Body) {
 /// get an inner (nested) teams construct, if any
 static const OMPExecutableDirective *
 GetNestedTeamsDirectiveOrNull(const OMPExecutableDirective &D) {
-  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *PCS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    PCS = cast<CapturedStmt>(PCS->getCapturedStmt());
+  const CapturedStmt &CS = *PCS;
 
   if (auto *NestedDir = dyn_cast_or_null<OMPExecutableDirective>(
           ignoreCompoundStmts(CS.getCapturedStmt())))
@@ -6502,7 +6497,11 @@ emitNumTeamsClauseForTargetDirective(CGOpenMPRuntime &OMPRuntime,
   // the expression is captured in the enclosing target environment when the
   // teams directive is not combined with target.
 
-  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *PCS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    PCS = cast<CapturedStmt>(PCS->getCapturedStmt());
+  const CapturedStmt &CS = *PCS;
   if (auto *TeamsDir = GetNestedTeamsDirectiveOrNull(D)) {
     if (auto *NTE = TeamsDir->getSingleClause<OMPNumTeamsClause>()) {
       CGOpenMPInnerExprInfo CGInfo(CGF, CS);
@@ -6592,7 +6591,11 @@ emitThreadLimitClauseForTargetDirective(CGOpenMPRuntime &OMPRuntime,
     // by generating the expression in a inlined region. This is required
     // because the expression is captured in the enclosing target environment
     // when the teams directive is not combined with target.
-    const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+    const auto *PCS = cast<CapturedStmt>(D.getAssociatedStmt());
+    if (D.hasClausesOfKind<OMPDependClause>() &&
+        isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+      PCS = cast<CapturedStmt>(PCS->getCapturedStmt());
+    const CapturedStmt &CS = *PCS;
 
     if (auto *TeamsDir = GetNestedTeamsDirectiveOrNull(D)) {
       DefaultThreadLimitVal = Bld.getInt32(0);
@@ -6955,10 +6958,13 @@ public:
 // check for inner (nested) teams + distribute construct, if any
 static const OMPExecutableDirective *
 getNestedTeamsDistributeKindDirective(const OMPExecutableDirective &D) {
-  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    CS = cast<CapturedStmt>(CS->getCapturedStmt());
 
   if (auto *NestedDir = dyn_cast_or_null<OMPExecutableDirective>(
-          ignoreCompoundStmts(CS.getCapturedStmt()))) {
+          ignoreCompoundStmts(CS->getCapturedStmt()))) {
     OpenMPDirectiveKind DirectiveKind = NestedDir->getDirectiveKind();
     if (isOpenMPTeamsDirective(DirectiveKind) &&
         isOpenMPDistributeDirective(DirectiveKind))
@@ -7025,7 +7031,11 @@ CGOpenMPRuntime::generateMapArrays(CodeGenFunction &CGF,
   MappableExprsHandler MEHandler(D, CGF);
 
   // Map all captured variables.
-  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  bool HasDepend = D.hasClausesOfKind<OMPDependClause>();
+  const auto *C = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (HasDepend)
+    C = cast<CapturedStmt>(C->getCapturedStmt());
+  const CapturedStmt &CS = *C;
   auto RI = CS.getCapturedRecordDecl()->field_begin();
   auto CV = CapturedVars.begin();
   for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
@@ -7262,20 +7272,12 @@ static Address emitDependences(CodeGenFunction &CGF,
 void CGOpenMPRuntime::emitTaskCall(
     CodeGenFunction &CGF, SourceLocation Loc, const OMPExecutableDirective &D,
     llvm::Value *TaskFunction, QualType SharedsTy, Address Shareds,
-    const Expr *IfCond, const OMPTaskDataTy &Data, OMPMapArrays *MapArrays) {
+    const Expr *IfCond, const OMPTaskDataTy &Data) {
   if (!CGF.HaveInsertPoint())
     return;
 
-  // When calling a target task, we need to generate the offloading mapping
-  // arrays upfront in the task caller and pass them to the task region.
-  TargetDataInfo Info;
-  if (isOpenMPTargetExecutionDirective(D.getDirectiveKind()) &&
-      D.hasClausesOfKind<OMPDependClause>()) {
-    Info = emitMapArrays(CGF, *MapArrays);
-  }
-
   TaskResultTy Result = emitTaskInit(CGF, Loc, D, TaskFunction, SharedsTy,
-                                     Shareds, Data, *MapArrays, Info);
+                                     Shareds, Data);
   llvm::Value *NewTask = Result.NewTask;
   llvm::Value *TaskEntry = Result.TaskEntry;
   llvm::Value *NewTaskNewTaskTTy = Result.NewTaskNewTaskTTy;
@@ -7305,8 +7307,8 @@ void CGOpenMPRuntime::emitTaskCall(
     DepTaskArgs[5] = CGF.Builder.getInt32(0);
     DepTaskArgs[6] = llvm::ConstantPointerNull::get(CGF.VoidPtrTy);
   }
-  auto &&ThenCodeGen = [this, Loc, &Data, TDBase, KmpTaskTQTyRD,
-                        NumDependencies, &TaskArgs,
+  auto &&ThenCodeGen = [this, &Data, TDBase, KmpTaskTQTyRD, NumDependencies,
+                        &TaskArgs,
                         &DepTaskArgs](CodeGenFunction &CGF, PrePostActionTy &) {
     if (!Data.Tied) {
       auto PartIdFI = std::next(KmpTaskTQTyRD->field_begin(), KmpTaskTPartId);
@@ -7379,7 +7381,7 @@ void CGOpenMPRuntime::emitTargetCall(
     CodeGenFunction &CGF, const OMPExecutableDirective &D,
     llvm::Value *OutlinedFn, llvm::Value *OutlinedFnID, const Expr *IfCond,
     const Expr *Device, ArrayRef<llvm::Value *> CapturedVars,
-    OMPMapArrays &MapArrays, const OMPTaskDataTy &Data) {
+    OMPMapArrays &MapArrays) {
   if (!CGF.HaveInsertPoint())
     return;
 
@@ -7389,22 +7391,55 @@ void CGOpenMPRuntime::emitTargetCall(
   bool hasNowait = D.hasClausesOfKind<OMPNowaitClause>();
 
   // Check if directive has depend clause
-  bool hasDepend = D.hasClausesOfKind<OMPDependClause>();
+  bool HasDepend = D.hasClausesOfKind<OMPDependClause>();
 
-  // Fill up the pointer arrays and transfer execution to the device.
-  auto &&ThenGen = [this, Device, OutlinedFn, OutlinedFnID, &D, hasNowait,
-                    &MapArrays, hasDepend,
-                    &Data](CodeGenFunction &CGF, PrePostActionTy &) {
-    auto &RT = CGF.CGM.getOpenMPRuntime();
-
+  // When calling a target task, we need to generate the offloading mapping
+  // arrays upfront in the task caller and pass them to the task region.
+  OMPTaskDataTy Data;
+  TargetDataInfo Info;
+  if (HasDepend) {
     if (CGF.getLangOpts().OpenMPImplicitMapLambdas)
       emitLambdaOffloadArgs(CGF, MapArrays);
 
+    Info = emitMapArrays(CGF, MapArrays);
+    // Build implicit parameters in case we are implementing a target task
+    auto &Context = CGF.getContext();
+    QualType BasesAndPtrsType = Context.getConstantArrayType(
+        Context.VoidPtrTy, llvm::APInt(32, MapArrays.BasePointers.size()),
+        ArrayType::Normal, /* IndexTypeQuals = */ 0);
+    auto *BasesDecl = ImplicitParamDecl::Create(
+        Context, BasesAndPtrsType, ImplicitParamDecl::ImplicitParamKind::Other);
+    auto *PtrsDecl = ImplicitParamDecl::Create(
+        Context, BasesAndPtrsType, ImplicitParamDecl::ImplicitParamKind::Other);
+    Data.FirstprivateSimpleArrayImplicit[OMPTaskDataTy::OMP_BASE_PTRS] =
+        BasesDecl;
+    Data.FirstprivateSimpleArrayImplicit[OMPTaskDataTy::OMP_PTRS] = PtrsDecl;
+    QualType SizesType = Context.getConstantArrayType(
+        Context.getSizeType(), llvm::APInt(32, MapArrays.Sizes.size()),
+        ArrayType::Normal, /* IndexTypeQuals = */ 0);
+    auto *SizesDecl = ImplicitParamDecl::Create(
+        Context, SizesType, ImplicitParamDecl::ImplicitParamKind::Other);
+    Data.FirstprivateSimpleArrayImplicit[OMPTaskDataTy::OMP_SIZES] = SizesDecl;
+    Data.HasImplicitTargetArrays = true;
+    Data.TargetArrays[OMPTaskDataTy::OMP_BASE_PTRS] = Info.BasePointersArray;
+    Data.TargetArrays[OMPTaskDataTy::OMP_PTRS] = Info.PointersArray;
+    Data.TargetArrays[OMPTaskDataTy::OMP_SIZES] = Info.SizesArray;
+    Data.NumberOfPointers = Info.NumberOfPtrs;
+  }
+
+  // Fill up the pointer arrays and transfer execution to the device.
+  auto &&ThenGen = [this, Device, OutlinedFn, OutlinedFnID, &D, hasNowait,
+                    &MapArrays, HasDepend, &Data,
+                    &Info](CodeGenFunction &CGF, PrePostActionTy &) {
+    auto &RT = CGF.CGM.getOpenMPRuntime();
+
     // Emit the offloading arrays.
-    TargetDataInfo Info;
-    if (!hasDepend)
+    if (!HasDepend) {
+      if (CGF.getLangOpts().OpenMPImplicitMapLambdas)
+        emitLambdaOffloadArgs(CGF, MapArrays);
+
       Info = emitMapArrays(CGF, MapArrays);
-    else {
+    } else {
       Address BasePtrAddr = CGF.GetAddrOfLocalVar(
           Data.FirstprivateRefsSimpleArrayImplicit
               [OMPTaskDataTy::ImplicitMapArray::OMP_BASE_PTRS]);
@@ -7525,18 +7560,35 @@ void CGOpenMPRuntime::emitTargetCall(
         CGF.createBasicBlock("omp_offload.cont");
     llvm::Value *Failed = CGF.Builder.CreateIsNotNull(Return);
     CGF.Builder.CreateCondBr(Failed, OffloadFailedBlock, OffloadContBlock);
-
     CGF.EmitBlock(OffloadFailedBlock);
+    if (HasDepend) {
+      const auto *PCS =
+          cast<CapturedStmt>(D.getAssociatedStmt());
+      const auto &CS = *cast<CapturedStmt>(PCS->getCapturedStmt());
+      SmallVector<llvm::Value *, 4> CapturedVars;
+      CGF.GenerateOpenMPCapturedVars(CS, CapturedVars);
+      MapArrays =
+          CGF.CGM.getOpenMPRuntime().generateMapArrays(CGF, D, CapturedVars);
+    }
     emitOutlinedFunctionCall(CGF, D.getLocStart(), OutlinedFn,
                              MapArrays.KernelArgs);
     CGF.EmitBranch(OffloadContBlock);
-
     CGF.EmitBlock(OffloadContBlock, /*IsFinished=*/true);
   };
 
   // Notify that the host version must be executed.
-  auto &&ElseGen = [this, &D, OutlinedFn, &MapArrays](CodeGenFunction &CGF,
-                                                      PrePostActionTy &) {
+  auto &&ElseGen = [this, &D, OutlinedFn, &MapArrays,
+                    HasDepend](CodeGenFunction &CGF, PrePostActionTy &) {
+    // Execute the host version if required.
+    if (HasDepend) {
+      const auto *PCS =
+          cast<CapturedStmt>(D.getAssociatedStmt());
+      const auto &CS = *cast<CapturedStmt>(PCS->getCapturedStmt());
+      SmallVector<llvm::Value *, 4> CapturedVars;
+      CGF.GenerateOpenMPCapturedVars(CS, CapturedVars);
+      MapArrays =
+          CGF.CGM.getOpenMPRuntime().generateMapArrays(CGF, D, CapturedVars);
+    }
     emitOutlinedFunctionCall(CGF, D.getLocStart(), OutlinedFn,
                              MapArrays.KernelArgs);
   };
@@ -7545,15 +7597,53 @@ void CGOpenMPRuntime::emitTargetCall(
   // offloading, otherwise, just execute on the host. We need to execute on host
   // regardless of the conditional in the if clause if, e.g., the user do not
   // specify target triples.
+  if (!HasDepend) {
+    if (OutlinedFnID) {
+      if (IfCond)
+        emitOMPIfClause(CGF, IfCond, ThenGen, ElseGen);
+      else {
+        RegionCodeGenTy ThenRCG(ThenGen);
+        ThenRCG(CGF);
+      }
+    } else {
+      RegionCodeGenTy ElseRCG(ElseGen);
+      ElseRCG(CGF);
+    }
+    return;
+  }
+  const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  Address CapturedStruct = CGF.GenerateCapturedStmtArgument(*CS);
+  QualType SharedsTy =
+      CGF.getContext().getRecordType(CS->getCapturedRecordDecl());
+
+  auto &&TaskGen = [&D, SharedsTy, CapturedStruct](CodeGenFunction &CGF,
+                                                   llvm::Value *OutlinedFn,
+                                                   const OMPTaskDataTy &Data) {
+    CGF.CGM.getOpenMPRuntime().emitTaskCall(CGF, D.getLocStart(), D, OutlinedFn,
+                                            SharedsTy, CapturedStruct,
+                                            /*IfCond=*/nullptr, Data);
+  };
+  auto &&TaskThenGen = [this, &D, &ThenGen, &TaskGen, hasNowait,
+                        &Data](CodeGenFunction &CGF, PrePostActionTy &) {
+    CGF.EmitOMPTaskBasedDirective(D, ThenGen, TaskGen, Data);
+    if (!hasNowait)
+      emitTaskwaitCall(CGF, D.getLocStart());
+  };
+  auto &&TaskElseGen = [this, &D, &ElseGen, &TaskGen, hasNowait,
+                        &Data](CodeGenFunction &CGF, PrePostActionTy &) {
+    CGF.EmitOMPTaskBasedDirective(D, ElseGen, TaskGen, Data);
+    if (!hasNowait)
+      emitTaskwaitCall(CGF, D.getLocStart());
+  };
   if (OutlinedFnID) {
     if (IfCond)
-      emitOMPIfClause(CGF, IfCond, ThenGen, ElseGen);
+      emitOMPIfClause(CGF, IfCond, TaskThenGen, TaskElseGen);
     else {
-      RegionCodeGenTy ThenRCG(ThenGen);
+      RegionCodeGenTy ThenRCG(TaskThenGen);
       ThenRCG(CGF);
     }
   } else {
-    RegionCodeGenTy ElseRCG(ElseGen);
+    RegionCodeGenTy ElseRCG(TaskElseGen);
     ElseRCG(CGF);
   }
 }

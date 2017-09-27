@@ -7289,8 +7289,8 @@ StmtResult TreeTransform<Derived>::TransformOMPExecutableDirective(
       Body = getDerived().TransformStmt(
           cast<CapturedStmt>(D->getAssociatedStmt())->getCapturedStmt());
     }
-    AssociatedStmt =
-        getDerived().getSema().ActOnOpenMPRegionEnd(Body, TClauses);
+    AssociatedStmt = getDerived().getSema().ActOnOpenMPRegionEnd(
+        Body, TClauses, HasDependClause);
     if (AssociatedStmt.isInvalid()) {
       return StmtError();
     }

@@ -102,8 +102,12 @@ struct OMPTaskDataTy final {
   SmallVector<const Expr *, 4> FirstprivateVars;
   SmallVector<const Expr *, 4> FirstprivateCopies;
   SmallVector<const Expr *, 4> FirstprivateInits;
-  ImplicitParamDecl *FirstprivateSimpleArrayImplicit[OMP_TARGET_ARG_NUMBER];
-  ImplicitParamDecl *FirstprivateRefsSimpleArrayImplicit[OMP_TARGET_ARG_NUMBER];
+  ImplicitParamDecl *FirstprivateSimpleArrayImplicit[OMP_TARGET_ARG_NUMBER] = {
+      nullptr};
+  ImplicitParamDecl
+      *FirstprivateRefsSimpleArrayImplicit[OMP_TARGET_ARG_NUMBER] = {nullptr};
+  llvm::Value *TargetArrays[OMP_TARGET_ARG_NUMBER] = {nullptr};
+  unsigned NumberOfPointers = 0;
   SmallVector<const Expr *, 4> LastprivateVars;
   SmallVector<const Expr *, 4> LastprivateCopies;
   SmallVector<const Expr *, 4> ReductionVars;
@@ -1456,8 +1460,7 @@ public:
                             const OMPExecutableDirective &D,
                             llvm::Value *TaskFunction, QualType SharedsTy,
                             Address Shareds, const Expr *IfCond,
-                            const OMPTaskDataTy &Data,
-                            OMPMapArrays *MapArrays = nullptr);
+                            const OMPTaskDataTy &Data);
 
   /// Emit task region for the taskloop directive. The taskloop region is
   /// emitted in several steps:
@@ -1671,8 +1674,7 @@ public:
   emitTargetCall(CodeGenFunction &CGF, const OMPExecutableDirective &D,
                  llvm::Value *OutlinedFn, llvm::Value *OutlinedFnID,
                  const Expr *IfCond, const Expr *Device,
-                 ArrayRef<llvm::Value *> CapturedVars, OMPMapArrays &MapArrays,
-                 const OMPTaskDataTy &Data);
+                 ArrayRef<llvm::Value *> CapturedVars, OMPMapArrays &MapArrays);
 
   /// \brief Emit the target regions enclosed in \a GD function definition or
   /// the function itself in case it is a valid device function. Returns true if
@@ -1823,9 +1825,7 @@ public:
   TaskResultTy emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
                             const OMPExecutableDirective &D,
                             llvm::Value *TaskFunction, QualType SharedsTy,
-                            Address Shareds, const OMPTaskDataTy &Data,
-                            const OMPMapArrays &MapArrays,
-                            const TargetDataInfo &Info);
+                            Address Shareds, const OMPTaskDataTy &Data);
 
   /// Generate arrays for later emission of code to implement target map clause
   OMPMapArrays generateMapArrays(CodeGenFunction &CGF,

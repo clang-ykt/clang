@@ -2275,6 +2275,31 @@ public:
 
 void Sema::ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope,
                                   bool HasDependClause) {
+  if (isOpenMPTargetExecutionDirective(DKind) && HasDependClause &&
+      !CurContext->isDependentContext()) {
+    // special handling for depend clause
+    QualType KmpInt32Ty = Context.getIntTypeForBitwidth(32, 1);
+    QualType Args[] = {Context.VoidPtrTy.withConst().withRestrict()};
+    FunctionProtoType::ExtProtoInfo EPI;
+    EPI.Variadic = true;
+    QualType CopyFnType = Context.getFunctionType(Context.VoidTy, Args, EPI);
+    Sema::CapturedParamNameType Params[] = {
+        std::make_pair(".global_tid.", KmpInt32Ty),
+        std::make_pair(".part_id.", Context.getPointerType(KmpInt32Ty)),
+        std::make_pair(".privates.", Context.VoidPtrTy.withConst()),
+        std::make_pair(".copy_fn.",
+                       Context.getPointerType(CopyFnType).withConst()),
+        std::make_pair(".task_t.", Context.VoidPtrTy.withConst()),
+        std::make_pair(StringRef(), QualType()) // __context with shared vars
+    };
+    ActOnCapturedRegionStart(DSAStack->getConstructLoc(), CurScope, CR_OpenMP,
+                             Params);
+    // Mark this captured region as inlined, because we don't use outlined
+    // function directly.
+    getCurCapturedRegion()->TheCapturedDecl->addAttr(
+        AlwaysInlineAttr::CreateImplicit(
+            Context, AlwaysInlineAttr::Keyword_forceinline, SourceRange()));
+  }
   switch (DKind) {
   case OMPD_parallel:
   case OMPD_parallel_for:
@@ -2332,40 +2357,14 @@ void Sema::ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope,
     break;
   }
   case OMPD_target: {
-    if (HasDependClause) {
-      // special handling for depend clause
-      QualType KmpInt32Ty = Context.getIntTypeForBitwidth(32, 1);
-      QualType Args[] = {Context.VoidPtrTy.withConst().withRestrict()};
-      FunctionProtoType::ExtProtoInfo EPI;
-      EPI.Variadic = true;
-      QualType CopyFnType = Context.getFunctionType(Context.VoidTy, Args, EPI);
-      Sema::CapturedParamNameType Params[] = {
-          std::make_pair(".global_tid.", KmpInt32Ty),
-          std::make_pair(".part_id.", Context.getPointerType(KmpInt32Ty)),
-          std::make_pair(".privates.", Context.VoidPtrTy.withConst()),
-          std::make_pair(".copy_fn.",
-                         Context.getPointerType(CopyFnType).withConst()),
-          std::make_pair(".task_t.", Context.VoidPtrTy.withConst()),
-          std::make_pair(StringRef(), QualType()) // __context with shared vars
-      };
-      ActOnCapturedRegionStart(DSAStack->getConstructLoc(), CurScope, CR_OpenMP,
-                               Params);
-      // Mark this captured region as inlined, because we don't use outlined
-      // function directly.
-      getCurCapturedRegion()->TheCapturedDecl->addAttr(
-          AlwaysInlineAttr::CreateImplicit(
-              Context, AlwaysInlineAttr::Keyword_forceinline, SourceRange()));
-    } else {
-      Sema::CapturedParamNameType Params[] = {
-          std::make_pair(StringRef(), QualType()) // __context with shared vars
-      };
+    Sema::CapturedParamNameType Params[] = {
+        std::make_pair(StringRef(), QualType()) // __context with shared vars
+    };
 
-      ActOnCapturedRegionStart(DSAStack->getConstructLoc(), CurScope, CR_OpenMP,
-                               Params);
-    }
+    ActOnCapturedRegionStart(DSAStack->getConstructLoc(), CurScope, CR_OpenMP,
+                             Params);
     break;
   }
-
   case OMPD_task: {
     QualType KmpInt32Ty = Context.getIntTypeForBitwidth(32, 1);
     QualType Args[] = {Context.VoidPtrTy.withConst().withRestrict()};
@@ -2535,9 +2534,13 @@ static ExprResult buildCapture(Sema &S, Expr *CaptureExpr, DeclRefExpr *&Ref,
 }
 
 StmtResult Sema::ActOnOpenMPRegionEnd(StmtResult S,
-                                      ArrayRef<OMPClause *> Clauses) {
+                                      ArrayRef<OMPClause *> Clauses,
+                                      bool HasDependClause) {
   if (!S.isUsable()) {
     ActOnCapturedRegionError();
+    if (isOpenMPTargetExecutionDirective(DSAStack->getCurrentDirective()) &&
+        HasDependClause && !CurContext->isDependentContext())
+      ActOnCapturedRegionError();
     return StmtError();
   }
 
@@ -2622,9 +2625,39 @@ StmtResult Sema::ActOnOpenMPRegionEnd(StmtResult S,
   }
   if (ErrorFound) {
     ActOnCapturedRegionError();
+    if (isOpenMPTargetExecutionDirective(DSAStack->getCurrentDirective()) &&
+        HasDependClause && !CurContext->isDependentContext())
+      ActOnCapturedRegionError();
     return StmtError();
   }
-  return ActOnCapturedRegionEnd(S.get());
+  StmtResult SR = ActOnCapturedRegionEnd(S.get());
+  // Rebuild captures in the outer implicit task captured region.
+  if (isOpenMPTargetExecutionDirective(DSAStack->getCurrentDirective()) &&
+      HasDependClause && !CurContext->isDependentContext()) {
+    auto *CS = cast<CapturedStmt>(SR.get());
+    for(const auto &C : CS->captures()) {
+      if (C.capturesVariable() || C.capturesVariableByCopy()) {
+        VarDecl *VD = C.getCapturedVar();
+        MarkVariableReferenced(C.getLocation(), VD);
+      } else if (C.capturesThis()) {
+        CheckCXXThisCapture(C.getLocation());
+      }
+    }
+    for (auto *Clause : Clauses) {
+      if (Clause->getClauseKind() == OMPC_device ||
+          Clause->getClauseKind() == OMPC_thread_limit ||
+          Clause->getClauseKind() == OMPC_num_teams) {
+        if (auto *C = OMPClauseWithPreInit::get(Clause)) {
+          if (auto *DS = cast_or_null<DeclStmt>(C->getPreInitStmt())) {
+            for (auto *D : DS->decls())
+              MarkVariableReferenced(D->getLocation(), cast<VarDecl>(D));
+          }
+        }
+      }
+    }
+    SR = ActOnCapturedRegionEnd(SR.get());
+  }
+  return SR;
 }
 
 static bool CheckNestingOfRegions(Sema &SemaRef, DSAStackTy *Stack,
@@ -6460,13 +6493,22 @@ StmtResult Sema::ActOnOpenMPTargetDirective(ArrayRef<OMPClause *> Clauses,
   // The point of exit cannot be a branch out of the structured block.
   // longjmp() and throw() must not violate the entry/exit criteria.
   CS->getCapturedDecl()->setNothrow();
+  if (!CurContext->isDependentContext()) {
+    bool HasDepend = llvm::any_of(Clauses, [](const OMPClause *C) {
+      return C->getClauseKind() == OMPC_depend;
+    });
+    if (HasDepend) {
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
+      CS->getCapturedDecl()->setNothrow();
+    }
+  }
 
   // OpenMP [2.16, Nesting of Regions]
   // If specified, a teams construct must be contained within a target
   // construct. That target construct must contain no statements or directives
   // outside of the teams construct.
   if (DSAStack->hasInnerTeamsRegion()) {
-    auto S = AStmt->IgnoreContainers(/*IgnoreCaptured*/ true);
+    auto S = CS->IgnoreContainers(/*IgnoreCaptured*/ true);
     bool OMPTeamsFound = true;
     if (auto *CS = dyn_cast<CompoundStmt>(S)) {
       auto I = CS->body_begin();
@@ -6515,6 +6557,15 @@ Sema::ActOnOpenMPTargetParallelDirective(ArrayRef<OMPClause *> Clauses,
   // The point of exit cannot be a branch out of the structured block.
   // longjmp() and throw() must not violate the entry/exit criteria.
   CS->getCapturedDecl()->setNothrow();
+  if (!CurContext->isDependentContext()) {
+    bool HasDepend = llvm::any_of(Clauses, [](const OMPClause *C) {
+      return C->getClauseKind() == OMPC_depend;
+    });
+    if (HasDepend) {
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
+      CS->getCapturedDecl()->setNothrow();
+    }
+  }
 
   getCurFunction()->setHasBranchProtectedScope();
 
@@ -6538,6 +6589,15 @@ StmtResult Sema::ActOnOpenMPTargetParallelForDirective(
   // The point of exit cannot be a branch out of the structured block.
   // longjmp() and throw() must not violate the entry/exit criteria.
   CS->getCapturedDecl()->setNothrow();
+  if (!CurContext->isDependentContext()) {
+    bool HasDepend = llvm::any_of(Clauses, [](const OMPClause *C) {
+      return C->getClauseKind() == OMPC_depend;
+    });
+    if (HasDepend) {
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
+      CS->getCapturedDecl()->setNothrow();
+    }
+  }
 
   bool CoalescedSchedule;
   bool CoalescedDistSchedule;
@@ -6548,8 +6608,8 @@ StmtResult Sema::ActOnOpenMPTargetParallelForDirective(
   // define the nested loops number.
   unsigned NestedLoopCount = CheckOpenMPLoop(
       OMPD_target_parallel_for, getCollapseNumberExpr(Clauses),
-      getOrderedNumberExpr(Clauses), AStmt, *this, *DSAStack,
-      VarsWithImplicitDSA, B, CoalescedSchedule, CoalescedDistSchedule);
+      getOrderedNumberExpr(Clauses), CS, *this, *DSAStack, VarsWithImplicitDSA,
+      B, CoalescedSchedule, CoalescedDistSchedule);
   if (NestedLoopCount == 0)
     return StmtError();
 
@@ -7024,6 +7084,15 @@ StmtResult Sema::ActOnOpenMPTargetParallelForSimdDirective(
   // The point of exit cannot be a branch out of the structured block.
   // longjmp() and throw() must not violate the entry/exit criteria.
   CS->getCapturedDecl()->setNothrow();
+  if (!CurContext->isDependentContext()) {
+    bool HasDepend = llvm::any_of(Clauses, [](const OMPClause *C) {
+      return C->getClauseKind() == OMPC_depend;
+    });
+    if (HasDepend) {
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
+      CS->getCapturedDecl()->setNothrow();
+    }
+  }
 
   bool CoalescedSchedule;
   bool CoalescedDistSchedule;
@@ -7034,8 +7103,8 @@ StmtResult Sema::ActOnOpenMPTargetParallelForSimdDirective(
   // define the nested loops number.
   unsigned NestedLoopCount = CheckOpenMPLoop(
       OMPD_target_parallel_for_simd, getCollapseNumberExpr(Clauses),
-      getOrderedNumberExpr(Clauses), AStmt, *this, *DSAStack,
-      VarsWithImplicitDSA, B, CoalescedSchedule, CoalescedDistSchedule);
+      getOrderedNumberExpr(Clauses), CS, *this, *DSAStack, VarsWithImplicitDSA,
+      B, CoalescedSchedule, CoalescedDistSchedule);
   if (NestedLoopCount == 0)
     return StmtError();
 
@@ -7077,13 +7146,22 @@ StmtResult Sema::ActOnOpenMPTargetSimdDirective(
   // The point of exit cannot be a branch out of the structured block.
   // longjmp() and throw() must not violate the entry/exit criteria.
   CS->getCapturedDecl()->setNothrow();
+  if (!CurContext->isDependentContext()) {
+    bool HasDepend = llvm::any_of(Clauses, [](const OMPClause *C) {
+      return C->getClauseKind() == OMPC_depend;
+    });
+    if (HasDepend) {
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
+      CS->getCapturedDecl()->setNothrow();
+    }
+  }
 
   OMPLoopDirective::HelperExprs B;
   // In presence of clause 'collapse' with number of loops, it will define the
   // nested loops number.
   unsigned NestedLoopCount =
       CheckOpenMPLoop(OMPD_target_simd, getCollapseNumberExpr(Clauses),
-                      getOrderedNumberExpr(Clauses), AStmt, *this, *DSAStack,
+                      getOrderedNumberExpr(Clauses), CS, *this, *DSAStack,
                       VarsWithImplicitDSA, B);
   if (NestedLoopCount == 0)
     return StmtError();
@@ -7299,6 +7377,15 @@ StmtResult Sema::ActOnOpenMPTargetTeamsDirective(ArrayRef<OMPClause *> Clauses,
   // The point of exit cannot be a branch out of the structured block.
   // longjmp() and throw() must not violate the entry/exit criteria.
   CS->getCapturedDecl()->setNothrow();
+  if (!CurContext->isDependentContext()) {
+    bool HasDepend = llvm::any_of(Clauses, [](const OMPClause *C) {
+      return C->getClauseKind() == OMPC_depend;
+    });
+    if (HasDepend) {
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
+      CS->getCapturedDecl()->setNothrow();
+    }
+  }
 
   getCurFunction()->setHasBranchProtectedScope();
 
@@ -7322,6 +7409,15 @@ StmtResult Sema::ActOnOpenMPTargetTeamsDistributeParallelForDirective(
   // The point of exit cannot be a branch out of the structured block.
   // longjmp() and throw() must not violate the entry/exit criteria.
   CS->getCapturedDecl()->setNothrow();
+  if (!CurContext->isDependentContext()) {
+    bool HasDepend = llvm::any_of(Clauses, [](const OMPClause *C) {
+      return C->getClauseKind() == OMPC_depend;
+    });
+    if (HasDepend) {
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
+      CS->getCapturedDecl()->setNothrow();
+    }
+  }
 
   bool CoalescedSchedule;
   bool CoalescedDistSchedule;
@@ -7332,7 +7428,7 @@ StmtResult Sema::ActOnOpenMPTargetTeamsDistributeParallelForDirective(
   // define the nested loops number.
   unsigned NestedLoopCount = CheckOpenMPLoop(
       OMPD_target_teams_distribute_parallel_for, getCollapseNumberExpr(Clauses),
-      nullptr /*ordered not a clause on distribute*/, AStmt, *this, *DSAStack,
+      nullptr /*ordered not a clause on distribute*/, CS, *this, *DSAStack,
       VarsWithImplicitDSA, B, CoalescedSchedule, CoalescedDistSchedule);
   if (NestedLoopCount == 0)
     return StmtError();
@@ -7362,6 +7458,15 @@ StmtResult Sema::ActOnOpenMPTargetTeamsDistributeParallelForSimdDirective(
   // The point of exit cannot be a branch out of the structured block.
   // longjmp() and throw() must not violate the entry/exit criteria.
   CS->getCapturedDecl()->setNothrow();
+  if (!CurContext->isDependentContext()) {
+    bool HasDepend = llvm::any_of(Clauses, [](const OMPClause *C) {
+      return C->getClauseKind() == OMPC_depend;
+    });
+    if (HasDepend) {
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
+      CS->getCapturedDecl()->setNothrow();
+    }
+  }
 
   bool CoalescedSchedule;
   bool CoalescedDistSchedule;
@@ -7373,7 +7478,7 @@ StmtResult Sema::ActOnOpenMPTargetTeamsDistributeParallelForSimdDirective(
   unsigned NestedLoopCount = CheckOpenMPLoop(
       OMPD_target_teams_distribute_parallel_for_simd,
       getCollapseNumberExpr(Clauses),
-      nullptr /*ordered not a clause on distribute*/, AStmt, *this, *DSAStack,
+      nullptr /*ordered not a clause on distribute*/, CS, *this, *DSAStack,
       VarsWithImplicitDSA, B, CoalescedSchedule, CoalescedDistSchedule);
   if (NestedLoopCount == 0)
     return StmtError();
@@ -7417,13 +7522,22 @@ StmtResult Sema::ActOnOpenMPTargetTeamsDistributeDirective(
   // The point of exit cannot be a branch out of the structured block.
   // longjmp() and throw() must not violate the entry/exit criteria.
   CS->getCapturedDecl()->setNothrow();
+  if (!CurContext->isDependentContext()) {
+    bool HasDepend = llvm::any_of(Clauses, [](const OMPClause *C) {
+      return C->getClauseKind() == OMPC_depend;
+    });
+    if (HasDepend) {
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
+      CS->getCapturedDecl()->setNothrow();
+    }
+  }
 
   OMPLoopDirective::HelperExprs B;
   // In presence of clause 'collapse' with number of loops, it will
   // define the nested loops number.
   unsigned NestedLoopCount = CheckOpenMPLoop(
       OMPD_target_teams_distribute, getCollapseNumberExpr(Clauses),
-      nullptr /*ordered not a clause on distribute*/, AStmt, *this, *DSAStack,
+      nullptr /*ordered not a clause on distribute*/, CS, *this, *DSAStack,
       VarsWithImplicitDSA, B);
 
   if (NestedLoopCount == 0)
@@ -7454,13 +7568,22 @@ StmtResult Sema::ActOnOpenMPTargetTeamsDistributeSimdDirective(
   // The point of exit cannot be a branch out of the structured block.
   // longjmp() and throw() must not violate the entry/exit criteria.
   CS->getCapturedDecl()->setNothrow();
+  if (!CurContext->isDependentContext()) {
+    bool HasDepend = llvm::any_of(Clauses, [](const OMPClause *C) {
+      return C->getClauseKind() == OMPC_depend;
+    });
+    if (HasDepend) {
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
+      CS->getCapturedDecl()->setNothrow();
+    }
+  }
 
   OMPLoopDirective::HelperExprs B;
   // In presence of clause 'collapse' with number of loops, it will
   // define the nested loops number.
   unsigned NestedLoopCount = CheckOpenMPLoop(
       OMPD_target_teams_distribute_simd, getCollapseNumberExpr(Clauses),
-      nullptr /*ordered not a clause on distribute*/, AStmt, *this, *DSAStack,
+      nullptr /*ordered not a clause on distribute*/, CS, *this, *DSAStack,
       VarsWithImplicitDSA, B);
 
   if (NestedLoopCount == 0)

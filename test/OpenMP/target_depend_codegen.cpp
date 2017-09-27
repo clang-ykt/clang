@@ -14,8 +14,8 @@
 // CHECK: [[TASK_T_PRIV:%.+]] = type { [[TASK_T:%.+]], [[TASK_PRIVS_T:%.+]] }
 // CHECK: [[TASK_T]] = type { i8*, {{.+}} }
 // CHECK: [[TASK_PRIVS_T]] = type { [1 x i8*], [1 x i8*], [1 x i[[SZ:32|64]]] }
-// CHECK: [[TYPES:@.+]] = private {{.+}} constant [1 x i64] [i64 {{.+}}]
 // CHECK: [[SIZES:@.+]] = private {{.+}} constant [1 x i[[SZ]]] [i[[SZ]] {{.+}}]
+// CHECK: [[TYPES:@.+]] = private {{.+}} constant [1 x i64] [i64 {{.+}}]
 
 // CHECK: define {{.*}}[[MAIN:@.+]](
 int main() {
@@ -27,11 +27,9 @@ int main() {
 }
 // CHECK: [[A_LOC:%.+]] = alloca i32,
 // CHECK: [[B_LOC:%.+]] = alloca i32,
-// CHECK: [[AGG_CAPT:%.+]] = alloca [[ANON_T]],
 // CHECK: [[BASEPTRS:%.+]] = alloca [1 x i8*],
 // CHECK: [[PTRS:%.+]] = alloca [1 x i8*],
-// CHECK: [[AGG_CAPT_GEP0:%.+]] = getelementptr {{.+}} [[ANON_T]], [[ANON_T]]* [[AGG_CAPT]], {{.+}} 0, {{.+}} 0
-// CHECK: store {{.+}}* [[B_LOC]], {{.+}}** [[AGG_CAPT_GEP0]],
+// CHECK: [[AGG_CAPT:%.+]] = alloca [[ANON_T]],
 // CHECK: [[BASEPTRS_GEP0:%.+]] = getelementptr {{.+}} [1 x i8*], [1 x i8*]* [[BASEPTRS]], {{.+}} 0, {{.+}} 0
 // CHECK: [[BASEPTRS_GEP0_CAST:%.+]] = bitcast i8** [[BASEPTRS_GEP0]] to i32**
 // CHECK: store {{.+}}* [[B_LOC]], {{.+}}** [[BASEPTRS_GEP0_CAST]],
@@ -40,7 +38,9 @@ int main() {
 // CHECK: store {{.+}}* [[B_LOC]], {{.+}}** [[PTRS_GEP0_CAST]],
 // CHECK: [[BASEPTRS_TOCPY:%.+]] = getelementptr {{.+}} [1 x i8*], [1 x i8*]* [[BASEPTRS]], {{.+}} 0, {{.+}} 0
 // CHECK: [[PTRS_TOCPY:%.+]] = getelementptr {{.+}} [1 x i8*], [1 x i8*]* [[PTRS]], {{.+}} 0, {{.+}} 0
-// CHECK: [[TASK_TV_I8:%.+]] = call {{.+}} @__kmpc_omp_target_task_alloc({{.+}}, {{.+}}, {{.+}}, {{.+}}, {{.+}}, {{.+}} [[OMP_T_OULINED:@.+]] to {{.+}}, {{.+}}) 
+// CHECK: [[AGG_CAPT_GEP0:%.+]] = getelementptr {{.+}} [[ANON_T]], [[ANON_T]]* [[AGG_CAPT]], {{.+}} 0, {{.+}} 0
+// CHECK: store {{.+}}* [[B_LOC]], {{.+}}** [[AGG_CAPT_GEP0]],
+// CHECK: [[TASK_TV_I8:%.+]] = call {{.+}} @__kmpc_omp_task_alloc({{.+}}, {{.+}}, {{.+}}, {{.+}}, {{.+}}, {{.+}} [[OMP_T_OULINED:@.+]] to {{.+}}, {{.+}})
 // CHECK: [[TASK_TVAR:%.+]] = bitcast i8* [[TASK_TV_I8]] to [[TASK_T_PRIV]]*
 
 // COPY captured argument array in task shareds
@@ -68,7 +68,8 @@ int main() {
 // CHECK: [[TASK_PRIV_GEP2_CAST:%.+]] = bitcast [1 x i[[SZ]]]* [[TASK_PRIV_GEP2]] to i8*
 // CHECK: call void @llvm.memcpy.{{.+}}(i8* [[TASK_PRIV_GEP2_CAST]], i8* bitcast ([1 x i[[SZ]]]* [[SIZES]] to i8*), {{.+}})
 
-// CHECK: {{.+}} = call {{.+}} @__kmpc_omp_task_with_deps({{.+}})
+// CHECK: {{.+}} = call {{.+}} @__kmpc_omp_task_with_deps(%ident_t* @0, i32 [[GTID:%[^,]+]], {{.+}})
+// CHECK: call i32 @__kmpc_omp_taskwait(%ident_t* @0, i32 [[GTID]])
 // CHECK: ret {{.+}}
 // CHECK: }
 

@@ -907,7 +907,11 @@ static bool onlyOneStmt(const Stmt *Body) {
 // check for inner (nested) SPMD teams construct, if any
 static bool hasNestedTeamsSPMDDirective(const OMPExecutableDirective &D,
                                         bool tryCombineAggressively) {
-  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *PCS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    PCS = cast<CapturedStmt>(PCS->getCapturedStmt());
+  const CapturedStmt &CS = *PCS;
 
   if (auto *NestedDir = dyn_cast_or_null<OMPExecutableDirective>(
           ignoreCompoundStmts(CS.getCapturedStmt()))) {
@@ -941,7 +945,11 @@ static bool hasNestedTeamsSPMDDirective(const OMPExecutableDirective &D,
 static const OMPExecutableDirective *
 getNestedTeamsSPMDDirective(const OMPExecutableDirective &D,
                             bool tryCombineAggressively) {
-  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *PCS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    PCS = cast<CapturedStmt>(PCS->getCapturedStmt());
+  const CapturedStmt &CS = *PCS;
 
   if (auto *NestedDir = dyn_cast_or_null<OMPExecutableDirective>(
           ignoreCompoundStmts(CS.getCapturedStmt()))) {
@@ -1234,7 +1242,10 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setMasterSharedDataSize() {
     return;
 
   auto &C = CGM.getContext();
-  auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    CS = cast<CapturedStmt>(CS->getCapturedStmt());
 
   // First get private variables inferred from the target directive's clauses.
   llvm::DenseSet<const VarDecl *> PrivateDecls;
@@ -1303,7 +1314,10 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setMasterSharedDataSize() {
 
   llvm::SmallSet<const VarDecl *, 32> AlreadySharedDecls;
   for (auto *Dir : DSDirectives) {
-    const CapturedStmt *CS = cast<CapturedStmt>(Dir->getAssociatedStmt());
+    const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+    if (Dir->hasClausesOfKind<OMPDependClause>() &&
+        isOpenMPTargetExecutionDirective(Dir->getDirectiveKind()))
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
     const RecordDecl *RD = CS->getCapturedRecordDecl();
     auto CurField = RD->field_begin();
     auto CurCap = CS->capture_begin();
@@ -1404,7 +1418,11 @@ getTeamsDirective(const CodeGenModule &CGM, const OMPExecutableDirective &D) {
   switch (D.getDirectiveKind()) {
   case OMPD_target:
   case OMPD_target_simd: {
-    const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+    const auto *PCS = cast<CapturedStmt>(D.getAssociatedStmt());
+    if (D.hasClausesOfKind<OMPDependClause>() &&
+        isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+      PCS = cast<CapturedStmt>(PCS->getCapturedStmt());
+    const CapturedStmt &CS = *PCS;
     if (auto *NestedDir = dyn_cast_or_null<OMPExecutableDirective>(
             ignoreCompoundStmts(CS.getCapturedStmt())))
       return NestedDir;
@@ -2322,7 +2340,10 @@ CGOpenMPRuntimeNVPTX::outlineTargetDirective(const OMPExecutableDirective &D,
   //
   CodeGenFunction WrapperCGF(CGM, /*suppressNewContext=*/true);
   auto &Ctx = WrapperCGF.getContext();
-  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *PCS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>())
+    PCS = cast<CapturedStmt>(PCS->getCapturedStmt());
+  const CapturedStmt &CS = *PCS;
   // When a target region has a depend clause, generate a new task
   // that contains the target region invocation, instead of generating it in
   // place. The task will take care of the depend logic.
@@ -2903,7 +2924,10 @@ llvm::Value *CGOpenMPRuntimeNVPTX::emitParallelOutlinedFunction(
     // Call to a parallel that is not combined with a teams or target
     // directive (non SPMD).
     // This could also be a nested 'parallel' in an SPMD region.
-    const CapturedStmt *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+    const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+    if (D.hasClausesOfKind<OMPDependClause>() &&
+        isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
     CodeGenFunction CGF(CGM, true);
     bool HasCancel = false;
     if (auto *OPD = dyn_cast<OMPParallelDirective>(&D))
@@ -2941,7 +2965,10 @@ llvm::Value *CGOpenMPRuntimeNVPTX::emitSimdOutlinedFunction(
     const RegionCodeGenTy &CodeGen) {
   llvm::Function *OutlinedFun = nullptr;
 
-  const CapturedStmt *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    CS = cast<CapturedStmt>(CS->getCapturedStmt());
 
   // Save the current parallel context because it may be overwritten by the
   // innermost regions.
@@ -3077,7 +3104,10 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
   llvm::SmallSet<const VarDecl *, 32> AlreadySharedDecls;
   ASTContext &Ctx = CGF.getContext();
   for (auto *Dir : CapturedDirs) {
-    const CapturedStmt *CS = cast<CapturedStmt>(Dir->getAssociatedStmt());
+    const auto *CS = cast<CapturedStmt>(Dir->getAssociatedStmt());
+    if (Dir->hasClausesOfKind<OMPDependClause>() &&
+        isOpenMPTargetExecutionDirective(Dir->getDirectiveKind()))
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
     const RecordDecl *RD = CS->getCapturedRecordDecl();
     auto CurField = RD->field_begin();
     auto CurCap = CS->capture_begin();
@@ -3626,7 +3656,11 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     llvm::Function &OutlinedParallelFn, const OMPExecutableDirective &D,
     const Decl *CurrentContext, bool IsSimd) {
   auto &Ctx = CGM.getContext();
-  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *PCS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    PCS = cast<CapturedStmt>(PCS->getCapturedStmt());
+  const CapturedStmt &CS = *PCS;
 
   // Create a function that takes as argument the source lane.
   FunctionArgList WrapperArgs;
@@ -4027,8 +4061,7 @@ void CGOpenMPRuntimeNVPTX::emitGenericParallelCall(
   createDataSharingPerFunctionInfrastructure(CGF);
 
   auto *RTLoc = emitUpdateLocation(CGF, Loc);
-  auto &&L0ParallelGen = [this, WFn, &CapturedVars](CodeGenFunction &CGF,
-                                                    PrePostActionTy &) {
+  auto &&L0ParallelGen = [this, WFn](CodeGenFunction &CGF, PrePostActionTy &) {
     CGBuilderTy &Bld = CGF.Builder;
 
     auto ID = Bld.CreateBitOrPointerCast(WFn, CGM.Int8PtrTy);
@@ -4218,10 +4251,7 @@ void CGOpenMPRuntimeNVPTX::emitSimdCall(CodeGenFunction &CGF,
   // function.
   createDataSharingPerFunctionInfrastructure(CGF);
 
-  auto *RTLoc = emitUpdateLocation(CGF, Loc);
-
-  auto &&L1SimdGen = [this, WFn, RTLoc, Loc](CodeGenFunction &CGF,
-                                             PrePostActionTy &) {
+  auto &&L1SimdGen = [this, WFn](CodeGenFunction &CGF, PrePostActionTy &) {
     CGBuilderTy &Bld = CGF.Builder;
     clang::ASTContext &Ctx = CGF.getContext();
 
@@ -4647,8 +4677,11 @@ void CGOpenMPRuntimeNVPTX::emitTeamsCall(CodeGenFunction &CGF,
       CGF.EmitOMPPrivateClause(D, PrivateScope);
       CGF.EmitOMPReductionClauseInit(D, PrivateScope);
       (void)PrivateScope.Privatize();
-      CGF.EmitStmt(
-          cast<CapturedStmt>(D.getAssociatedStmt())->getCapturedStmt());
+      const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+      if (D.hasClausesOfKind<OMPDependClause>() &&
+          isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+        CS = cast<CapturedStmt>(CS->getCapturedStmt());
+      CGF.EmitStmt(CS->getCapturedStmt());
       CGF.EmitOMPReductionClauseFinal(D, OMPD_teams);
     };
 
