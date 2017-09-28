@@ -4917,18 +4917,6 @@ Tool *DragonFly::buildLinker() const {
 /// which isn't properly a linker but nonetheless performs the step of stitching
 /// together object files from the assembler into a single blob.
 
-// Define the default compute capability for OpenMP and create a stringification
-// macro for it.
-#ifndef OPENMP_NVPTX_COMPUTE_CAPABILITY
-#define OPENMP_NVPTX_COMPUTE_CAPABILITY 35
-#endif
-
-#define OPENMP_NVPTX_COMPUTE_CAPABILITY_STRT1(X) #X
-#define OPENMP_NVPTX_COMPUTE_CAPABILITY_STRT2(X)                               \
-  OPENMP_NVPTX_COMPUTE_CAPABILITY_STRT1(X)
-#define OPENMP_NVPTX_COMPUTE_CAPABILITY_STR                                    \
-  "sm_" OPENMP_NVPTX_COMPUTE_CAPABILITY_STRT2(OPENMP_NVPTX_COMPUTE_CAPABILITY)
-
 CudaToolChain::CudaToolChain(const Driver &D, const llvm::Triple &Triple,
                              const ToolChain &HostTC, const ArgList &Args)
     : ToolChain(D, Triple, Args), HostTC(HostTC),
@@ -5063,9 +5051,12 @@ CudaToolChain::TranslateArgs(const llvm::opt::DerivedArgList &Args,
     for (Arg *A : Args)
       DAL->append(A);
 
-    // FIXME: get the right arch from the offloading arguments.
-    DAL->AddJoinedArg(nullptr, Opts.getOption(options::OPT_march_EQ),
-                      OPENMP_NVPTX_COMPUTE_CAPABILITY_STR);
+    StringRef Arch = DAL->getLastArgValue(options::OPT_march_EQ);
+    if (Arch.empty()) {
+      DAL->AddJoinedArg(nullptr, Opts.getOption(options::OPT_march_EQ),
+                        CLANG_OPENMP_NVPTX_DEFAULT_ARCH);
+    }
+
     return DAL;
   }
 
