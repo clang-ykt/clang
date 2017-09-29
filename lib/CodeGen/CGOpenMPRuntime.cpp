@@ -7391,20 +7391,9 @@ void CGOpenMPRuntime::emitTargetCall(
   // Check if directive has depend clause
   bool hasDepend = D.hasClausesOfKind<OMPDependClause>();
 
-  auto &Ctx = CGF.getContext();
-
-  // Keep track on whether the host function has to be executed.
-  auto OffloadErrorQType =
-      Ctx.getIntTypeForBitwidth(/*DestWidth=*/32, /*Signed=*/true);
-  auto OffloadError = CGF.MakeAddrLValue(
-      CGF.CreateMemTemp(OffloadErrorQType, ".run_host_version"),
-      OffloadErrorQType);
-  CGF.EmitStoreOfScalar(llvm::Constant::getNullValue(CGM.Int32Ty),
-                        OffloadError);
-
   // Fill up the pointer arrays and transfer execution to the device.
-  auto &&ThenGen = [this, &Ctx, Device, OutlinedFnID, OffloadError,
-                    OffloadErrorQType, &D, hasNowait, &MapArrays, hasDepend,
+  auto &&ThenGen = [this, Device, OutlinedFn, OutlinedFnID, &D, hasNowait,
+                    &MapArrays, hasDepend,
                     &Data](CodeGenFunction &CGF, PrePostActionTy &) {
     auto &RT = CGF.CGM.getOpenMPRuntime();
 
@@ -7529,13 +7518,27 @@ void CGOpenMPRuntime::emitTargetCall(
             RT.createRuntimeFunction(OMPRTL__tgt_target), OffloadingArgs);
     }
 
-    CGF.EmitStoreOfScalar(Return, OffloadError);
+    // Check the error code and execute the host version if required.
+    llvm::BasicBlock *OffloadFailedBlock =
+        CGF.createBasicBlock("omp_offload.failed");
+    llvm::BasicBlock *OffloadContBlock =
+        CGF.createBasicBlock("omp_offload.cont");
+    llvm::Value *Failed = CGF.Builder.CreateIsNotNull(Return);
+    CGF.Builder.CreateCondBr(Failed, OffloadFailedBlock, OffloadContBlock);
+
+    CGF.EmitBlock(OffloadFailedBlock);
+    emitOutlinedFunctionCall(CGF, D.getLocStart(), OutlinedFn,
+                             MapArrays.KernelArgs);
+    CGF.EmitBranch(OffloadContBlock);
+
+    CGF.EmitBlock(OffloadContBlock, /*IsFinished=*/true);
   };
 
   // Notify that the host version must be executed.
-  auto &&ElseGen = [OffloadError](CodeGenFunction &CGF, PrePostActionTy &) {
-    CGF.EmitStoreOfScalar(llvm::ConstantInt::get(CGF.Int32Ty, /*V=*/-1u),
-                          OffloadError);
+  auto &&ElseGen = [this, &D, OutlinedFn, &MapArrays](CodeGenFunction &CGF,
+                                                      PrePostActionTy &) {
+    emitOutlinedFunctionCall(CGF, D.getLocStart(), OutlinedFn,
+                             MapArrays.KernelArgs);
   };
 
   // If we have a target function ID it means that we need to support
@@ -7553,20 +7556,6 @@ void CGOpenMPRuntime::emitTargetCall(
     RegionCodeGenTy ElseRCG(ElseGen);
     ElseRCG(CGF);
   }
-
-  // Check the error code and execute the host version if required.
-  auto OffloadFailedBlock = CGF.createBasicBlock("omp_offload.failed");
-  auto OffloadContBlock = CGF.createBasicBlock("omp_offload.cont");
-  auto OffloadErrorVal = CGF.EmitLoadOfScalar(OffloadError, SourceLocation());
-  auto Failed = CGF.Builder.CreateIsNotNull(OffloadErrorVal);
-  CGF.Builder.CreateCondBr(Failed, OffloadFailedBlock, OffloadContBlock);
-
-  CGF.EmitBlock(OffloadFailedBlock);
-  emitOutlinedFunctionCall(CGF, D.getLocStart(), OutlinedFn,
-                           MapArrays.KernelArgs);
-  CGF.EmitBranch(OffloadContBlock);
-
-  CGF.EmitBlock(OffloadContBlock, /*IsFinished=*/true);
 }
 
 /// \brief Return the declare target attribute if the declaration is marked as

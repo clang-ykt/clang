@@ -4337,10 +4337,8 @@ void CodeGenFunction::EmitOMPTargetDirective(const OMPTargetDirective &S) {
 
   llvm::SmallVector<llvm::Value *, 16> CapturedVars;
   OMPMapArrays MapArrays;
-  {
-    OMPLexicalScope TaskScope(*this, S, true);
-    generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
-  }
+  OMPLexicalScope TaskScope(*this, S, true);
+  generateCapturedVarsAndMapArrays(*this, S, CapturedVars, MapArrays);
   if (S.hasClausesOfKind<OMPDependClause>()) {
     OMPTaskDataTy Data;
 
