@@ -4962,6 +4962,16 @@ void CudaToolChain::addClangTargetOptions(
       CC1Args.push_back("-fcuda-approx-transcendentals");
   }
 
+  bool ForcedPTXVersion = false;
+  if (DeviceOffloadingKind == Action::OFK_OpenMP &&
+      DriverArgs.hasArg(options::OPT_fopenmp_ptx_EQ)) {
+    // Use the PTX version that the user specified.
+    const Arg *A = DriverArgs.getLastArg(options::OPT_fopenmp_ptx_EQ);
+    CC1Args.push_back("-target-feature");
+    CC1Args.push_back(A->getValue());
+    ForcedPTXVersion = true;
+  }
+
   if (DriverArgs.hasArg(options::OPT_nocudalib))
     return;
 
@@ -4981,22 +4991,18 @@ void CudaToolChain::addClangTargetOptions(
   CC1Args.push_back("-mlink-cuda-bitcode");
   CC1Args.push_back(DriverArgs.MakeArgString(LibDeviceFile));
 
-  if (DeviceOffloadingKind == Action::OFK_OpenMP &&
-      DriverArgs.hasArg(options::OPT_fopenmp_ptx_EQ)) {
-    // Use the PTX version that the user specified.
-    const Arg *A = DriverArgs.getLastArg(options::OPT_fopenmp_ptx_EQ);
-    CC1Args.push_back("-target-feature");
-    CC1Args.push_back(A->getValue());
-  } else if (CudaInstallation.version() >= CudaVersion::CUDA_90) {
-    // CUDA-9 uses new instructions that are only available in PTX6.0
-    CC1Args.push_back("-target-feature");
-    CC1Args.push_back("+ptx60");
-  } else {
-    // Libdevice in CUDA-7.0 requires PTX version that's more recent
-    // than LLVM defaults to. Use PTX4.2 which is the PTX version that
-    // came with CUDA-7.0.
-    CC1Args.push_back("-target-feature");
-    CC1Args.push_back("+ptx42");
+  if (!ForcedPTXVersion) {
+    if (CudaInstallation.version() >= CudaVersion::CUDA_90) {
+      // CUDA-9 uses new instructions that are only available in PTX6.0
+      CC1Args.push_back("-target-feature");
+      CC1Args.push_back("+ptx60");
+    } else {
+      // Libdevice in CUDA-7.0 requires PTX version that's more recent
+      // than LLVM defaults to. Use PTX4.2 which is the PTX version that
+      // came with CUDA-7.0.
+      CC1Args.push_back("-target-feature");
+      CC1Args.push_back("+ptx42");
+    }
   }
 
   if (DeviceOffloadingKind == Action::OFK_OpenMP) {

@@ -592,13 +592,23 @@
 
 /// ###########################################################################
 
-/// Check PTX version is passed from the driver.
-// RUN:   %clang -### -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda -fopenmp-ptx=+ptx52 -save-temps -no-canonical-prefixes %s 2>&1 \
-// RUN:   | FileCheck -check-prefix=CHK-PTXAS-VERSION %s
+/// Check PTX version is passed from the driver with -nocudalib.
+// RUN:   %clang -### -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda -nocudalib -fopenmp-ptx=+ptx52 -save-temps -no-canonical-prefixes %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-PTX-VERSION-NOCUDALIB %s
 
-// CHK-PTXAS-VERSION: clang{{.*}}.bc" {{.*}}"-target-feature" "+ptx52"
-// CHK-PTXAS-VERSION-NEXT: clang{{.*}}.bc" {{.*}}"-target-feature" "+ptx52"
-// CHK-PTXAS-VERSION-NEXT: clang{{.*}}.bc" {{.*}}"-target-feature" "+ptx52"
+// CHK-PTX-VERSION-NOCUDALIB: clang{{.*}} "-E" {{.*}}"-target-feature" "+ptx52"
+// CHK-PTX-VERSION-NOCUDALIB-NEXT: clang{{.*}} "-emit-llvm-bc" {{.*}}"-target-feature" "+ptx52"
+// CHK-PTX-VERSION-NOCUDALIB-NEXT: clang{{.*}} "-S" {{.*}}"-target-feature" "+ptx52"
+
+/// ###########################################################################
+
+/// Check PTX version is passed once without -nocudalib.
+// RUN:   %clang -### -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda -nocudalib -fopenmp-ptx=+ptx52 -no-canonical-prefixes %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-PTX-VERSION-ONCE %s
+
+// CHK-PTX-VERSION-ONCE-NOT: "-target-feature" "+ptx"
+// CHK-PTX-VERSION-ONCE: "-target-feature" "+ptx52"
+// CHK-PTX-VERSION-ONCE-NOT: "-target-feature" "+ptx"
 
 /// ###########################################################################
 
