@@ -60,6 +60,8 @@ const OMPClauseWithPreInit *OMPClauseWithPreInit::get(const OMPClause *C) {
     return static_cast<const OMPTaskReductionClause *>(C);
   case OMPC_in_reduction:
     return static_cast<const OMPInReductionClause *>(C);
+  case OMPC_device:
+    return static_cast<const OMPDeviceClause *>(C);
   case OMPC_default:
   case OMPC_proc_bind:
   case OMPC_final:
@@ -84,7 +86,6 @@ const OMPClauseWithPreInit *OMPClauseWithPreInit::get(const OMPClause *C) {
   case OMPC_capture:
   case OMPC_seq_cst:
   case OMPC_depend:
-  case OMPC_device:
   case OMPC_threads:
   case OMPC_simd:
   case OMPC_map:

@@ -10784,6 +10784,7 @@ OMPClause *Sema::ActOnOpenMPDeviceClause(Expr *Device, SourceLocation StartLoc,
                                          SourceLocation LParenLoc,
                                          SourceLocation EndLoc) {
   Expr *ValExpr = Device;
+  Stmt *HelperValStmt = nullptr;
 
   // OpenMP [2.9.1, Restrictions]
   // The device expression must evaluate to a non-negative integer value.
@@ -10791,7 +10792,16 @@ OMPClause *Sema::ActOnOpenMPDeviceClause(Expr *Device, SourceLocation StartLoc,
                                  /*StrictlyPositive=*/false))
     return nullptr;
 
-  return new (Context) OMPDeviceClause(ValExpr, StartLoc, LParenLoc, EndLoc);
+  OpenMPDirectiveKind DKind = DSAStack->getCurrentDirective();
+  if (isOpenMPTargetExecutionDirective(DKind) &&
+      !CurContext->isDependentContext()) {
+    llvm::MapVector<Expr *, DeclRefExpr *> Captures;
+    ValExpr = tryBuildCapture(*this, ValExpr, Captures).get();
+    HelperValStmt = buildPreInits(Context, Captures);
+  }
+
+  return new (Context)
+      OMPDeviceClause(ValExpr, HelperValStmt, StartLoc, LParenLoc, EndLoc);
 }
 
 static bool CheckTypeMappable(SourceLocation SL, SourceRange SR, Sema &SemaRef,

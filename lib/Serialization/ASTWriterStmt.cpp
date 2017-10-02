@@ -2052,6 +2052,7 @@ void OMPClauseWriter::VisitOMPDependClause(OMPDependClause *C) {
 }
 
 void OMPClauseWriter::VisitOMPDeviceClause(OMPDeviceClause *C) {
+  VisitOMPClauseWithPreInit(C);
   Record.AddStmt(C->getDevice());
   Record.AddSourceLocation(C->getLParenLoc());
 }
