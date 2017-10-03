@@ -2567,6 +2567,10 @@ StmtResult Sema::ActOnOpenMPRegionEnd(StmtResult S,
       // Mark all variables in private list clauses as used in inner region.
       // Required for proper codegen of combined directives.
       // TODO: add processing for other clauses.
+      // Arguments of the device clause should be captured in parallel regions
+      // in target-based combined constructs.
+      if (Clause->getClauseKind() == OMPC_device)
+        continue;
       if (auto *C = OMPClauseWithPreInit::get(Clause)) {
         if (auto *DS = cast_or_null<DeclStmt>(C->getPreInitStmt())) {
           for (auto *D : DS->decls())
@@ -7703,6 +7707,9 @@ static unsigned getOpenMPCaptureLevel(OpenMPDirectiveKind DKind,
     switch (DKind) {
     case OMPD_target_teams_distribute_parallel_for:
     case OMPD_target_teams_distribute_parallel_for_simd:
+    case OMPD_target_parallel:
+    case OMPD_target_parallel_for:
+    case OMPD_target_parallel_for_simd:
       return 2;
     default:
       return 1;
