@@ -7625,12 +7625,24 @@ void CGOpenMPRuntime::emitTargetCall(
   };
   auto &&TaskThenGen = [this, &D, &ThenGen, &TaskGen, hasNowait,
                         &Data](CodeGenFunction &CGF, PrePostActionTy &) {
+    // Clear list of dependecies and firstprivates because we're reusing the
+    // same Data for 2 different codegens.
+    Data.Dependences.clear();
+    Data.FirstprivateVars.clear();
+    Data.FirstprivateInits.clear();
+    Data.FirstprivateCopies.clear();
     CGF.EmitOMPTaskBasedDirective(D, ThenGen, TaskGen, Data);
     if (!hasNowait)
       emitTaskwaitCall(CGF, D.getLocStart());
   };
   auto &&TaskElseGen = [this, &D, &ElseGen, &TaskGen, hasNowait,
                         &Data](CodeGenFunction &CGF, PrePostActionTy &) {
+    // Clear list of dependecies and firstprivates because we're reusing the
+    // same Data for 2 different codegens.
+    Data.Dependences.clear();
+    Data.FirstprivateVars.clear();
+    Data.FirstprivateInits.clear();
+    Data.FirstprivateCopies.clear();
     CGF.EmitOMPTaskBasedDirective(D, ElseGen, TaskGen, Data);
     if (!hasNowait)
       emitTaskwaitCall(CGF, D.getLocStart());
