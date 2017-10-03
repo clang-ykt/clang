@@ -137,6 +137,20 @@ struct SSSt {
 // CHECK: #pragma omp end declare target
 // CHECK: int b;
 
+template <class T>
+struct SSSTt {
+#pragma omp declare target
+  static T a;
+  int b;
+#pragma omp end declare target
+};
+
+// CHECK: template <class T> struct SSSTt {
+// CHECK: #pragma omp declare target
+// CHECK: static T a;
+// CHECK: #pragma omp end declare target
+// CHECK: int b;
+
 int main (int argc, char **argv) {
   foo();
   foo_c();
