@@ -843,6 +843,9 @@ public:
   const Stmt *getBody() const {
     // This relies on the loop form is already checked by Sema.
     Stmt *Body = getAssociatedStmt()->IgnoreContainers(true);
+    if (isOpenMPTargetExecutionDirective(getDirectiveKind()) &&
+        hasClausesOfKind<OMPDependClause>())
+      Body = Body->IgnoreContainers(/*IgnoreCaptured=*/true);
     Body = cast<ForStmt>(Body)->getBody();
     for (unsigned Cnt = 1; Cnt < CollapsedNum; ++Cnt) {
       Body = Body->IgnoreContainers();
