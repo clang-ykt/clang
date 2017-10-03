@@ -124,6 +124,19 @@ void f3() {
 // CHECK: void f3()
 // CHECK: #pragma omp end declare target
 
+struct SSSt {
+#pragma omp declare target
+  static int a;
+  int b;
+#pragma omp end declare target
+};
+
+// CHECK: struct SSSt {
+// CHECK: #pragma omp declare target
+// CHECK: static int a;
+// CHECK: #pragma omp end declare target
+// CHECK: int b;
+
 int main (int argc, char **argv) {
   foo();
   foo_c();
