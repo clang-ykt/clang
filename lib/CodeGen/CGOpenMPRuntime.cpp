@@ -5165,15 +5165,29 @@ CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
           : CGF.Builder.getInt32(Data.Final.getInt() ? FinalFlag : 0);
   TaskFlags = CGF.Builder.CreateOr(TaskFlags, CGF.Builder.getInt32(Flags));
   auto *SharedsSize = CGM.getSize(C.getTypeSizeInChars(SharedsTy));
-  llvm::Value *AllocArgs[] = {emitUpdateLocation(CGF, Loc),
-                              getThreadID(CGF, Loc),
-                              TaskFlags,
-                              KmpTaskTWithPrivatesTySize,
-                              SharedsSize,
-                              CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
-                                  TaskEntry, KmpRoutineEntryPtrTy)};
-  llvm::CallInst *NewTask = CGF.EmitRuntimeCall(
-      createRuntimeFunction(OMPRTL__kmpc_omp_task_alloc), AllocArgs);
+  llvm::CallInst *NewTask;
+  if (Data.DeviceId) {
+    llvm::Value *AllocArgs[] = {emitUpdateLocation(CGF, Loc),
+                                getThreadID(CGF, Loc),
+                                TaskFlags,
+                                KmpTaskTWithPrivatesTySize,
+                                SharedsSize,
+                                CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
+                                    TaskEntry, KmpRoutineEntryPtrTy),
+                                Data.DeviceId};
+    NewTask = CGF.EmitRuntimeCall(
+        createRuntimeFunction(OMPRTL__kmpc_tgt_target_task_alloc), AllocArgs);
+  } else {
+    llvm::Value *AllocArgs[] = {emitUpdateLocation(CGF, Loc),
+                                getThreadID(CGF, Loc),
+                                TaskFlags,
+                                KmpTaskTWithPrivatesTySize,
+                                SharedsSize,
+                                CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
+                                    TaskEntry, KmpRoutineEntryPtrTy)};
+    NewTask = CGF.EmitRuntimeCall(
+        createRuntimeFunction(OMPRTL__kmpc_omp_task_alloc), AllocArgs);
+  }
   auto *NewTaskNewTaskTTy = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
       NewTask, KmpTaskTWithPrivatesPtrTy);
   LValue Base = CGF.MakeNaturalAlignAddrLValue(NewTaskNewTaskTTy,
@@ -7425,6 +7439,13 @@ void CGOpenMPRuntime::emitTargetCall(
     Data.TargetArrays[OMPTaskDataTy::OMP_PTRS] = Info.PointersArray;
     Data.TargetArrays[OMPTaskDataTy::OMP_SIZES] = Info.SizesArray;
     Data.NumberOfPointers = Info.NumberOfPtrs;
+    // Emit device ID if any.
+    if (Device) {
+      Data.DeviceId = CGF.Builder.CreateIntCast(CGF.EmitScalarExpr(Device),
+                                                CGF.Int64Ty, /*isSigned=*/true);
+    } else {
+      Data.DeviceId = CGF.Builder.getInt64(OMP_DEVICEID_UNDEF);
+    }
   }
 
   // Fill up the pointer arrays and transfer execution to the device.

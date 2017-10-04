@@ -40,7 +40,7 @@ int main() {
 // CHECK: [[PTRS_TOCPY:%.+]] = getelementptr {{.+}} [1 x i8*], [1 x i8*]* [[PTRS]], {{.+}} 0, {{.+}} 0
 // CHECK: [[AGG_CAPT_GEP0:%.+]] = getelementptr {{.+}} [[ANON_T]], [[ANON_T]]* [[AGG_CAPT]], {{.+}} 0, {{.+}} 0
 // CHECK: store {{.+}}* [[B_LOC]], {{.+}}** [[AGG_CAPT_GEP0]],
-// CHECK: [[TASK_TV_I8:%.+]] = call {{.+}} @__kmpc_omp_task_alloc({{.+}}, {{.+}}, {{.+}}, {{.+}}, {{.+}}, {{.+}} [[OMP_T_OULINED:@.+]] to {{.+}}, {{.+}})
+// CHECK: [[TASK_TV_I8:%.+]] = call {{.+}} @__kmpc_omp_target_task_alloc({{.+}}, {{.+}}, {{.+}}, {{.+}}, {{.+}}, {{.+}} [[OMP_T_OULINED:@.+]] to {{.+}}, {{.+}})
 // CHECK: [[TASK_TVAR:%.+]] = bitcast i8* [[TASK_TV_I8]] to [[TASK_T_PRIV]]*
 
 // COPY captured argument array in task shareds

@@ -107,6 +107,7 @@ struct OMPTaskDataTy final {
   ImplicitParamDecl
       *FirstprivateRefsSimpleArrayImplicit[OMP_TARGET_ARG_NUMBER] = {nullptr};
   llvm::Value *TargetArrays[OMP_TARGET_ARG_NUMBER] = {nullptr};
+  llvm::Value *DeviceId = nullptr;
   unsigned NumberOfPointers = 0;
   SmallVector<const Expr *, 4> LastprivateVars;
   SmallVector<const Expr *, 4> LastprivateCopies;
