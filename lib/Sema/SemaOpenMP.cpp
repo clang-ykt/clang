@@ -2041,7 +2041,7 @@ public:
     if (auto *VD = dyn_cast<VarDecl>(E->getDecl())) {
       VD = VD->getCanonicalDecl();
       // Skip internally declared variables.
-      if (VD->isLocalVarDecl() && !CS->capturesVariable(VD))
+      if (VD->hasLocalStorage() && !CS->capturesVariable(VD))
         return;
 
       auto DVar = Stack->getTopDSA(VD, false);
@@ -2085,20 +2085,16 @@ public:
                                            MC.getAssociatedExpression()));
                              });
                 })) {
-          bool CapturedByCopy = false;
+          bool IsFirstprivate = false;
           // By default lambdas are captured as firstprivates.
           if (const auto *RD =
                   VD->getType().getNonReferenceType()->getAsCXXRecordDecl())
-            if (RD->isLambda())
-              CapturedByCopy = true;
-          CapturedByCopy =
-              CapturedByCopy ||
-              llvm::any_of(
-                  CS->captures(), [VD](const CapturedStmt::Capture &I) {
-                    return I.capturesVariableByCopy() &&
-                           I.getCapturedVar()->getCanonicalDecl() == VD;
-                  });
-          if (CapturedByCopy)
+            IsFirstprivate = RD->isLambda();
+          IsFirstprivate =
+              IsFirstprivate ||
+              (VD->getType().getNonReferenceType()->isScalarType() &&
+               !Stack->isDefaultMapToFromAtLevel(Stack->getNestingLevel()));
+          if (IsFirstprivate)
             ImplicitFirstprivate.emplace_back(E);
           else
             ImplicitlyMappedVars.emplace_back(E);
