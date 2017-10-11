@@ -5090,9 +5090,22 @@ CGOpenMPRuntime::TaskResultTy CGOpenMPRuntime::emitTaskInit(
   // Build type kmp_routine_entry_t (if not built yet).
   emitKmpRoutineEntryT(KmpInt32Ty);
   // Build type kmp_task_t (if not built yet).
-  if (KmpTaskTQTy.isNull()) {
-    KmpTaskTQTy = C.getRecordType(createKmpTaskTRecordDecl(
-        CGM, D.getDirectiveKind(), KmpInt32Ty, KmpRoutineEntryPtrQTy));
+  if (isOpenMPTaskLoopDirective(D.getDirectiveKind())) {
+    if (SavedKmpTaskloopTQTy.isNull()) {
+      SavedKmpTaskloopTQTy = C.getRecordType(createKmpTaskTRecordDecl(
+          CGM, D.getDirectiveKind(), KmpInt32Ty, KmpRoutineEntryPtrQTy));
+    }
+    KmpTaskTQTy = SavedKmpTaskloopTQTy;
+  } else {
+    assert((D.getDirectiveKind() == OMPD_task ||
+            isOpenMPTargetExecutionDirective(D.getDirectiveKind())) &&
+           "Expected taskloop, task or target-based directive with depend "
+           "clauses.");
+    if (SavedKmpTaskTQTy.isNull()) {
+      SavedKmpTaskTQTy = C.getRecordType(createKmpTaskTRecordDecl(
+          CGM, D.getDirectiveKind(), KmpInt32Ty, KmpRoutineEntryPtrQTy));
+    }
+    KmpTaskTQTy = SavedKmpTaskTQTy;
   }
   auto *KmpTaskTQTyRD = cast<RecordDecl>(KmpTaskTQTy->getAsTagDecl());
   // Build particular struct kmp_task_t for the given task.
