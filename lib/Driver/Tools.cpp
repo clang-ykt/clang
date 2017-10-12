@@ -4649,6 +4649,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     if (A->getOption().matches(options::OPT_ffinite_math_only))
       CmdArgs.push_back("-ffinite-math-only");
 
+  Args.AddLastArg(CmdArgs, options::OPT_ftrap_EQ);
+  Args.AddLastArg(CmdArgs, options::OPT_ftrap_exact);
+
   // Decide whether to use verbose asm. Verbose assembly is the default on
   // toolchains which have the integrated assembler on by default.
   bool IsIntegratedAssemblerDefault =

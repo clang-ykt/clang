@@ -791,6 +791,9 @@ def fno_trapping_math : Flag<["-"], "fno-trapping-math">, Group<f_Group>, Flags<
 def ffp_contract : Joined<["-"], "ffp-contract=">, Group<f_Group>,
   Flags<[CC1Option]>, HelpText<"Form fused FP ops (e.g. FMAs): fast (everywhere)"
   " | on (according to FP_CONTRACT pragma, default) | off (never fuse)">;
+def ftrap_EQ : Joined<["-"], "ftrap=">, Group<f_Group>,
+  Flags<[CC1Option]>, HelpText<"Determine IEEE trapping conditions. divz|fp|inexact|inv|none|ovf|unf values are acceptable">;
+def ftrap_exact : Flag<["-"], "ftrap-exact">, Group<f_Group>, Flags<[CC1Option]>;
 
 def ffor_scope : Flag<["-"], "ffor-scope">, Group<f_Group>;
 def fno_for_scope : Flag<["-"], "fno-for-scope">, Group<f_Group>;

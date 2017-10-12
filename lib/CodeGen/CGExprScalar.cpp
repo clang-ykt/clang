@@ -203,7 +203,26 @@ public:
 
   Value *Visit(Expr *E) {
     ApplyDebugLocation DL(CGF, E);
-    return StmtVisitor<ScalarExprEmitter, Value*>::Visit(E);
+    Value *Res = StmtVisitor<ScalarExprEmitter, Value*>::Visit(E);
+    // Generate float trappings.
+    if (Res && Res->getType()->isFPOrFPVectorTy() && E->isRValue() &&
+        CGF.getLangOpts().GenerateTrap &&
+        CGF.getLangOpts().GeneratePreciseTrap && CGF.CurFuncDecl &&
+        !CGF.CurFuncDecl->hasAttr<NoInstrumentFunctionAttr>()) {
+      auto DL = ApplyDebugLocation::CreateArtificial(CGF);
+      DeclContext::lookup_result Res =
+          CGF.getContext().getTranslationUnitDecl()->noload_lookup(
+              &CGF.getContext().Idents.get(
+                  "__FTRAP___INSTR__fun_12345689end_____"));
+      assert(
+          Res.size() == 1 &&
+          "Expected single __FTRAP___INSTR__fun_12345689end_____ function.");
+      llvm::Value *F =
+          CGF.CGM.GetAddrOfFunction(cast<FunctionDecl>(Res.back()));
+      // void FTRAP___INSTR__fun_12345689_____(void);
+      CGF.EmitNounwindRuntimeCall(F);
+    }
+    return Res;
   }
 
   Value *VisitStmt(Stmt *S) {
