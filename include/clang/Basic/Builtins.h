@@ -37,6 +37,7 @@ enum LanguageID {
   OBJC_LANG = 0x8,    // builtin for objective-c and objective-c++
   MS_LANG = 0x10,     // builtin requires MS mode.
   OCLC20_LANG = 0x20, // builtin for OpenCL C only.
+  OMP_LANG = 0x40,    // builtin requires OpenMP.
   ALL_LANGUAGES = C_LANG | CXX_LANG | OBJC_LANG, // builtin for all languages.
   ALL_GNU_LANGUAGES = ALL_LANGUAGES | GNU_LANG,  // builtin requires GNU mode.
   ALL_MS_LANGUAGES = ALL_LANGUAGES | MS_LANG     // builtin requires MS mode.
