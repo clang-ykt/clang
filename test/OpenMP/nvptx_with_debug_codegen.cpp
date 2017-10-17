@@ -2,7 +2,7 @@
 // RUN: %clang_cc1 -verify -fopenmp -x c++ -triple nvptx64-unknown-unknown -fopenmp-targets=nvptx64-nvidia-cuda -emit-llvm %s -fopenmp-is-device -fopenmp-host-ir-file-path %t-ppc-host.bc -o - -debug-info-kind=limited | FileCheck %s
 // expected-no-diagnostics
 
-// CHECK: , i8 addrspace(1)* noalias %
+// CHECK: , i8 addrspace(1)* noalias %{{.+}}, i1 {{.+}}
 // CHECK: , i8* noalias %
 // CHECK: , i8* dereferenceable(1) %
 // CHECK: , i8 addrspace(1)* noalias %
@@ -22,7 +22,7 @@ int main() {
   int c[10][10][10];
 #pragma omp target teams firstprivate(a, b) map(tofrom                \
                                                 : c [0:5]) map(tofrom \
-                                                               : bb)
+                                                               : bb) if (a)
 #pragma omp distribute parallel for
   for (unsigned j = 0; j < 10; ++j) {
     int &f = c[1][1][1];
