@@ -197,6 +197,7 @@ LANGOPT(OpenMPCombineDirs , 1, 0, " perform more aggressively Dirs combination t
 LANGOPT(OpenMPIgnoreUnmappableTypes , 1, 0, "Ignore unmappable types durign OpenMP map checks.")
 LANGOPT(GenerateTrap , 1, 0, "Generate trapping function calls if -ftrap option is provided.")
 LANGOPT(GeneratePreciseTrap , 1, 0, "Generate trapping function calls if -ftrap option is provided for all expressions.")
+LANGOPT(NansInject , 1, 0, "Inject NaN values as initial values for floating point allocas.")
 LANGOPT(RenderScript      , 1, 0, "RenderScript")
 
 LANGOPT(CUDAIsDevice      , 1, 0, "compiling for CUDA device")

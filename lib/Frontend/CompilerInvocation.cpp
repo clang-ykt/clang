@@ -2246,6 +2246,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
 
   Opts.GeneratePreciseTrap = Args.getLastArg(options::OPT_ftrap_exact) &&
                              Opts.GenerateTrap;
+  Opts.NansInject = Args.hasArg(options::OPT_fnans_inject);
 
   // Get the OpenMP target triples if any.
   if (Arg *A = Args.getLastArg(options::OPT_fopenmp_targets_EQ)) {

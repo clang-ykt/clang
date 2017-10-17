@@ -4654,6 +4654,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   Args.AddLastArg(CmdArgs, options::OPT_ftrap_EQ);
   Args.AddLastArg(CmdArgs, options::OPT_ftrap_exact);
+  if (Args.hasArg(options::OPT_fnans_inject)) {
+    Args.AddLastArg(CmdArgs, options::OPT_fnans_inject);
+    CmdArgs.push_back("-mllvm");
+    CmdArgs.push_back("-nans-inject");
+  }
 
   // Decide whether to use verbose asm. Verbose assembly is the default on
   // toolchains which have the integrated assembler on by default.

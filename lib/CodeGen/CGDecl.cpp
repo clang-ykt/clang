@@ -1063,6 +1063,16 @@ CodeGenFunction::EmitAutoVarAlloca(const VarDecl &D) {
     // Allocate memory for the array.
     llvm::AllocaInst *vla = Builder.CreateAlloca(llvmTy, elementCount, "vla");
     vla->setAlignment(alignment.getQuantity());
+    if (getLangOpts().NansInject && CurFuncDecl &&
+        !CurFuncDecl->hasAttr<NoInstrumentFunctionAttr>()) {
+      EmitNaNsInit(alignment,
+                   Builder.CreateNUWMul(
+                       Builder.CreateIntCast(elementCount, CGM.SizeTy,
+                                             /*isSigned=*/false),
+                       Builder.CreateIntCast(getTypeSize(elementType),
+                                             CGM.SizeTy, /*isSigned=*/false)),
+                   vla);
+    }
 
     address = Address(vla, alignment);
   }

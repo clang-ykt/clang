@@ -1892,6 +1892,8 @@ public:
   Address CreateMemTemp(QualType T, const Twine &Name = "tmp");
   Address CreateMemTemp(QualType T, CharUnits Align, const Twine &Name = "tmp");
 
+  void EmitNaNsInit(CharUnits Align, llvm::Value *Size, llvm::Value *Alloca);
+
   /// CreateAggTemp - Create a temporary memory object for the given
   /// aggregate type.
   AggValueSlot CreateAggTemp(QualType T, const Twine &Name = "tmp") {

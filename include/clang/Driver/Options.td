@@ -794,6 +794,7 @@ def ffp_contract : Joined<["-"], "ffp-contract=">, Group<f_Group>,
 def ftrap_EQ : Joined<["-"], "ftrap=">, Group<f_Group>,
   Flags<[CC1Option]>, HelpText<"Determine IEEE trapping conditions. divz|fp|inexact|inv|none|ovf|unf values are acceptable">;
 def ftrap_exact : Flag<["-"], "ftrap-exact">, Group<f_Group>, Flags<[CC1Option]>;
+def fnans_inject : Flag<["-"], "fnans-inject">, Group<f_Group>, Flags<[CC1Option]>;
 
 def ffor_scope : Flag<["-"], "ffor-scope">, Group<f_Group>;
 def fno_for_scope : Flag<["-"], "fno-for-scope">, Group<f_Group>;
