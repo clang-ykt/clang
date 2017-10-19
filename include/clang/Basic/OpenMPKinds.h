@@ -249,6 +249,10 @@ bool isOpenMPLoopBoundSharingDirective(OpenMPDirectiveKind Kind);
 /// \return true - the directive is a combined directive and requires an
 /// additional iteration variable, otherwise - false.
 bool requiresAdditionalIterationVar(OpenMPDirectiveKind DKind);
+
+/// Checks if the specified directive kind may have a conditional lastprivate
+/// clause.
+bool isOpenMPConditionalLastprivateDirective(OpenMPDirectiveKind Kind);
 }
 
 #endif

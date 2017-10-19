@@ -1526,6 +1526,12 @@ bool CodeGenModule::MayBeEmittedEagerly(const ValueDecl *Global) {
       getContext().getTargetInfo().isTLSSupported() && isa<VarDecl>(Global))
     return false;
 
+  // If this variable is global and we are generating device code, then we defer
+  // the emission of its definition. The variable might have the "declare target
+  // link" property, in which case we do not want to emit it at all.
+  if (LangOpts.OpenMP && LangOpts.OpenMPIsDevice && isa<VarDecl>(Global))
+    return false;
+
   return true;
 }
 

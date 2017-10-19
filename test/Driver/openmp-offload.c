@@ -589,3 +589,180 @@
 // CHK-UBUJOBS-ST-SAME: [[HOSTOBJ:[^\\/]+\.o]]" "{{.*}}[[HOSTASM]]"
 // CHK-UBUJOBS-ST: clang-offload-bundler{{.*}}" "-type=o" "-targets=openmp-powerpc64le-ibm-linux-gnu,openmp-x86_64-pc-linux-gnu,host-powerpc64le--linux" "-outputs=
 // CHK-UBUJOBS-ST-SAME: [[RES:[^\\/]+\.o]]" "-inputs={{.*}}[[T1OBJ]],{{.*}}[[T2OBJ]],{{.*}}[[HOSTOBJ]]"
+
+/// ###########################################################################
+
+/// Check PTX version is passed from the driver with -nocudalib.
+// RUN:   %clang -### -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda -nocudalib -fopenmp-ptx=+ptx52 -save-temps -no-canonical-prefixes %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-PTX-VERSION-NOCUDALIB %s
+
+// CHK-PTX-VERSION-NOCUDALIB: clang{{.*}} "-E" {{.*}}"-target-feature" "+ptx52"
+// CHK-PTX-VERSION-NOCUDALIB-NEXT: clang{{.*}} "-emit-llvm-bc" {{.*}}"-target-feature" "+ptx52"
+// CHK-PTX-VERSION-NOCUDALIB-NEXT: clang{{.*}} "-S" {{.*}}"-target-feature" "+ptx52"
+
+/// ###########################################################################
+
+/// Check PTX version is passed once without -nocudalib.
+// RUN:   %clang -### -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda -nocudalib -fopenmp-ptx=+ptx52 -no-canonical-prefixes %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-PTX-VERSION-ONCE %s
+
+// CHK-PTX-VERSION-ONCE-NOT: "-target-feature" "+ptx"
+// CHK-PTX-VERSION-ONCE: "-target-feature" "+ptx52"
+// CHK-PTX-VERSION-ONCE-NOT: "-target-feature" "+ptx"
+
+/// ###########################################################################
+
+/// Check -Xopenmp-target=powerpc64le-ibm-linux-gnu -mcpu=pwr7 is passed when compiling for the device.
+// RUN:   %clang -### -no-canonical-prefixes -fopenmp=libomp -fopenmp-targets=powerpc64le-ibm-linux-gnu -Xopenmp-target=powerpc64le-ibm-linux-gnu -mcpu=pwr7 %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-FOPENMP-EQ-TARGET %s
+
+// CHK-FOPENMP-EQ-TARGET: clang{{.*}} "-target-cpu" "pwr7" {{.*}}"-fopenmp-is-device"
+
+/// ###########################################################################
+
+/// Check -Xopenmp-target -mcpu=pwr7 is passed when compiling for the device.
+// RUN:   %clang -### -no-canonical-prefixes -fopenmp=libomp -fopenmp-targets=powerpc64le-ibm-linux-gnu -Xopenmp-target -mcpu=pwr7 %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-FOPENMP-TARGET %s
+
+// CHK-FOPENMP-TARGET: clang{{.*}} "-target-cpu" "pwr7" {{.*}}"-fopenmp-is-device"
+
+/// ##########################################################################
+
+/// Check -mcpu=pwr7 is passed to the same triple.
+// RUN:    %clang -### -no-canonical-prefixes -fopenmp=libomp -fopenmp-targets=powerpc64le-ibm-linux-gnu -target powerpc64le-ibm-linux-gnu -mcpu=pwr7 %s 2>&1 \
+// RUN:    | FileCheck -check-prefix=CHK-FOPENMP-MCPU-TO-SAME-TRIPLE %s
+
+// CHK-FOPENMP-MCPU-TO-SAME-TRIPLE: clang{{.*}} "-target-cpu" "pwr7" {{.*}}"-fopenmp-is-device"
+
+/// ##########################################################################
+
+/// Check -march=pwr7 is NOT passed to nvptx64-nvidia-cuda.
+// RUN    %clang -### -no-canonical-prefixes -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda -march=pwr7 %s 2>&1 \
+// RUN    | FileCheck -check-prefix=CHK-FOPENMP-MARCH-TO-GPU %s
+
+// CHK-FOPENMP-MARCH-TO-GPU-NOT: clang{{.*}} "-target-cpu" "pwr7" {{.*}}"-fopenmp-is-device"
+
+/// ###########################################################################
+
+/// Check -march=pwr7 is NOT passed to x86_64-unknown-linux-gnu.
+// RUN:    %clang -### -no-canonical-prefixes -fopenmp=libomp -fopenmp-targets=x86_64-unknown-linux-gnu -march=pwr7 %s 2>&1 \
+// RUN:    | FileCheck -check-prefix=CHK-FOPENMP-MARCH-TO-X86 %s
+
+// CHK-FOPENMP-MARCH-TO-X86-NOT: clang{{.*}} "-target-cpu" "pwr7" {{.*}}"-fopenmp-is-device"
+
+/// ##########################################################################
+
+/// Check -Xopenmp-target uses one of the archs provided when several archs are used.
+// RUN:   %clang -### -no-canonical-prefixes -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda -Xopenmp-target -march=sm_35 -Xopenmp-target -march=sm_60 %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-FOPENMP-TARGET-ARCHS %s
+
+// CHK-FOPENMP-TARGET-ARCHS: ptxas{{.*}}" "--gpu-name" "sm_60"
+// CHK-FOPENMP-TARGET-ARCHS: nvlink{{.*}}" "-arch" "sm_60"
+
+/// ###########################################################################
+
+/// Check -Xopenmp-target -march=sm_35 works as expected when two triples are present.
+// RUN:   %clang -### -no-canonical-prefixes -fopenmp=libomp -fopenmp-targets=powerpc64le-ibm-linux-gnu,nvptx64-nvidia-cuda -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_35 %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-FOPENMP-TARGET-COMPILATION %s
+
+// CHK-FOPENMP-TARGET-COMPILATION: ptxas{{.*}}" "--gpu-name" "sm_35"
+// CHK-FOPENMP-TARGET-COMPILATION: nvlink{{.*}}" "-arch" "sm_35"
+
+/// ###########################################################################
+
+/// Check -Xopenmp-target triggers error when multiple triples are used.
+// RUN:   %clang -### -no-canonical-prefixes -fopenmp=libomp -fopenmp-targets=powerpc64le-ibm-linux-gnu,powerpc64le-unknown-linux-gnu -Xopenmp-target -mcpu=pwr8 %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-FOPENMP-TARGET-AMBIGUOUS-ERROR %s
+
+// CHK-FOPENMP-TARGET-AMBIGUOUS-ERROR: clang{{.*}} error: cannot deduce implicit triple value for -Xopenmp-target, specify triple using -Xopenmp-target=<triple>
+
+/// ###########################################################################
+
+/// Check -Xopenmp-target triggers error when an option requiring arguments is passed to it.
+// RUN:   %clang -### -no-canonical-prefixes -fopenmp=libomp -fopenmp-targets=powerpc64le-ibm-linux-gnu -Xopenmp-target -Xopenmp-target -mcpu=pwr8 %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-FOPENMP-TARGET-NESTED-ERROR %s
+
+// CHK-FOPENMP-TARGET-NESTED-ERROR: clang{{.*}} error: invalid -Xopenmp-target argument: '-Xopenmp-target -Xopenmp-target', options requiring arguments are unsupported
+
+/// ###########################################################################
+
+/// Check debug command lines for NVPTX target
+// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -g 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-CUDA-DEBUG %s
+// CHK-CUDA-DEBUG: "-cc1"
+// CHK-CUDA-DEBUG-SAME: "-triple" "powerpc64le-ibm-linux-gnu"
+// CHK-CUDA-DEBUG: "-cc1"
+// CHK-CUDA-DEBUG-SAME: "-triple" "nvptx64-nvidia-cuda"
+// CHK-CUDA-DEBUG-SAME: "-dwarf-column-info"
+// CHK-CUDA-DEBUG-SAME: "-debug-info-kind=limited"
+// CHK-CUDA-DEBUG-SAME: "-dwarf-version=2"
+// CHK-CUDA-DEBUG-SAME: "-debugger-tuning=cuda-gdb"
+// CHK-CUDA-DEBUG: ptxas
+// CHK-CUDA-DEBUG-SAME: "-g"
+// CHK-CUDA-DEBUG-SAME: "--dont-merge-basicblocks"
+// CHK-CUDA-DEBUG-SAME: "--return-at-end"
+// CHK-CUDA-DEBUG-SAME: "-c"
+// CHK-CUDA-DEBUG: nvlink
+// CHK-CUDA-DEBUG-SAME: "-g"
+
+/// Check debug command lines for NVPTX target
+// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -g --no-cuda-noopt-device-debug 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-CUDA-DEBUGO0-NODEBUG %s
+// CHK-CUDA-DEBUGO0-NODEBUG: "-cc1"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-triple" "powerpc64le-ibm-linux-gnu"
+// CHK-CUDA-DEBUGO0-NODEBUG: "-cc1"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-triple" "nvptx64-nvidia-cuda"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-dwarf-column-info"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-debug-info-kind=limited"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-dwarf-version=2"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-debugger-tuning=cuda-gdb"
+// CHK-CUDA-DEBUGO0-NODEBUG: ptxas
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-g"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "--dont-merge-basicblocks"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "--return-at-end"
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-c"
+// CHK-CUDA-DEBUGO0-NODEBUG: nvlink
+// CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-g"
+
+/// Check debug command lines for NVPTX target
+// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -g -O3 --cuda-noopt-device-debug 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-CUDA-DEBUG-O3-DEBUG %s
+// CHK-CUDA-DEBUG-O3-DEBUG: "-cc1"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-triple" "powerpc64le-ibm-linux-gnu"
+// CHK-CUDA-DEBUG-O3-DEBUG: "-cc1"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-triple" "nvptx64-nvidia-cuda"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-dwarf-column-info"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-debug-info-kind=limited"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-dwarf-version=2"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-debugger-tuning=cuda-gdb"
+// CHK-CUDA-DEBUG-O3-DEBUG: ptxas
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-g"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "--dont-merge-basicblocks"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "--return-at-end"
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-c"
+// CHK-CUDA-DEBUG-O3-DEBUG: nvlink
+// CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-g"
+
+/// Check debug command lines for NVPTX target
+// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -O3 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-CUDA-O3 %s
+// CHK-CUDA-O3: "-cc1"
+// CHK-CUDA-O3-SAME: "-triple" "powerpc64le-ibm-linux-gnu"
+// CHK-CUDA-O3: "-cc1"
+// CHK-CUDA-O3-SAME: "-triple" "nvptx64-nvidia-cuda"
+// CHK-CUDA-O3-SAME: "-O3"
+// CHK-CUDA-O3: ptxas
+// CHK-CUDA-O3-SAME: "-O3"
+// CHK-CUDA-O3-SAME: "-c"
+
+/// Check debug command lines for NVPTX target
+// RUN:   %clang -### -fopenmp=libomp -target powerpc64le-ibm-linux-gnu -fopenmp-targets=nvptx64-nvidia-cuda %s -O3 --no-cuda-noopt-device-debug 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-CUDA-O3-NODEBUG %s
+// CHK-CUDA-O3-NODEBUG: "-cc1"
+// CHK-CUDA-O3-NODEBUG-SAME: "-triple" "powerpc64le-ibm-linux-gnu"
+// CHK-CUDA-O3-NODEBUG: "-cc1"
+// CHK-CUDA-O3-NODEBUG-SAME: "-triple" "nvptx64-nvidia-cuda"
+// CHK-CUDA-O3-NODEBUG-SAME: "-O3"
+// CHK-CUDA-O3-NODEBUG: ptxas
+// CHK-CUDA-O3-NODEBUG-SAME: "-O3"
+// CHK-CUDA-O3-NODEBUG-SAME: "-c"

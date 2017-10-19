@@ -595,6 +595,9 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::OMPFlushDirectiveClass:
     K = CXCursor_OMPFlushDirective;
     break;
+  case Stmt::OMPLastprivateUpdateDirectiveClass:
+    K = CXCursor_OMPLastprivateUpdateDirective;
+    break;
   case Stmt::OMPOrderedDirectiveClass:
     K = CXCursor_OMPOrderedDirective;
     break;

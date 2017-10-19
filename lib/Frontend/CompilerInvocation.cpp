@@ -496,6 +496,7 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
                        .Case("gdb", unsigned(llvm::DebuggerKind::GDB))
                        .Case("lldb", unsigned(llvm::DebuggerKind::LLDB))
                        .Case("sce", unsigned(llvm::DebuggerKind::SCE))
+                       .Case("cuda-gdb", unsigned(llvm::DebuggerKind::CudaGDB))
                        .Default(~0U);
     if (Val == ~0U)
       Diags.Report(diag::err_drv_invalid_value) << A->getAsString(Args)
@@ -2153,6 +2154,64 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
       Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_nvptx_nospmd);
   Opts.OpenMPImplicitDeclareTarget =
       Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_implicit_declare_target);
+  Opts.OpenMPImplicitMapLambdas =
+      Opts.OpenMP && Args.hasArg(options::OPT_fopenmp_implicit_map_lambdas);
+
+  if (Arg *A = Args.getLastArg(OPT_ftrap_EQ)) {
+    StringRef Value = A->getValue();
+    SmallVector<StringRef, 4> Args;
+    Value.split(Args, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+    SmallVector<char, 128> Buffer;
+    llvm::raw_svector_ostream Out(Buffer);
+    Out << "0";
+    for (StringRef Value : Args) {
+      StringRef FENVValue =
+          llvm::StringSwitch<StringRef>(Value)
+              .Case("divz", "|FE_DIVBYZERO")
+              .Case("fp", "|FE_DIVBYZERO|FE_INVALID|FE_OVERFLOW")
+              .Case("inexact", "|FE_INEXACT")
+              .Case("inv", "|FE_INVALID")
+              .Case("ovf", "|FE_OVERFLOW")
+              .Case("unf", "|FE_UNDERFLOW")
+              .Default(StringRef());
+      Out << FENVValue;
+    }
+    StringRef ResValue = Out.str();
+    Opts.GenerateTrap = ResValue.size() > 1;
+    if (Opts.GenerateTrap) {
+      SmallString<256> Path;
+      int Fd;
+      std::error_code Res =
+          llvm::sys::fs::createTemporaryFile("ftrap", "h", Fd, Path);
+      if (Res)
+        Diags.Report(diag::err_fe_unable_to_open_output) << Path;
+      else {
+        Opts.GenerateTrapFile = Path.str();
+        llvm::raw_fd_ostream OS(Fd, /*shouldClose=*/true);
+        OS << "#ifndef _FENV___INSTR__TRAPPING_123456789______\n";
+        OS << "#define _FENV___INSTR__TRAPPING_123456789______\n";
+        OS << "#pragma clang diagnostic push\n";
+        OS << "#pragma GCC diagnostic push\n";
+        OS << "#pragma clang diagnostic ignored \"-Wall\"\n";
+        OS << "#pragma GCC diagnostic ignored \"-Wall\"\n";
+        OS << "#include <fenv.h>\n";
+        OS << "__attribute((used)) __attribute((no_instrument_function)) "
+              "__attribute((nodebug)) "
+              "static void "
+              "__FTRAP___INSTR__fun_12345689start_____(void){feclearexcept("
+           << ResValue << ");";
+        OS << "}\n";
+        OS << "__attribute((used)) __attribute((no_instrument_function)) "
+              "__attribute((nodebug)) "
+              "static void "
+              "__FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept("
+           << ResValue << ")) __builtin_debugtrap();}\n";
+        OS << "#pragma GCC diagnostic pop\n";
+        OS << "#pragma clang diagnostic pop\n";
+        OS << "#endif\n";
+      }
+    }
+  }
 
   if (Opts.OpenMP) {
     int Version =
@@ -2180,9 +2239,13 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
       Opts.Exceptions = 0;
       Opts.CXXExceptions = 0;
       Opts.OpenMPNoDeviceEH = 1;
+      Opts.GenerateTrap = false;
     } else
       Opts.OpenMPNoDeviceEH = 0;
   }
+
+  Opts.GeneratePreciseTrap = Args.getLastArg(options::OPT_ftrap_exact) &&
+                             Opts.GenerateTrap;
 
   // Get the OpenMP target triples if any.
   if (Arg *A = Args.getLastArg(options::OPT_fopenmp_targets_EQ)) {

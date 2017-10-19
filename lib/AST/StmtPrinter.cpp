@@ -896,6 +896,11 @@ void OMPClausePrinter::VisitOMPFlushClause(OMPFlushClause *Node) {
   }
 }
 
+void OMPClausePrinter::VisitOMPLastprivateUpdateClause(
+    OMPLastprivateUpdateClause *Node) {
+  // This is an internal clause.  Don't print anything.
+}
+
 void OMPClausePrinter::VisitOMPDependClause(OMPDependClause *Node) {
   OS << "depend(";
   OS << getOpenMPSimpleClauseTypeName(Node->getClauseKind(),
@@ -1139,6 +1144,13 @@ void StmtPrinter::VisitOMPTaskgroupDirective(OMPTaskgroupDirective *Node) {
 
 void StmtPrinter::VisitOMPFlushDirective(OMPFlushDirective *Node) {
   Indent() << "#pragma omp flush ";
+  PrintOMPExecutableDirective(Node);
+}
+
+void StmtPrinter::VisitOMPLastprivateUpdateDirective(
+    OMPLastprivateUpdateDirective *Node) {
+  // This is an internal directive.  Don't print the directive, just
+  // its controlled statement.
   PrintOMPExecutableDirective(Node);
 }
 

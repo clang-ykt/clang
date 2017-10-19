@@ -81,6 +81,7 @@ int main() {
     // LAMBDA: alloca i{{[0-9]+}},
     // LAMBDA: alloca i{{[0-9]+}},
     // LAMBDA: alloca i{{[0-9]+}},
+    // LAMBDA: alloca i{{[0-9]+}},
 
     // LAMBDA: [[G_PRIVATE_ADDR:%.+]] = alloca i{{[0-9]+}},
     // LAMBDA: [[SIVAR1_PRIVATE_ADDR:%.+]] = alloca i{{[0-9]+}},
@@ -136,6 +137,7 @@ int main() {
    {
     // BLOCKS: define{{.*}} internal{{.*}} void [[OMP_REGION]](i32* noalias %{{.+}}, i32* noalias %{{.+}}, i32* dereferenceable(4) [[SIVAR_REF:%.+]])
     // Skip temp vars for loop
+    // BLOCKS: alloca i{{[0-9]+}},
     // BLOCKS: alloca i{{[0-9]+}},
     // BLOCKS: alloca i{{[0-9]+}},
     // BLOCKS: alloca i{{[0-9]+}},
@@ -205,6 +207,7 @@ int main() {
 // CHECK: alloca i{{[0-9]+}},
 // CHECK: alloca i{{[0-9]+}},
 // CHECK: alloca i{{[0-9]+}},
+// CHECK: alloca i{{[0-9]+}},
 // CHECK: [[T_VAR_PRIV:%.+]] = alloca i{{[0-9]+}},
 // CHECK: [[VEC_PRIV:%.+]] = alloca [2 x i{{[0-9]+}}],
 // CHECK: [[S_ARR_PRIV:%.+]] = alloca [2 x [[S_FLOAT_TY]]],
@@ -266,6 +269,7 @@ int main() {
 //
 // CHECK: define internal void [[TMAIN_MICROTASK]](i{{[0-9]+}}* noalias [[GTID_ADDR:%.+]], i{{[0-9]+}}* noalias %{{.+}},
 // Skip temp vars for loop
+// CHECK: alloca i{{[0-9]+}},
 // CHECK: alloca i{{[0-9]+}},
 // CHECK: alloca i{{[0-9]+}},
 // CHECK: alloca i{{[0-9]+}},

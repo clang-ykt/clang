@@ -336,6 +336,21 @@ void CodeGenFunction::FinishFunction(SourceLocation EndLoc) {
   // Emit function epilog (to return).
   llvm::DebugLoc Loc = EmitReturnBlock();
 
+  // Generate float trappings.
+  if (getLangOpts().GenerateTrap && CurFuncDecl &&
+      !CurFuncDecl->hasAttr<NoInstrumentFunctionAttr>()) {
+    auto DL = ApplyDebugLocation::CreateArtificial(*this);
+    DeclContext::lookup_result Res =
+        getContext().getTranslationUnitDecl()->noload_lookup(
+            &getContext().Idents.get(
+                "__FTRAP___INSTR__fun_12345689end_____"));
+    assert(Res.size() == 1 &&
+           "Expected single __FTRAP___INSTR__fun_12345689end_____ function.");
+    llvm::Value *F = CGM.GetAddrOfFunction(cast<FunctionDecl>(Res.back()));
+    // void FTRAP___INSTR__fun_12345689end_____(void);
+    EmitNounwindRuntimeCall(F);
+  }
+
   if (ShouldInstrumentFunction())
     EmitFunctionInstrumentation("__cyg_profile_func_exit");
 
@@ -844,6 +859,21 @@ void CodeGenFunction::StartFunction(GlobalDecl GD,
 
   if (ShouldInstrumentFunction())
     EmitFunctionInstrumentation("__cyg_profile_func_enter");
+
+  // Generate float trappings.
+  if (getLangOpts().GenerateTrap && CurFuncDecl &&
+      !CurFuncDecl->hasAttr<NoInstrumentFunctionAttr>()) {
+    auto DL = ApplyDebugLocation::CreateArtificial(*this);
+    DeclContext::lookup_result Res =
+        getContext().getTranslationUnitDecl()->noload_lookup(
+            &getContext().Idents.get(
+                "__FTRAP___INSTR__fun_12345689start_____"));
+    assert(Res.size() == 1 &&
+           "Expected single __FTRAP___INSTR__fun_12345689start_____ function.");
+    llvm::Value *F = CGM.GetAddrOfFunction(cast<FunctionDecl>(Res.back()));
+    // void FTRAP___INSTR__fun_12345689_____(void);
+    EmitNounwindRuntimeCall(F);
+  }
 
   // Since emitting the mcount call here impacts optimizations such as function
   // inlining, we just add an attribute to insert a mcount call in backend.

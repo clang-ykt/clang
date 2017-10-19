@@ -1926,6 +1926,10 @@ void OMPClauseWriter::VisitOMPLastprivateClause(OMPLastprivateClause *C) {
     Record.AddStmt(VE);
   for (auto *E : C->private_copies())
     Record.AddStmt(E);
+  for (auto *E : C->conditional_lastprivate_iterations())
+    Record.AddStmt(E);
+  for (auto *E : C->conditional_lastprivate_variables())
+    Record.AddStmt(E);
   for (auto *E : C->source_exprs())
     Record.AddStmt(E);
   for (auto *E : C->destination_exprs())
@@ -2028,6 +2032,14 @@ void OMPClauseWriter::VisitOMPFlushClause(OMPFlushClause *C) {
     Record.AddStmt(VE);
 }
 
+void OMPClauseWriter::VisitOMPLastprivateUpdateClause(
+    OMPLastprivateUpdateClause *C) {
+  Record.push_back(C->varlist_size());
+  Record.AddSourceLocation(C->getLParenLoc());
+  for (auto *VE : C->varlists())
+    Record.AddStmt(VE);
+}
+
 void OMPClauseWriter::VisitOMPDependClause(OMPDependClause *C) {
   Record.push_back(C->varlist_size());
   Record.AddSourceLocation(C->getLParenLoc());
@@ -2040,6 +2052,7 @@ void OMPClauseWriter::VisitOMPDependClause(OMPDependClause *C) {
 }
 
 void OMPClauseWriter::VisitOMPDeviceClause(OMPDeviceClause *C) {
+  VisitOMPClauseWithPreInit(C);
   Record.AddStmt(C->getDevice());
   Record.AddSourceLocation(C->getLParenLoc());
 }
@@ -2270,6 +2283,8 @@ void ASTStmtWriter::VisitOMPLoopDirective(OMPLoopDirective *D) {
   Record.AddStmt(D->getNumLanes());
   Record.AddStmt(D->getInc());
   Record.AddStmt(D->getPreInits());
+  Record.AddStmt(D->getConditionalLastprivateIterVariable());
+  Record.AddStmt(D->getConditionalLastprivateIterInit());
   if (isOpenMPWorksharingDirective(D->getDirectiveKind()) ||
       isOpenMPTaskLoopDirective(D->getDirectiveKind()) ||
       isOpenMPDistributeDirective(D->getDirectiveKind())) {
@@ -2334,6 +2349,7 @@ void ASTStmtWriter::VisitOMPSectionsDirective(OMPSectionsDirective *D) {
   Record.push_back(D->getNumClauses());
   VisitOMPExecutableDirective(D);
   Record.push_back(D->hasCancel() ? 1 : 0);
+  Record.AddStmt(D->getConditionalLastprivateIterVariable());
   Code = serialization::STMT_OMP_SECTIONS_DIRECTIVE;
 }
 
@@ -2383,6 +2399,7 @@ void ASTStmtWriter::VisitOMPParallelSectionsDirective(
   Record.push_back(D->getNumClauses());
   VisitOMPExecutableDirective(D);
   Record.push_back(D->hasCancel() ? 1 : 0);
+  Record.AddStmt(D->getConditionalLastprivateIterVariable());
   Code = serialization::STMT_OMP_PARALLEL_SECTIONS_DIRECTIVE;
 }
 
@@ -2484,6 +2501,14 @@ void ASTStmtWriter::VisitOMPFlushDirective(OMPFlushDirective *D) {
   Record.push_back(D->getNumClauses());
   VisitOMPExecutableDirective(D);
   Code = serialization::STMT_OMP_FLUSH_DIRECTIVE;
+}
+
+void ASTStmtWriter::VisitOMPLastprivateUpdateDirective(
+    OMPLastprivateUpdateDirective *D) {
+  VisitStmt(D);
+  Record.push_back(D->getNumClauses());
+  VisitOMPExecutableDirective(D);
+  Code = serialization::STMT_OMP_LASTPRIVATE_UPDATE_DIRECTIVE;
 }
 
 void ASTStmtWriter::VisitOMPOrderedDirective(OMPOrderedDirective *D) {

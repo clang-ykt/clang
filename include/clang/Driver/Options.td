@@ -348,6 +348,10 @@ def Xcuda_fatbinary : Separate<["-"], "Xcuda-fatbinary">,
   HelpText<"Pass <arg> to fatbinary invocation">, MetaVarName<"<arg>">;
 def Xcuda_ptxas : Separate<["-"], "Xcuda-ptxas">,
   HelpText<"Pass <arg> to the ptxas assembler">, MetaVarName<"<arg>">;
+def Xopenmp_target : Separate<["-"], "Xopenmp-target">,
+  HelpText<"Pass <arg> to the target offloading toolchain.">, MetaVarName<"<arg>">;
+def Xopenmp_target_EQ : JoinedAndSeparate<["-"], "Xopenmp-target=">,
+  HelpText<"Pass <arg> to the specified target offloading toolchain. The triple that identifies the toolchain must be provided after the equals sign.">, MetaVarName<"<arg>">;
 def z : Separate<["-"], "z">, Flags<[LinkerInput, RenderAsInput]>,
   HelpText<"Pass -z <arg> to the linker">, MetaVarName<"<arg>">;
 def Xlinker : Separate<["-"], "Xlinker">, Flags<[LinkerInput, RenderAsInput]>,
@@ -787,6 +791,9 @@ def fno_trapping_math : Flag<["-"], "fno-trapping-math">, Group<f_Group>, Flags<
 def ffp_contract : Joined<["-"], "ffp-contract=">, Group<f_Group>,
   Flags<[CC1Option]>, HelpText<"Form fused FP ops (e.g. FMAs): fast (everywhere)"
   " | on (according to FP_CONTRACT pragma, default) | off (never fuse)">;
+def ftrap_EQ : Joined<["-"], "ftrap=">, Group<f_Group>,
+  Flags<[CC1Option]>, HelpText<"Determine IEEE trapping conditions. divz|fp|inexact|inv|none|ovf|unf values are acceptable">;
+def ftrap_exact : Flag<["-"], "ftrap-exact">, Group<f_Group>, Flags<[CC1Option]>;
 
 def ffor_scope : Flag<["-"], "ffor-scope">, Group<f_Group>;
 def fno_for_scope : Flag<["-"], "fno-for-scope">, Group<f_Group>;
@@ -1145,16 +1152,18 @@ def fopenmp_ignore_unmappable_types : Flag<["-"], "fopenmp-ignore-unmappable-typ
 def fnoopenmp_ignore_unmappable_types : Flag<["-"], "fnoopenmp-ignore-unmappable-types">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fopenmp_implicit_declare_target : Flag<["-"], "fopenmp-implicit-declare-target">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fnoopenmp_implicit_declare_target : Flag<["-"], "fnoopenmp-implicit-declare-target">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
+def fopenmp_implicit_map_lambdas : Flag<["-"], "fopenmp-implicit-map-lambdas">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
+def fnoopenmp_implicit_map_lambdas : Flag<["-"], "fno-openmp-implicit-map-lambdas">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fopenmp_nvptx_spmd : Flag<["-"], "fopenmp-nvptx-spmd">, Group<f_Group>, Flags<[NoArgumentUnused]>;
 def fopenmp_nvptx_nospmd : Flag<["-"], "fopenmp-nvptx-nospmd">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fopenmp_nvptx_requireruntime : Flag<["-"], "fopenmp-nvptx-requireruntime">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>;
 def fopenmp_nvptx_norequireruntime : Flag<["-"], "fopenmp-nvptx-norequireruntime">, Group<f_Group>, Flags<[NoArgumentUnused]>;
 def fopenmp_targets_EQ : CommaJoined<["-"], "fopenmp-targets=">, Flags<[DriverOption, CC1Option]>,
   HelpText<"Specify comma-separated list of triples OpenMP offloading targets to be supported">;
+def fopenmp_ptx_EQ : Joined<["-"], "fopenmp-ptx=">, Flags<[DriverOption]>,
+  HelpText<"Pass a PTX version +ptxXX, default +ptx42 (for PTX version 4.2) used by OpenMP device offloading.">;
 def fopenmp_dump_offload_linker_script : Flag<["-"], "fopenmp-dump-offload-linker-script">, Group<f_Group>, 
   Flags<[NoArgumentUnused]>;
-def fopenmp_debug : Flag<["-"], "fopenmp-debug">, Group<f_Group>, Flags<[NoArgumentUnused]>;
-def fno_openmp_debug : Flag<["-"], "fno-openmp-debug">, Group<f_Group>, Flags<[NoArgumentUnused]>;
 def fno_optimize_sibling_calls : Flag<["-"], "fno-optimize-sibling-calls">, Group<f_Group>;
 def foptimize_sibling_calls : Flag<["-"], "foptimize-sibling-calls">, Group<f_Group>;
 def force__cpusubtype__ALL : Flag<["-"], "force_cpusubtype_ALL">;
@@ -1379,6 +1388,7 @@ def ggdb2 : Flag<["-"], "ggdb2">, Group<ggdbN_Group>;
 def ggdb3 : Flag<["-"], "ggdb3">, Group<ggdbN_Group>;
 def glldb : Flag<["-"], "glldb">, Group<gTune_Group>;
 def gsce : Flag<["-"], "gsce">, Group<gTune_Group>;
+def gcuda_gdb : Flag<["-"], "gcuda-gdb">, Group<gTune_Group>;
 def gdwarf_2 : Flag<["-"], "gdwarf-2">, Group<g_Group>,
   HelpText<"Generate source-level debug information with dwarf version 2">;
 def gdwarf_3 : Flag<["-"], "gdwarf-3">, Group<g_Group>,

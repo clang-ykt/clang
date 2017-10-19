@@ -16,7 +16,7 @@ int foo (float myvar)
 int bar (int a, float b){
   int c = a + foo(b);
 
-  // CK1: tgt_target(i32 -1
+  // CK1: tgt_target(i64 -1
   #pragma omp target
     b = a+1;
 

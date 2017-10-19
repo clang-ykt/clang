@@ -204,6 +204,13 @@ public:
     return nullptr;
   }
 
+  /// TranslateOpenMPTargetArgs - Create a new derived argument list for
+  /// that contains the OpenMP target specific flags passed via
+  /// -Xopenmp-target -opt=val OR -Xopenmp-target=<triple> -opt=val
+  virtual llvm::opt::DerivedArgList *TranslateOpenMPTargetArgs(
+      const llvm::opt::DerivedArgList &Args, bool SameTripleAsHost,
+      SmallVectorImpl<llvm::opt::Arg *> &AllocatedArgs) const;
+
   /// Choose a tool to use to handle the action \p JA.
   ///
   /// This can be overridden when a particular ToolChain needs to use

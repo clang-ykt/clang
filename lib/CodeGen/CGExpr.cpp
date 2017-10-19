@@ -2009,7 +2009,21 @@ static LValue EmitGlobalVarDeclLValue(CodeGenFunction &CGF,
       CGF.CGM.getCXXABI().usesThreadWrapperFunction())
     return CGF.CGM.getCXXABI().EmitThreadLocalVarDeclLValue(CGF, VD, T);
 
-  llvm::Value *V = CGF.CGM.GetAddrOfGlobalVar(VD);
+  llvm::Value *V;
+  if (CGF.getLangOpts().OpenMP && CGF.getLangOpts().OpenMPIsDevice &&
+      VD->hasAttr<OMPDeclareTargetDeclAttr>() &&
+      VD->getAttr<OMPDeclareTargetDeclAttr>()->getMapType() ==
+          OMPDeclareTargetDeclAttr::MT_Link) {
+    llvm::GlobalValue *GV =
+        CGF.CGM.getOpenMPRuntime().getOrCreateGlobalLinkPtr(VD);
+    assert(GV && "Link pointer not found");
+    auto Ty = CGF.CGM.getContext().getPointerType(VD->getType());
+    auto PtrAddr = CGF.MakeNaturalAlignAddrLValue(GV, Ty);
+    V = CGF.EmitLoadOfPointerLValue(PtrAddr.getAddress(),
+        Ty->getAs<PointerType>()).getPointer();
+  } else {
+    V = CGF.CGM.GetAddrOfGlobalVar(VD);
+  }
   llvm::Type *RealVarTy = CGF.getTypes().ConvertTypeForMem(VD->getType());
   V = EmitBitCastOfLValueToProperType(CGF, V, RealVarTy);
   CharUnits Alignment = CGF.getContext().getDeclAlign(VD);
@@ -2112,8 +2126,12 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
         VD->isUsableInConstantExpressions(getContext()) &&
         VD->checkInitIsICE() &&
         // Do not emit if it is private OpenMP variable.
-        !(E->refersToEnclosingVariableOrCapture() && CapturedStmtInfo &&
-          LocalDeclMap.count(VD))) {
+        !(E->refersToEnclosingVariableOrCapture() &&
+          ((CapturedStmtInfo &&
+            (LocalDeclMap.count(VD->getCanonicalDecl()) ||
+             CapturedStmtInfo->lookup(VD->getCanonicalDecl()))) ||
+           LambdaCaptureFields.lookup(VD->getCanonicalDecl()) ||
+           isa<BlockDecl>(CurCodeDecl)))) {
       llvm::Constant *Val =
         CGM.EmitConstantValue(*VD->evaluateValue(), VD->getType(), this);
       assert(Val && "failed to emit reference constant expression");
@@ -2128,6 +2146,7 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
 
     // Check for captured variables.
     if (E->refersToEnclosingVariableOrCapture()) {
+      VD = VD->getCanonicalDecl();
       if (auto *FD = LambdaCaptureFields.lookup(VD))
         return EmitCapturedFieldLValue(*this, FD, CXXABIThisValue);
       else if (CapturedStmtInfo) {
@@ -3132,12 +3151,7 @@ static Address emitOMPArraySectionBase(CodeGenFunction &CGF, const Expr *Base,
 
 LValue CodeGenFunction::EmitOMPArraySectionExpr(const OMPArraySectionExpr *E,
                                                 bool IsLowerBound) {
-  QualType BaseTy;
-  if (auto *ASE =
-          dyn_cast<OMPArraySectionExpr>(E->getBase()->IgnoreParenImpCasts()))
-    BaseTy = OMPArraySectionExpr::getBaseOriginalType(ASE);
-  else
-    BaseTy = E->getBase()->getType();
+  QualType BaseTy = OMPArraySectionExpr::getBaseOriginalType(E->getBase());
   QualType ResultExprTy;
   if (auto *AT = getContext().getAsArrayType(BaseTy))
     ResultExprTy = AT->getElementType();

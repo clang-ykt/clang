@@ -15,6 +15,7 @@
 #include "CGOpenMPRuntimeNVPTX.h"
 #include "CGCleanup.h"
 #include "CodeGenFunction.h"
+#include "ConstantBuilder.h"
 #include "clang/AST/DeclOpenMP.h"
 #include "clang/AST/StmtOpenMP.h"
 #include "clang/AST/StmtVisitor.h"
@@ -26,6 +27,8 @@ using namespace CodeGen;
 
 namespace {
 enum OpenMPRTLFunctionNVPTX {
+  /// \brief Call to void __kmpc_kernel_init_params(void *ScratchpadPtr);
+  OMPRTL_NVPTX__kmpc_kernel_init_params,
   /// \brief Call to void __kmpc_kernel_init(kmp_int32 thread_limit,
   /// int16_t RequiresOMPRuntime);
   OMPRTL_NVPTX__kmpc_kernel_init,
@@ -249,20 +252,18 @@ public:
 
 /// Get the GPU warp size.
 static llvm::Value *GetNVPTXWarpSize(CodeGenFunction &CGF) {
-  CGBuilderTy &Bld = CGF.Builder;
-  return Bld.CreateCall(
+  return CGF.EmitRuntimeCall(
       llvm::Intrinsic::getDeclaration(
           &CGF.CGM.getModule(), llvm::Intrinsic::nvvm_read_ptx_sreg_warpsize),
-      llvm::None, "nvptx_warp_size");
+      "nvptx_warp_size");
 }
 
 /// Get the id of the current thread on the GPU.
 static llvm::Value *GetNVPTXThreadID(CodeGenFunction &CGF) {
-  CGBuilderTy &Bld = CGF.Builder;
-  return Bld.CreateCall(
+  return CGF.EmitRuntimeCall(
       llvm::Intrinsic::getDeclaration(
           &CGF.CGM.getModule(), llvm::Intrinsic::nvvm_read_ptx_sreg_tid_x),
-      llvm::None, "nvptx_tid");
+      "nvptx_tid");
 }
 
 /// Get the id of the warp in the block.
@@ -281,26 +282,23 @@ static llvm::Value *GetNVPTXThreadWarpID(CodeGenFunction &CGF) {
 
 /// Get the id of the current block on the GPU.
 static llvm::Value *GetNVPTXBlockID(CodeGenFunction &CGF) {
-  CGBuilderTy &Bld = CGF.Builder;
-  return Bld.CreateCall(
+  return CGF.EmitRuntimeCall(
       llvm::Intrinsic::getDeclaration(
           &CGF.CGM.getModule(), llvm::Intrinsic::nvvm_read_ptx_sreg_ctaid_x),
-      llvm::None, "nvptx_block_id");
+      "nvptx_block_id");
 }
 
 /// Get the maximum number of threads in a block of the GPU.
 static llvm::Value *GetNVPTXNumThreads(CodeGenFunction &CGF) {
-  CGBuilderTy &Bld = CGF.Builder;
-  return Bld.CreateCall(
+  return CGF.EmitRuntimeCall(
       llvm::Intrinsic::getDeclaration(
           &CGF.CGM.getModule(), llvm::Intrinsic::nvvm_read_ptx_sreg_ntid_x),
-      llvm::None, "nvptx_num_threads");
+      "nvptx_num_threads");
 }
 
 /// Get barrier to synchronize all threads in a block.
 static void GetNVPTXCTABarrier(CodeGenFunction &CGF) {
-  CGBuilderTy &Bld = CGF.Builder;
-  Bld.CreateCall(llvm::Intrinsic::getDeclaration(
+  CGF.EmitRuntimeCall(llvm::Intrinsic::getDeclaration(
       &CGF.CGM.getModule(), llvm::Intrinsic::nvvm_barrier0));
 }
 
@@ -310,9 +308,9 @@ static void GetNVPTXBarrier(CodeGenFunction &CGF, int ID,
                             llvm::Value *NumThreadsVal) {
   CGBuilderTy &Bld = CGF.Builder;
   llvm::Value *Args[] = {Bld.getInt32(ID), NumThreadsVal};
-  Bld.CreateCall(llvm::Intrinsic::getDeclaration(&CGF.CGM.getModule(),
-                                                 llvm::Intrinsic::nvvm_barrier),
-                 Args);
+  CGF.EmitRuntimeCall(llvm::Intrinsic::getDeclaration(
+                          &CGF.CGM.getModule(), llvm::Intrinsic::nvvm_barrier),
+                      Args);
 }
 
 /// Synchronize all GPU threads in a block.
@@ -383,11 +381,10 @@ CGOpenMPRuntimeNVPTX::getNVPTXWarpActiveThreadsMask(CodeGenFunction &CGF) {
 // \brief Get the number of active threads in a warp.
 llvm::Value *
 CGOpenMPRuntimeNVPTX::getNVPTXWarpActiveNumThreads(CodeGenFunction &CGF) {
-  CGBuilderTy &Bld = CGF.Builder;
-  return Bld.CreateCall(llvm::Intrinsic::getDeclaration(
-                            &CGM.getModule(), llvm::Intrinsic::nvvm_popc_i),
-                        getNVPTXWarpActiveThreadsMask(CGF),
-                        "warp_active_num_threads");
+  return CGF.EmitRuntimeCall(
+      llvm::Intrinsic::getDeclaration(&CGM.getModule(),
+                                      llvm::Intrinsic::nvvm_popc_i),
+      getNVPTXWarpActiveThreadsMask(CGF), "warp_active_num_threads");
 }
 
 // \brief Get the ID of the thread among the current active threads in the warp.
@@ -402,9 +399,10 @@ CGOpenMPRuntimeNVPTX::getNVPTXWarpActiveThreadID(CodeGenFunction &CGF) {
   auto *Mask = getNVPTXWarpActiveThreadsMask(CGF);
   auto *ShNum = Bld.CreateSub(Bld.getInt32(32), WarpID);
   auto *Sh = Bld.CreateShl(Mask, ShNum);
-  return Bld.CreateCall(llvm::Intrinsic::getDeclaration(
-                            &CGM.getModule(), llvm::Intrinsic::nvvm_popc_i),
-                        Sh, "warp_active_thread_id");
+  return CGF.EmitRuntimeCall(
+      llvm::Intrinsic::getDeclaration(&CGM.getModule(),
+                                      llvm::Intrinsic::nvvm_popc_i),
+      Sh, "warp_active_thread_id");
 }
 
 // \brief Get a conditional that is set to true if the thread is the master of
@@ -418,12 +416,10 @@ CGOpenMPRuntimeNVPTX::getNVPTXIsWarpActiveMaster(CodeGenFunction &CGF) {
 
 void CGOpenMPRuntimeNVPTX::emitDistributeStaticInit(
     CodeGenFunction &CGF, SourceLocation Loc,
-    OpenMPDistScheduleClauseKind SchedKind, unsigned IVSize, bool IVSigned,
-    bool Ordered, Address IL, Address LB, Address UB, Address ST,
-    llvm::Value *Chunk, bool CoalescedDistSchedule) {
-  CGOpenMPRuntime::emitDistributeStaticInit(CGF, Loc, SchedKind, IVSize,
-                                            IVSigned, Ordered, IL, LB, UB, ST,
-                                            Chunk, CoalescedDistSchedule);
+    OpenMPDistScheduleClauseKind SchedKind, const StaticRTInput &Values,
+    bool CoalescedDistSchedule) {
+  CGOpenMPRuntime::emitDistributeStaticInit(CGF, Loc, SchedKind, Values,
+                                            CoalescedDistSchedule);
 
   // If we are generating a coalesced schedule for the directive
   // 'target teams distribute parallel for', then the 'distribute' and 'for'
@@ -435,6 +431,7 @@ void CGOpenMPRuntimeNVPTX::emitDistributeStaticInit(
 
 void CGOpenMPRuntimeNVPTX::emitForStaticFinish(CodeGenFunction &CGF,
                                                SourceLocation Loc,
+                                               OpenMPDirectiveKind DKind,
                                                bool CoalescedDistSchedule) {
   // If we are generating a coalesced schedule for the directive
   // 'target teams distribute parallel for', then the 'distribute' and 'for'
@@ -443,7 +440,7 @@ void CGOpenMPRuntimeNVPTX::emitForStaticFinish(CodeGenFunction &CGF,
   if (CoalescedDistSchedule)
     ParallelNestingLevel--;
 
-  CGOpenMPRuntime::emitForStaticFinish(CGF, Loc);
+  CGOpenMPRuntime::emitForStaticFinish(CGF, Loc, DKind);
 }
 
 static FieldDecl *addFieldToRecordDecl(ASTContext &C, DeclContext *DC,
@@ -638,9 +635,10 @@ void CGOpenMPRuntimeNVPTX::initializeDataSharing(CodeGenFunction &CGF,
       CastedSlot,
       llvm::ConstantInt::get(CGM.SizeTy, IsMaster ? DS_Slot_Size
                                                   : DS_Worker_Warp_Slot_Size)};
-  Bld.CreateCall(createNVPTXRuntimeFunction(
-                     OMPRTL_NVPTX__kmpc_initialize_data_sharing_environment),
-                 Args);
+  CGF.EmitRuntimeCall(
+      createNVPTXRuntimeFunction(
+          OMPRTL_NVPTX__kmpc_initialize_data_sharing_environment),
+      Args);
 
   CGF.EmitBlock(EndBB);
   return;
@@ -714,7 +712,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createKernelInitializerFunction(
 
     CGF.EmitBlock(WorkerBB);
     initializeDataSharing(CGF, /*IsMaster=*/false);
-    Bld.CreateCall(WorkerFunction);
+    emitCall(CGF, WorkerFunction);
     CGF.EmitBranch(ExitBB);
   } else {
     // Initialize the state of the OpenMP runtime library on the GPU.
@@ -734,7 +732,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createKernelInitializerFunction(
     Bld.CreateCondBr(IsWorker, WorkerBB, ExitBB);
 
     CGF.EmitBlock(WorkerBB);
-    Bld.CreateCall(WorkerFunction);
+    emitCall(CGF, WorkerFunction);
     CGF.EmitBranch(ExitBB);
   }
 
@@ -909,7 +907,11 @@ static bool onlyOneStmt(const Stmt *Body) {
 // check for inner (nested) SPMD teams construct, if any
 static bool hasNestedTeamsSPMDDirective(const OMPExecutableDirective &D,
                                         bool tryCombineAggressively) {
-  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *PCS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    PCS = cast<CapturedStmt>(PCS->getCapturedStmt());
+  const CapturedStmt &CS = *PCS;
 
   if (auto *NestedDir = dyn_cast_or_null<OMPExecutableDirective>(
           ignoreCompoundStmts(CS.getCapturedStmt()))) {
@@ -943,7 +945,11 @@ static bool hasNestedTeamsSPMDDirective(const OMPExecutableDirective &D,
 static const OMPExecutableDirective *
 getNestedTeamsSPMDDirective(const OMPExecutableDirective &D,
                             bool tryCombineAggressively) {
-  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *PCS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    PCS = cast<CapturedStmt>(PCS->getCapturedStmt());
+  const CapturedStmt &CS = *PCS;
 
   if (auto *NestedDir = dyn_cast_or_null<OMPExecutableDirective>(
           ignoreCompoundStmts(CS.getCapturedStmt()))) {
@@ -1236,7 +1242,10 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setMasterSharedDataSize() {
     return;
 
   auto &C = CGM.getContext();
-  auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    CS = cast<CapturedStmt>(CS->getCapturedStmt());
 
   // First get private variables inferred from the target directive's clauses.
   llvm::DenseSet<const VarDecl *> PrivateDecls;
@@ -1305,7 +1314,10 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setMasterSharedDataSize() {
 
   llvm::SmallSet<const VarDecl *, 32> AlreadySharedDecls;
   for (auto *Dir : DSDirectives) {
-    const CapturedStmt *CS = cast<CapturedStmt>(Dir->getAssociatedStmt());
+    const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+    if (Dir->hasClausesOfKind<OMPDependClause>() &&
+        isOpenMPTargetExecutionDirective(Dir->getDirectiveKind()))
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
     const RecordDecl *RD = CS->getCapturedRecordDecl();
     auto CurField = RD->field_begin();
     auto CurCap = CS->capture_begin();
@@ -1320,14 +1332,18 @@ void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setMasterSharedDataSize() {
         ElemTy = (*I)->getType();
       const VarDecl *CurVD = nullptr;
 
-      if (CurField->hasCapturedVLAType()) {
-        continue;
-      } else if (CurCap->capturesThis()) {
+      if (CurCap->capturesThis()) {
         // We use null to indicate 'this'.
         CurVD = nullptr;
       } else {
         // Get the variable that is initializing the capture.
-        CurVD = CurCap->getCapturedVar();
+        if (CurField->hasCapturedVLAType()) {
+          ElemTy = C.getSizeType();
+          CurVD = ImplicitParamDecl::Create(C, ElemTy,
+              ImplicitParamDecl::Other);
+        } else {
+          CurVD = CurCap->getCapturedVar();
+        }
 
         // If this is an OpenMP capture declaration, we need to look at the
         // original declaration.
@@ -1402,7 +1418,11 @@ getTeamsDirective(const CodeGenModule &CGM, const OMPExecutableDirective &D) {
   switch (D.getDirectiveKind()) {
   case OMPD_target:
   case OMPD_target_simd: {
-    const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+    const auto *PCS = cast<CapturedStmt>(D.getAssociatedStmt());
+    if (D.hasClausesOfKind<OMPDependClause>() &&
+        isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+      PCS = cast<CapturedStmt>(PCS->getCapturedStmt());
+    const CapturedStmt &CS = *PCS;
     if (auto *NestedDir = dyn_cast_or_null<OMPExecutableDirective>(
             ignoreCompoundStmts(CS.getCapturedStmt())))
       return NestedDir;
@@ -1416,9 +1436,20 @@ getTeamsDirective(const CodeGenModule &CGM, const OMPExecutableDirective &D) {
   return nullptr;
 }
 
-void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setHasTeamsReduction() {
+void CGOpenMPRuntimeNVPTX::TargetKernelProperties::setTeamsReductionInfo() {
   const OMPExecutableDirective &TD = *getTeamsDirective(CGM, D);
-  HasTeamsReduction = TD.hasClausesOfKind<OMPReductionClause>();
+
+  ReductionVariableCount = 0;
+  ReductionSizeInBytes = 0;
+  for (const auto *C : TD.getClausesOfKind<OMPReductionClause>()) {
+    for (auto *V : C->privates()) {
+      assert(!V->getType()->isVariablyModifiedType() &&
+             "NVPTX device cannot handle variably modified types.");
+      ReductionVariableCount++;
+      ReductionSizeInBytes +=
+          CGM.getContext().getTypeSize(V->getType().getCanonicalType());
+    }
+  }
 }
 
 void CGOpenMPRuntimeNVPTX::WorkerFunctionState::createWorkerFunction(
@@ -1439,6 +1470,8 @@ void CGOpenMPRuntimeNVPTX::emitWorkerFunction(WorkerFunctionState &WST) {
   auto &Ctx = CGM.getContext();
 
   CodeGenFunction CGF(CGM, /*suppressNewContext=*/true);
+  // We don't need debug information in this function as nothing here refers to
+  // user code.
   CGF.disableDebugInfo();
   CGF.StartFunction(GlobalDecl(), Ctx.VoidTy, WST.WorkerFn, *WST.CGFI, {});
   emitWorkerLoop(CGF, WST);
@@ -1510,8 +1543,8 @@ void CGOpenMPRuntimeNVPTX::emitWorkerLoop(CodeGenFunction &CGF,
     if (Work.size() == 1) {
       // Insert call to work function. We pass the master has source thread ID.
       auto Fn = cast<llvm::Function>(Work[0]);
-      CGF.EmitCallOrInvoke(
-          Fn, {Bld.getInt16(/*ParallelLevel=*/0), GetMasterThreadID(CGF)});
+      emitCall(CGF, Fn,
+               {Bld.getInt16(/*ParallelLevel=*/0), GetMasterThreadID(CGF)});
     }
 
     // Go to end of parallel region.
@@ -1533,8 +1566,8 @@ void CGOpenMPRuntimeNVPTX::emitWorkerLoop(CodeGenFunction &CGF,
 
       // Insert call to work function. We pass the master has source thread ID.
       auto Fn = cast<llvm::Function>(W);
-      CGF.EmitCallOrInvoke(
-          Fn, {Bld.getInt16(/*ParallelLevel=*/0), GetMasterThreadID(CGF)});
+      emitCall(CGF, Fn,
+               {Bld.getInt16(/*ParallelLevel=*/0), GetMasterThreadID(CGF)});
 
       // Go to end of parallel region.
       CGF.EmitBranch(TerminateBB);
@@ -1551,8 +1584,8 @@ void CGOpenMPRuntimeNVPTX::emitWorkerLoop(CodeGenFunction &CGF,
                                   /*isVarArg*/ false)
               ->getPointerTo();
       auto WorkFnCast = Bld.CreateBitCast(WorkID, ParallelFnTy);
-      CGF.EmitCallOrInvoke(WorkFnCast, {Bld.getInt16(/*ParallelLevel=*/0),
-                                        GetMasterThreadID(CGF)});
+      emitCall(CGF, WorkFnCast,
+               {Bld.getInt16(/*ParallelLevel=*/0), GetMasterThreadID(CGF)});
       // Go to end of parallel region.
       CGF.EmitBranch(TerminateBB);
     }
@@ -1658,27 +1691,40 @@ void CGOpenMPRuntimeNVPTX::emitGenericEntryFooter(CodeGenFunction &CGF,
   EST.ExitBB = nullptr;
 }
 
-// Create a unique global variable to indicate the execution mode of this target
-// region. This variable is picked up by the offload library to setup the device
-// before kernel launch.
-static void SetPropertyExecutionMode(CodeGenModule &CGM, StringRef Name,
-                                     CGOpenMPRuntimeNVPTX::ExecutionMode Mode) {
-  (void)new llvm::GlobalVariable(
-      CGM.getModule(), CGM.Int8Ty, /*isConstant=*/true,
-      llvm::GlobalValue::WeakAnyLinkage,
-      llvm::ConstantInt::get(CGM.Int8Ty, Mode), Name + Twine("_exec_mode"));
-}
+// Create a unique global structure to indicate the execution mode and other
+// properties of this target region. This data is picked up by the offload
+// library to setup the device before kernel launch.
+void CGOpenMPRuntimeNVPTX::SetTargetKernelProperties(
+    CodeGenModule &CGM, StringRef TargetName,
+    CGOpenMPRuntimeNVPTX::ExecutionMode Mode, unsigned ReductionVariableCount,
+    unsigned ReductionSizeInBytes) {
+  ASTContext &C = CGM.getContext();
 
-// Create a unique global variable to indicate whether the target teams region
-// has
-// a reduction operation.
-static void SetPropertyReduction(CodeGenModule &CGM, StringRef Name,
-                                 bool HasReduction) {
-  (void)new llvm::GlobalVariable(
-      CGM.getModule(), CGM.Int8Ty, /*isConstant=*/true,
-      llvm::GlobalValue::WeakAnyLinkage,
-      llvm::ConstantInt::get(CGM.Int8Ty, HasReduction),
-      Name + Twine("_reduction"));
+  const char *TTName = "__openmp_nvptx_target_property_ty";
+  auto Int32Ty = C.getIntTypeForBitwidth(/*DestWidth=*/32, /*Signed=*/true);
+  auto *RD = C.buildImplicitRecord(TTName);
+  RD->startDefinition();
+  // Execution Mode: 0 - SPMD mode, 1 - Generic mode.
+  addFieldToRecordDecl(C, RD, C.CharTy);
+  // Number of teams reduction variables.
+  addFieldToRecordDecl(C, RD, Int32Ty);
+  // Total size of reduction variables.
+  addFieldToRecordDecl(C, RD, Int32Ty);
+  RD->completeDefinition();
+
+  auto *TargetPropertyTy = cast<llvm::StructType>(
+      CGM.getTypes().ConvertTypeForMem(C.getRecordType(RD)));
+
+  ConstantInitBuilder Bld(CGM);
+  auto fields = Bld.beginStruct(TargetPropertyTy);
+  fields.addInt(CGM.Int8Ty,
+                Mode == CGOpenMPRuntimeNVPTX::ExecutionMode::GENERIC);
+  fields.addInt(CGM.Int32Ty, ReductionVariableCount);
+  fields.addInt(CGM.Int32Ty, ReductionSizeInBytes);
+  auto Align = CharUnits::fromQuantity(1);
+  fields.finishAndCreateGlobal(TargetName + Twine("_property"), Align,
+                               /*isConstant=*/true,
+                               llvm::GlobalValue::WeakAnyLinkage);
 }
 
 void CGOpenMPRuntimeNVPTX::emitSPMDEntryHeader(
@@ -1727,6 +1773,14 @@ llvm::Constant *
 CGOpenMPRuntimeNVPTX::createNVPTXRuntimeFunction(unsigned Function) {
   llvm::Constant *RTLFn = nullptr;
   switch (static_cast<OpenMPRTLFunctionNVPTX>(Function)) {
+  case OMPRTL_NVPTX__kmpc_kernel_init_params: {
+    // Build void __kmpc_kernel_init_params(void *ScratchpadPtr);
+    llvm::Type *TypeParams[] = {CGM.Int8PtrTy};
+    llvm::FunctionType *FnTy =
+        llvm::FunctionType::get(CGM.VoidTy, TypeParams, /*isVarArg*/ false);
+    RTLFn = CGM.CreateRuntimeFunction(FnTy, "__kmpc_kernel_init_params");
+    break;
+  }
   case OMPRTL_NVPTX__kmpc_kernel_init: {
     // Build void __kmpc_kernel_init(kmp_int32 thread_limit,
     // int16_t RequiresOMPRuntime);
@@ -2264,6 +2318,99 @@ void CGOpenMPRuntimeNVPTX::createOffloadEntry(llvm::Constant *ID,
   MD->addOperand(llvm::MDNode::get(Ctx, MDVals));
 }
 
+llvm::Function *
+CGOpenMPRuntimeNVPTX::outlineTargetDirective(const OMPExecutableDirective &D,
+                                             StringRef Name,
+                                             const RegionCodeGenTy &CodeGen) {
+  // Generate the outlined function for the target directive.  Wrap it around
+  // the offload kernel.  The offload kernel includes NVPTX specific parameters.
+  SmallString<256> Buffer;
+  llvm::raw_svector_ostream Out(Buffer);
+  Out << Name << "_impl__";
+  llvm::Function *OutlinedFn =
+      CGOpenMPRuntime::outlineTargetDirective(D, Out.str(), CodeGen);
+  OutlinedFn->removeFnAttr(llvm::Attribute::NoInline);
+  OutlinedFn->addFnAttr(llvm::Attribute::AlwaysInline);
+  OutlinedFn->setLinkage(llvm::GlobalValue::InternalLinkage);
+
+  //
+  // Add device specific parameters to a target region's outlined function.
+  // These parameters are added to all target regions.  Arguments for these
+  // parameters are passed in by the offload library.
+  //
+  CodeGenFunction WrapperCGF(CGM, /*suppressNewContext=*/true);
+  auto &Ctx = WrapperCGF.getContext();
+  const auto *PCS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>())
+    PCS = cast<CapturedStmt>(PCS->getCapturedStmt());
+  const CapturedStmt &CS = *PCS;
+  // When a target region has a depend clause, generate a new task
+  // that contains the target region invocation, instead of generating it in
+  // place. The task will take care of the depend logic.
+  bool HasDependClause = D.hasClausesOfKind<OMPDependClause>();
+  bool UseCapturedArgumentsOnly =
+      isOpenMPParallelDirective(D.getDirectiveKind()) ||
+      isOpenMPTeamsDirective(D.getDirectiveKind()) || HasDependClause;
+  FunctionArgList Args;
+  WrapperCGF.GenerateOpenMPCapturedStmtParameters(
+      CS, UseCapturedArgumentsOnly, /*CaptureLevel=*/1, /*ImplicitParamStop=*/0,
+      CGM.getCodeGenOpts().OpenmpNonaliasedMaps, /*UIntPtrCastRequired=*/true,
+      Args);
+
+  // Pointer to a scratchpad location to store intermediate results of a
+  // teams reduction.
+  const VarDecl *ScratchpadArg = ImplicitParamDecl::Create(
+      Ctx, /*DC=*/nullptr, SourceLocation(), &Ctx.Idents.get("scratchpad_ptr"),
+      Ctx.VoidPtrTy, ImplicitParamDecl::Other);
+  Args.emplace_back(ScratchpadArg);
+
+  FunctionType::ExtInfo ExtInfo;
+  const CGFunctionInfo &FuncInfo =
+      CGM.getTypes().arrangeBuiltinFunctionDeclaration(Ctx.VoidTy, Args);
+  llvm::FunctionType *FuncLLVMTy = CGM.getTypes().GetFunctionType(FuncInfo);
+  llvm::Function *WrapperFn = llvm::Function::Create(
+      FuncLLVMTy, llvm::GlobalValue::InternalLinkage, Name, &CGM.getModule());
+  const CapturedDecl *CD = CS.getCapturedDecl();
+  CGM.SetInternalFunctionAttributes(CD, WrapperFn, FuncInfo);
+  if (CD->isNothrow())
+    WrapperFn->setDoesNotThrow();
+
+  WrapperCGF.StartFunction(CD, Ctx.VoidTy, WrapperFn, FuncInfo, Args,
+                           CS.getLocStart(), CD->getBody()->getLocStart());
+
+  // Initialize the teams reduction scratchpad.
+  const OMPExecutableDirective &TD = *getTeamsDirective(WrapperCGF.CGM, D);
+  if (isOpenMPTeamsDirective(TD.getDirectiveKind())) {
+    Address LocalAddr = WrapperCGF.GetAddrOfLocalVar(ScratchpadArg);
+    LValue ArgLVal = WrapperCGF.MakeAddrLValue(
+        LocalAddr, ScratchpadArg->getType(), AlignmentSource::Decl);
+    llvm::Value *Scratchpad =
+        WrapperCGF.EmitLoadOfLValue(ArgLVal, ScratchpadArg->getLocation())
+            .getScalarVal();
+    WrapperCGF.EmitRuntimeCall(
+        createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_kernel_init_params),
+        Scratchpad);
+  }
+
+  // Call the base outlined function to execute the target region.
+  llvm::SmallVector<llvm::Value *, 4> CallArgs;
+  for (FunctionArgList::const_iterator I = Args.begin(),
+                                       E = std::prev(Args.end());
+       I != E; ++I) {
+    auto *Arg = *I;
+    Address LocalAddr = WrapperCGF.GetAddrOfLocalVar(Arg);
+    LValue ArgLVal = WrapperCGF.MakeAddrLValue(LocalAddr, Arg->getType(),
+                                               AlignmentSource::Decl);
+    llvm::Value *Val =
+        WrapperCGF.EmitLoadOfLValue(ArgLVal, Arg->getLocation()).getScalarVal();
+    CallArgs.emplace_back(Val);
+  }
+  CGM.getOpenMPRuntime().emitCall(WrapperCGF, OutlinedFn, CallArgs,
+                                  CS.getLocStart());
+  WrapperCGF.FinishFunction();
+  return WrapperFn;
+}
+
 namespace {
 class ExecutionModeRAII {
 private:
@@ -2295,7 +2442,7 @@ void CGOpenMPRuntimeNVPTX::emitGenericKernel(const OMPExecutableDirective &D,
   ExecutionModeRAII ModeRAII(CurrMode,
                              CGOpenMPRuntimeNVPTX::ExecutionMode::GENERIC,
                              IsOrphaned, false);
-  EntryFunctionState EST(TP);
+  EntryFunctionState EST(CGM, TP);
   WorkerFunctionState WST(CGM, TP);
   Work.clear();
   WrapperFunctionsMap.clear();
@@ -2319,8 +2466,10 @@ void CGOpenMPRuntimeNVPTX::emitGenericKernel(const OMPExecutableDirective &D,
     }
   } Action(*this, EST, WST);
   CodeGen.setAction(Action);
+
   emitTargetOutlinedFunctionHelper(D, ParentName, OutlinedFn, OutlinedFnID,
-                                   IsOffloadEntry, CodeGen);
+                                   IsOffloadEntry, CodeGen,
+                                   /* CaptureLevel = */ 1);
 
   // Create the worker function
   emitWorkerFunction(WST);
@@ -2341,7 +2490,7 @@ void CGOpenMPRuntimeNVPTX::emitSPMDKernel(const OMPExecutableDirective &D,
                                           const RegionCodeGenTy &CodeGen) {
   ExecutionModeRAII ModeRAII(
       CurrMode, CGOpenMPRuntimeNVPTX::ExecutionMode::SPMD, IsOrphaned, false);
-  EntryFunctionState EST(TP);
+  EntryFunctionState EST(CGM, TP);
 
   // Emit target region as a standalone region.
   class NVPTXPrePostActionTy : public PrePostActionTy {
@@ -2363,7 +2512,8 @@ void CGOpenMPRuntimeNVPTX::emitSPMDKernel(const OMPExecutableDirective &D,
   } Action(*this, EST, D);
   CodeGen.setAction(Action);
   emitTargetOutlinedFunctionHelper(D, ParentName, OutlinedFn, OutlinedFnID,
-                                   IsOffloadEntry, CodeGen);
+                                   IsOffloadEntry, CodeGen,
+                                   /* CaptureLevel = */ 1);
   return;
 }
 
@@ -2387,7 +2537,8 @@ public:
 void CGOpenMPRuntimeNVPTX::emitTargetOutlinedFunction(
     const OMPExecutableDirective &D, StringRef ParentName,
     llvm::Function *&OutlinedFn, llvm::Constant *&OutlinedFnID,
-    bool IsOffloadEntry, const RegionCodeGenTy &CodeGen) {
+    bool IsOffloadEntry, const RegionCodeGenTy &CodeGen,
+    unsigned CaptureLevel) {
   if (!IsOffloadEntry) // Nothing to do.
     return;
 
@@ -2412,8 +2563,9 @@ void CGOpenMPRuntimeNVPTX::emitTargetOutlinedFunction(
         "Unknown programming model for OpenMP directive on NVPTX target.");
   }
 
-  SetPropertyExecutionMode(CGM, OutlinedFn->getName(), Mode);
-  SetPropertyReduction(CGM, OutlinedFn->getName(), TP.hasTeamsReduction());
+  SetTargetKernelProperties(CGM, OutlinedFn->getName(), Mode,
+                            TP.getReductionVariableCount(),
+                            TP.getReductionSizeInBytes());
 
   CGM.getContext().getDiagnostics().Report(
       D.getLocStart(),
@@ -2772,7 +2924,10 @@ llvm::Value *CGOpenMPRuntimeNVPTX::emitParallelOutlinedFunction(
     // Call to a parallel that is not combined with a teams or target
     // directive (non SPMD).
     // This could also be a nested 'parallel' in an SPMD region.
-    const CapturedStmt *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+    const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+    if (D.hasClausesOfKind<OMPDependClause>() &&
+        isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
     CodeGenFunction CGF(CGM, true);
     bool HasCancel = false;
     if (auto *OPD = dyn_cast<OMPParallelDirective>(&D))
@@ -2810,7 +2965,10 @@ llvm::Value *CGOpenMPRuntimeNVPTX::emitSimdOutlinedFunction(
     const RegionCodeGenTy &CodeGen) {
   llvm::Function *OutlinedFun = nullptr;
 
-  const CapturedStmt *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    CS = cast<CapturedStmt>(CS->getCapturedStmt());
 
   // Save the current parallel context because it may be overwritten by the
   // innermost regions.
@@ -2856,7 +3014,9 @@ void CGOpenMPRuntimeNVPTX::registerCtorDtorEntry(
     llvm::Function *Fn, bool IsDtor) {
   // On top of the default registration we create a new global to force the
   // region to be executed as SPMD.
-  SetPropertyExecutionMode(CGM, Fn->getName(), SPMD);
+  SetTargetKernelProperties(CGM, Fn->getName(), SPMD,
+                            /*ReductionVariableCount=*/0,
+                            /*ReductionSizeInBytes=*/0);
 
   CGOpenMPRuntime::registerCtorDtorEntry(DeviceID, FileID, RegionName, Line, Fn,
                                          IsDtor);
@@ -2942,8 +3102,12 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
   SharedWarpRD->startDefinition();
 
   llvm::SmallSet<const VarDecl *, 32> AlreadySharedDecls;
+  ASTContext &Ctx = CGF.getContext();
   for (auto *Dir : CapturedDirs) {
-    const CapturedStmt *CS = cast<CapturedStmt>(Dir->getAssociatedStmt());
+    const auto *CS = cast<CapturedStmt>(Dir->getAssociatedStmt());
+    if (Dir->hasClausesOfKind<OMPDependClause>() &&
+        isOpenMPTargetExecutionDirective(Dir->getDirectiveKind()))
+      CS = cast<CapturedStmt>(CS->getCapturedStmt());
     const RecordDecl *RD = CS->getCapturedRecordDecl();
     auto CurField = RD->field_begin();
     auto CurCap = CS->capture_begin();
@@ -2959,14 +3123,24 @@ void CGOpenMPRuntimeNVPTX::createDataSharingInfo(CodeGenFunction &CGF) {
       // Track the data sharing type.
       DataSharingInfo::DataSharingType DST = DataSharingInfo::DST_Val;
 
-      if (CurField->hasCapturedVLAType()) {
-        continue;
-      } else if (CurCap->capturesThis()) {
+      if (CurCap->capturesThis()) {
         // We use null to indicate 'this'.
         CurVD = nullptr;
       } else {
         // Get the variable that is initializing the capture.
-        CurVD = CurCap->getCapturedVar();
+        if (CurField->hasCapturedVLAType()) {
+          auto VAT = CurField->getCapturedVLAType();
+          ElemTy = Ctx.getSizeType();
+          CurVD = ImplicitParamDecl::Create(Ctx, ElemTy,
+              ImplicitParamDecl::Other);
+          CGF.EmitVarDecl(*CurVD);
+          CGF.Builder.CreateAlignedStore(CGF.Builder.CreateIntCast(
+              CGF.VLASizeMap[VAT->getSizeExpr()], CGM.SizeTy, false),
+              CGF.GetAddrOfLocalVar(CurVD).getPointer(),
+              CGF.getPointerAlign());
+          Info.addVLADecl(VAT->getSizeExpr(), CurVD);
+        } else
+          CurVD = CurCap->getCapturedVar();
 
         // If this is an OpenMP capture declaration, we need to look at the
         // original declaration.
@@ -3148,7 +3322,6 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   auto CapturesIt = DSI.CapturesValues.begin();
   for (auto *F : MasterRD->fields()) {
     QualType ArgTy = F->getType();
-
     if (ArgTy->isVariablyModifiedType()) {
       bool IsReference = ArgTy->isLValueReferenceType();
       ArgTy = Ctx.getCanonicalParamType(ArgTy.getNonReferenceType());
@@ -3202,6 +3375,9 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   Fn->setLinkage(llvm::GlobalValue::InternalLinkage);
 
   CodeGenFunction CGF(CGM, /*suppressNewContext=*/true);
+  // We don't need debug information in this function as nothing here refers to
+  // user code.
+  CGF.disableDebugInfo();
   CGF.StartFunction(GlobalDecl(), Ctx.VoidTy, Fn, CGFI, ArgList);
 
   // If this is an entry point, all the threads except the master should skip
@@ -3243,7 +3419,9 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   SmallVector<Address, 32> NewAddressPtrs;
   SmallVector<Address, 32> OrigAddresses;
   // We iterate two by two.
-  for (auto CapturesIt = DSI.CapturesValues.begin(); ArgsIt != ArgList.end();
+  for (auto CapturesIt = DSI.CapturesValues.begin();
+       // !(CapturesIt == DSI.CapturesValues.end() || ArgsIt == ArgList.end());
+       ArgsIt != ArgList.end();
        ++ArgsIt, ++CapturesIt) {
     if (CapturesIt->second != DataSharingInfo::DST_Ref) {
       NewAddressPtrs.push_back(
@@ -3275,10 +3453,10 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
                            DataSize,
                            DefaultDataSize,
                            Bld.getInt16(isOMPRuntimeInitialized() ? 1 : 0)};
-    auto *DataShareAddr =
-        Bld.CreateCall(createNVPTXRuntimeFunction(
-                           OMPRTL_NVPTX__kmpc_data_sharing_environment_begin),
-                       Args, "data_share_master_addr");
+    auto *DataShareAddr = CGF.EmitRuntimeCall(
+        createNVPTXRuntimeFunction(
+            OMPRTL_NVPTX__kmpc_data_sharing_environment_begin),
+        Args, "data_share_master_addr");
     auto DataSharePtrQTy = Ctx.getPointerType(DSI.MasterRecordType);
     auto *DataSharePtrTy = CGF.getTypes().ConvertTypeForMem(DataSharePtrQTy);
     auto *CasterDataShareAddr =
@@ -3337,10 +3515,10 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
                            DataSize,
                            DefaultDataSize,
                            /*isOMPRuntimeInitialized=*/Bld.getInt16(1)};
-    auto *DataShareAddr =
-        Bld.CreateCall(createNVPTXRuntimeFunction(
-                           OMPRTL_NVPTX__kmpc_data_sharing_environment_begin),
-                       Args, "data_share_master_addr");
+    auto *DataShareAddr = CGF.EmitRuntimeCall(
+        createNVPTXRuntimeFunction(
+            OMPRTL_NVPTX__kmpc_data_sharing_environment_begin),
+        Args, "data_share_master_addr");
     auto DataSharePtrQTy = Ctx.getPointerType(DSI.WorkerWarpRecordType);
     auto *DataSharePtrTy = CGF.getTypes().ConvertTypeForMem(DataSharePtrQTy);
     auto *CasterDataShareAddr =
@@ -3411,12 +3589,18 @@ void CGOpenMPRuntimeNVPTX::createDataSharingPerFunctionInfrastructure(
   for (unsigned i = 0; i < OrigAddresses.size(); ++i, ++FI) {
     llvm::Value *OriginalVal = nullptr;
     if (const VarDecl *VD = DSI.CapturesValues[i].first) {
-      DeclRefExpr DRE(const_cast<VarDecl *>(VD),
+      if (DSI.isVLADecl(VD)) {
+        EnclosingCGF.EmitOMPHelperVar(VD);
+        Address OriginalAddr = EnclosingCGF.GetAddrOfLocalVar(VD);
+        OriginalVal = OriginalAddr.getPointer();
+      } else {
+        DeclRefExpr DRE(const_cast<VarDecl *>(VD),
                       /*RefersToEnclosingVariableOrCapture=*/false,
                       VD->getType().getNonReferenceType(), VK_LValue,
                       SourceLocation());
-      Address OriginalAddr = EnclosingCGF.EmitOMPHelperVar(&DRE).getAddress();
-      OriginalVal = OriginalAddr.getPointer();
+        Address OriginalAddr = EnclosingCGF.EmitOMPHelperVar(&DRE).getAddress();
+        OriginalVal = OriginalAddr.getPointer();
+      }
     } else
       OriginalVal = CGF.LoadCXXThis();
 
@@ -3472,7 +3656,11 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     llvm::Function &OutlinedParallelFn, const OMPExecutableDirective &D,
     const Decl *CurrentContext, bool IsSimd) {
   auto &Ctx = CGM.getContext();
-  const CapturedStmt &CS = *cast<CapturedStmt>(D.getAssociatedStmt());
+  const auto *PCS = cast<CapturedStmt>(D.getAssociatedStmt());
+  if (D.hasClausesOfKind<OMPDependClause>() &&
+      isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+    PCS = cast<CapturedStmt>(PCS->getCapturedStmt());
+  const CapturedStmt &CS = *PCS;
 
   // Create a function that takes as argument the source lane.
   FunctionArgList WrapperArgs;
@@ -3505,6 +3693,9 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   Fn->setLinkage(llvm::GlobalValue::InternalLinkage);
 
   CodeGenFunction CGF(CGM, /*suppressNewContext=*/true);
+  // We don't need debug information in this function as nothing here refers to
+  // user code.
+  CGF.disableDebugInfo();
   CGF.StartFunction(GlobalDecl(), Ctx.VoidTy, Fn, CGFI, WrapperArgs);
 
   // Get the parallelism level (L0, L1, L2+).
@@ -3518,37 +3709,32 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   // Create temporary variables to contain the new args.
   SmallVector<Address, 32> ArgsAddresses;
 
-  int NameIdx = 0;
+  // Get the data sharing information for the context that encloses the current
+  // one.
+  auto &DSI = getDataSharingInfo(CurrentContext);
+
   auto *RD = CS.getCapturedRecordDecl();
   auto CurField = RD->field_begin();
   for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
                                             CE = CS.capture_end();
        CI != CE; ++CI, ++CurField) {
     QualType ElemTy = CurField->getType();
-
-    if (CI->capturesVariableArrayType()){
-      ArgsAddresses.push_back(CGF.CreateMemTemp(ElemTy, "vla.addr." + std::to_string(NameIdx)));
-      NameIdx++;
-      continue;
-    }
-
     StringRef Name;
-    if (CI->capturesThis())
+
+    if (CI->capturesVariableArrayType())
+      Name = "vla";
+    else if (CI->capturesThis())
       Name = "this";
     else
       Name = CI->getCapturedVar()->getName();
 
     // If this is a capture by copy the element type has to be the pointer to
     // the data.
-    if (CI->capturesVariableByCopy())
+    if (CI->capturesVariableByCopy() || CI->capturesVariableArrayType())
       ElemTy = Ctx.getPointerType(ElemTy);
 
     ArgsAddresses.push_back(CGF.CreateMemTemp(ElemTy, Name + ".addr"));
   }
-
-  // Get the data sharing information for the context that encloses the current
-  // one.
-  auto &DSI = getDataSharingInfo(CurrentContext);
 
   // If this region is sharing loop bounds we need to create the local variables
   // to store the right addresses.
@@ -3566,7 +3752,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     auto &Bld = CGF.Builder;
 
     // In the Level 0 regions, we need to get the record of the master thread.
-    auto *DataAddr = Bld.CreateCall(
+    auto *DataAddr = CGF.EmitRuntimeCall(
         createNVPTXRuntimeFunction(
             OMPRTL_NVPTX__kmpc_get_data_sharing_environment_frame),
         {GetMasterThreadID(CGF),
@@ -3578,17 +3764,23 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     // For each capture obtain the pointer by calculating the right offset in
     // the host record.
     unsigned ArgsIdx = 0;
+    auto CurField = RD->field_begin();
     auto FI =
         DSI.MasterRecordType->getAs<RecordType>()->getDecl()->field_begin();
     for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
                                               CE = CS.capture_end();
-         CI != CE; ++CI) {
+         CI != CE; ++CI, ++CurField) {
+      const VarDecl *VD;
+      if (CurField->hasCapturedVLAType() != CI->capturesVariableArrayType())
+        assert(false && "These values should match!");
+
       if (CI->capturesVariableArrayType()){
-        // Create Value store
-        ++ArgsIdx;
-        continue;
+        // Get declaration
+        auto VAT = CurField->getCapturedVLAType();
+        VD = DSI.getVLADecl(VAT->getSizeExpr());
+      } else {
+        VD = CI->capturesThis() ? nullptr : CI->getCapturedVar();
       }
-      const VarDecl *VD = CI->capturesThis() ? nullptr : CI->getCapturedVar();
       CreateAddressStoreForVariable(CGF, VD, FI->getType(), DSI, CastedDataAddr,
                                     ArgsAddresses[ArgsIdx]);
       ++FI;
@@ -3612,7 +3804,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
 
     // In the Level 1 regions, we need to get the record of the current worker
     // thread.
-    auto *DataAddr = Bld.CreateCall(
+    auto *DataAddr = CGF.EmitRuntimeCall(
         createNVPTXRuntimeFunction(
             OMPRTL_NVPTX__kmpc_get_data_sharing_environment_frame),
         {GetNVPTXThreadID(CGF),
@@ -3624,16 +3816,19 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     // For each capture obtain the pointer by calculating the right offset in
     // the host record.
     unsigned ArgsIdx = 0;
+    auto CurField = RD->field_begin();
     auto FI =
         DSI.MasterRecordType->getAs<RecordType>()->getDecl()->field_begin();
     for (CapturedStmt::const_capture_iterator CI = CS.capture_begin(),
                                               CE = CS.capture_end();
-         CI != CE; ++CI, ++ArgsIdx) {
+         CI != CE; ++CI, ++ArgsIdx, ++CurField) {
+      const VarDecl *VD;
       if (CI->capturesVariableArrayType()){
-        // Create Value store
-        continue;
-      }
-      const VarDecl *VD = CI->capturesThis() ? nullptr : CI->getCapturedVar();
+        // Get declaration
+        auto VAT = CurField->getCapturedVLAType();
+        VD = DSI.getVLADecl(VAT->getSizeExpr());
+      } else
+        VD = CI->capturesThis() ? nullptr : CI->getCapturedVar();
       CreateAddressStoreForVariable(CGF, VD, FI->getType(), DSI, CastedDataAddr,
                                     ArgsAddresses[ArgsIdx], SourceLaneID);
       FI++;
@@ -3707,22 +3902,24 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   auto CI = CS.capture_begin();
   auto CurrentField = RD->field_begin();
   for (unsigned i = 0/*, ArgIdx = 0*/; i < CS.capture_size(); ++i, ++CI, ++CapInfo, ++CurrentField) {
-    if (CI->capturesVariableArrayType()) {
-      auto CapturedTy = CurrentField->getType();
-      auto *Arg = CGF.EmitLoadOfScalar(ArgsAddresses[i], /*Volatile=*/false,
-                                       Ctx.getPointerType(CapturedTy),
-                                       SourceLocation());
-      Args.push_back(Arg);
-      continue;
-    }
-
     auto *Arg = CGF.EmitLoadOfScalar(ArgsAddresses[i], /*Volatile=*/false,
                                      Ctx.getPointerType(FI->getType()),
                                      SourceLocation());
+
+    const VarDecl *CapturedVar;
+    if (CI->capturesVariableArrayType()) {
+      auto VAT = CurrentField->getCapturedVLAType();
+      CapturedVar = DSI.getVLADecl(VAT->getSizeExpr());
+      auto CapturedTy = FI->getType();
+      auto LV = CGF.MakeNaturalAlignAddrLValue(Arg, CapturedTy);
+      Arg = CGF.EmitLoadOfScalar(LV, SourceLocation());
+    } else if (CI->capturesVariableByCopy()) {
+      CapturedVar = CI->getCapturedVar();
+    }
+
     // If this is a capture by value, we need to load the data. Additionally, if
     // its not a pointer we may need to cast it to uintptr.
     if (CI->capturesVariableByCopy()) {
-      auto *CapturedVar = CI->getCapturedVar();
       auto CapturedTy = FI->getType();
       auto LV = CGF.MakeNaturalAlignAddrLValue(Arg, CapturedTy);
 
@@ -3744,7 +3941,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
     ++FI;
   }
 
-  CGF.EmitCallOrInvoke(&OutlinedParallelFn, Args);
+  emitOutlinedFunctionCall(CGF, D.getLocStart(), &OutlinedParallelFn, Args);
   CGF.FinishFunction();
   return Fn;
 }
@@ -3864,8 +4061,7 @@ void CGOpenMPRuntimeNVPTX::emitGenericParallelCall(
   createDataSharingPerFunctionInfrastructure(CGF);
 
   auto *RTLoc = emitUpdateLocation(CGF, Loc);
-  auto &&L0ParallelGen = [this, WFn, &CapturedVars](CodeGenFunction &CGF,
-                                                    PrePostActionTy &) {
+  auto &&L0ParallelGen = [this, WFn](CodeGenFunction &CGF, PrePostActionTy &) {
     CGBuilderTy &Bld = CGF.Builder;
 
     auto ID = Bld.CreateBitOrPointerCast(WFn, CGM.Int8PtrTy);
@@ -3936,8 +4132,7 @@ void CGOpenMPRuntimeNVPTX::emitGenericParallelCall(
         WorkSource, /*Volatile=*/false,
         Ctx.getIntTypeForBitwidth(/*DestWidth=*/32, /*Signed=*/false),
         SourceLocation());
-    CGF.EmitCallOrInvoke(WFn,
-                         {Bld.getInt16(/*ParallelLevel=*/1), SourceThread});
+    emitCall(CGF, WFn, {Bld.getInt16(/*ParallelLevel=*/1), SourceThread});
     ArrayDecay = Bld.CreateConstInBoundsGEP2_32(
         llvm::ArrayType::get(CGM.Int8Ty, TASK_STATE_SIZE), TaskState,
         /*Idx0=*/0, /*Idx1=*/0);
@@ -3972,7 +4167,7 @@ void CGOpenMPRuntimeNVPTX::emitGenericParallelCall(
     OutlinedFnArgs.push_back(
         llvm::Constant::getNullValue(CGM.Int32Ty->getPointerTo()));
     OutlinedFnArgs.append(CapturedVars.begin(), CapturedVars.end());
-    CGF.EmitCallOrInvoke(Fn, OutlinedFnArgs);
+    emitOutlinedFunctionCall(CGF, Loc, Fn, OutlinedFnArgs);
 
     // __kmpc_end_serialized_parallel(&Loc, GTid);
     llvm::Value *EndArgs[] = {emitUpdateLocation(CGF, Loc), ThreadID};
@@ -4018,7 +4213,7 @@ void CGOpenMPRuntimeNVPTX::emitSPMDParallelCall(
     OutlinedFnArgs.push_back(ThreadIDAddr.getPointer());
     OutlinedFnArgs.push_back(ZeroAddr.getPointer());
     OutlinedFnArgs.append(CapturedVars.begin(), CapturedVars.end());
-    CGF.EmitCallOrInvoke(OutlinedFn, OutlinedFnArgs);
+    emitOutlinedFunctionCall(CGF, Loc, OutlinedFn, OutlinedFnArgs);
   } else {
     emitGenericParallelCall(CGF, Loc, OutlinedFn, CapturedVars, IfCond);
   }
@@ -4056,10 +4251,7 @@ void CGOpenMPRuntimeNVPTX::emitSimdCall(CodeGenFunction &CGF,
   // function.
   createDataSharingPerFunctionInfrastructure(CGF);
 
-  auto *RTLoc = emitUpdateLocation(CGF, Loc);
-
-  auto &&L1SimdGen = [this, WFn, RTLoc, Loc](CodeGenFunction &CGF,
-                                             PrePostActionTy &) {
+  auto &&L1SimdGen = [this, WFn](CodeGenFunction &CGF, PrePostActionTy &) {
     CGBuilderTy &Bld = CGF.Builder;
     clang::ASTContext &Ctx = CGF.getContext();
 
@@ -4119,7 +4311,7 @@ void CGOpenMPRuntimeNVPTX::emitSimdCall(CodeGenFunction &CGF,
     OutlinedFnArgs.push_back(SourceThread);
     OutlinedFnArgs.push_back(LaneId.getPointer());
     OutlinedFnArgs.push_back(NumLanes.getPointer());
-    CGF.EmitCallOrInvoke(WFn, OutlinedFnArgs);
+    emitCall(CGF, WFn, OutlinedFnArgs);
     ArrayDecay = Bld.CreateConstInBoundsGEP2_32(
         llvm::ArrayType::get(CGM.Int8Ty, SIMD_STATE_SIZE), TaskState,
         /*Idx0=*/0, /*Idx1=*/0);
@@ -4137,7 +4329,8 @@ void CGOpenMPRuntimeNVPTX::emitSimdCall(CodeGenFunction &CGF,
     CGF.EmitBlock(DoEndBB);
   };
 
-  auto &&SeqGen = [Fn, &CapturedVars](CodeGenFunction &CGF, PrePostActionTy &) {
+  auto &&SeqGen = [Fn, &CapturedVars, Loc](CodeGenFunction &CGF,
+                                           PrePostActionTy &) {
     CGBuilderTy &Bld = CGF.Builder;
     Address LaneId =
         CGF.CreateTempAlloca(CGF.Int32Ty, CharUnits::fromQuantity(4),
@@ -4153,7 +4346,8 @@ void CGOpenMPRuntimeNVPTX::emitSimdCall(CodeGenFunction &CGF,
     OutlinedFnArgs.push_back(LaneId.getPointer());
     OutlinedFnArgs.push_back(NumLanes.getPointer());
     OutlinedFnArgs.append(CapturedVars.begin(), CapturedVars.end());
-    CGF.EmitCallOrInvoke(Fn, OutlinedFnArgs);
+    CGF.CGM.getOpenMPRuntime().emitOutlinedFunctionCall(CGF, Loc, Fn,
+                                                        OutlinedFnArgs);
   };
 
   CodeGenFunction::RunCleanupsScope Scope(CGF);
@@ -4332,10 +4526,10 @@ bool CGOpenMPRuntimeNVPTX::requiresBarrier(const OMPLoopDirective &S) const {
 /// All enumeric elements are named and described in accordance with the code
 /// from http://llvm.org/svn/llvm-project/openmp/trunk/runtime/src/kmp.h
 enum OpenMPLocationFlags {
-  /// \brief Explicit 'barrier' directive.
-  OMP_IDENT_BARRIER_EXPL = 0x20,
   /// \brief Implicit barrier in 'for' directive.
   OMP_IDENT_BARRIER_IMPL_FOR = 0x40,
+  /// \brief Implicit barrier in code.
+  OMP_IDENT_BARRIER_IMPL = 0x40,
 };
 
 // Handle simple barrier case when runtime is not available.
@@ -4347,7 +4541,8 @@ void CGOpenMPRuntimeNVPTX::emitBarrierCall(CodeGenFunction &CGF,
   if (!CGF.HaveInsertPoint())
     return;
 
-  bool IsSimpleBarrier = Kind == OMPD_for || Kind == OMPD_barrier;
+  bool IsSimpleBarrier =
+      Kind == OMPD_for || Kind == OMPD_barrier || Kind == OMPD_unknown;
   if (auto *OMPRegionInfo =
           dyn_cast_or_null<CGOpenMPRegionInfo>(CGF.CapturedStmtInfo))
     if (!ForceSimpleCall && OMPRegionInfo->hasCancel())
@@ -4359,7 +4554,7 @@ void CGOpenMPRuntimeNVPTX::emitBarrierCall(CodeGenFunction &CGF,
     if (Kind == OMPD_for)
       Flags = OMP_IDENT_BARRIER_IMPL_FOR;
     else
-      Flags = OMP_IDENT_BARRIER_EXPL;
+      Flags = OMP_IDENT_BARRIER_IMPL;
     llvm::Value *Args[] = {emitUpdateLocation(CGF, Loc, Flags),
                            getThreadID(CGF, Loc)};
     auto Name = selectRuntimeCall<OpenMPRTLFunctionNVPTX>(
@@ -4426,7 +4621,7 @@ void CGOpenMPRuntimeNVPTX::emitTeamsCall(CodeGenFunction &CGF,
     OutlinedFnArgs.push_back(ThreadIDAddr.getPointer());
     OutlinedFnArgs.push_back(ZeroAddr.getPointer());
     OutlinedFnArgs.append(CapturedVars.begin(), CapturedVars.end());
-    CGF.EmitCallOrInvoke(OutlinedFn, OutlinedFnArgs);
+    emitOutlinedFunctionCall(CGF, Loc, OutlinedFn, OutlinedFnArgs);
   } else if (D.getDirectiveKind() == OMPD_teams_distribute ||
              D.getDirectiveKind() == OMPD_target_teams_distribute) {
     // This code generation is a duplication of the one in CGStmtOpenMP.cpp
@@ -4482,8 +4677,11 @@ void CGOpenMPRuntimeNVPTX::emitTeamsCall(CodeGenFunction &CGF,
       CGF.EmitOMPPrivateClause(D, PrivateScope);
       CGF.EmitOMPReductionClauseInit(D, PrivateScope);
       (void)PrivateScope.Privatize();
-      CGF.EmitStmt(
-          cast<CapturedStmt>(D.getAssociatedStmt())->getCapturedStmt());
+      const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
+      if (D.hasClausesOfKind<OMPDependClause>() &&
+          isOpenMPTargetExecutionDirective(D.getDirectiveKind()))
+        CS = cast<CapturedStmt>(CS->getCapturedStmt());
+      CGF.EmitStmt(CS->getCapturedStmt());
       CGF.EmitOMPReductionClauseFinal(D, OMPD_teams);
     };
 
@@ -5046,7 +5244,97 @@ static llvm::Value *CreateRuntimeShuffleFunction(CodeGenFunction &CGF,
   FnArgs.push_back(Offset);
   FnArgs.push_back(Bld.getInt16(DS_Max_Worker_Warp_Size));
 
-  return CGF.EmitCallOrInvoke(RTLFn, FnArgs).getInstruction();
+  llvm::Value *ShuffledVal =
+      CGF.EmitCallOrInvoke(RTLFn, FnArgs).getInstruction();
+  return Bld.CreateTruncOrBitCast(ShuffledVal,
+                                  CGF.ConvertTypeForMem(ShuffleTy));
+}
+
+static void CopyReductionVariable(
+    CodeGenFunction &CGF, QualType Ty, Address Src, Address Dest,
+    const llvm::function_ref<void(QualType Ty, Address, Address)>
+        &ScalarCopyMaker,
+    const llvm::function_ref<void(unsigned, llvm::Value *, llvm::Value *,
+                                  llvm::Value *)> &ArrayElementCopyMaker) {
+  if (Ty->isScalarType()) {
+    ScalarCopyMaker(Ty, Src, Dest);
+  } else {
+    auto &&LoopGen = [&CGF](
+        unsigned LoopLB, unsigned LoopUB,
+        const llvm::function_ref<void(unsigned, llvm::Value *, llvm::Value *,
+                                      llvm::Value *)> &CopyMaker,
+        unsigned ElementSize, llvm::Value *Src, llvm::Value *Dest) {
+      auto &Bld = CGF.Builder;
+      llvm::BasicBlock *LoopBB = CGF.createBasicBlock("copy.loop");
+      llvm::BasicBlock *ContBB = CGF.createBasicBlock("copy.loop.end");
+
+      auto Int64Ty = CGF.CGM.getContext().getIntTypeForBitwidth(
+          /*DestWidth=*/64, /*Signed=*/false);
+      Address Idx = CGF.CreateMemTemp(Int64Ty, "loop.idx");
+      Address UB = CGF.CreateMemTemp(Int64Ty, "loop.ub");
+      CGF.EmitStoreOfScalar(Bld.getInt64(LoopLB), Idx, /*Volatile=*/false,
+                            Int64Ty);
+      CGF.EmitStoreOfScalar(Bld.getInt64(LoopUB), UB, /*Volatile=*/false,
+                            Int64Ty);
+
+      CGF.EmitBlock(LoopBB);
+      llvm::Value *IdxVal = CGF.EmitLoadOfScalar(Idx, /*Volatile=*/false,
+                                                 Int64Ty, SourceLocation());
+      CopyMaker(ElementSize, Src, Dest, IdxVal);
+
+      llvm::Value *IdxIncr = Bld.CreateNUWAdd(IdxVal, Bld.getInt64(1));
+      CGF.EmitStoreOfScalar(IdxIncr, Idx, /*Volatile=*/false, Int64Ty);
+      llvm::Value *UBVal = CGF.EmitLoadOfScalar(UB, /*Volatile=*/false, Int64Ty,
+                                                SourceLocation());
+      llvm::Value *AtEnd = Bld.CreateICmpEQ(IdxIncr, UBVal, "copy.loop.atend");
+      Bld.CreateCondBr(AtEnd, ContBB, LoopBB);
+
+      CGF.EmitBlock(ContBB);
+    };
+    auto &Bld = CGF.Builder;
+    unsigned Bytes = CGF.getContext().getTypeSizeInChars(Ty).getQuantity();
+    unsigned Words = Bytes / 8;
+    // Shuffle chunks of 64-bit words.
+    if (Words > 0) {
+      auto *ArrayTy = CGF.CGM.Int64Ty->getPointerTo();
+      auto *SrcCast = Bld.CreatePointerCast(Src.getPointer(), ArrayTy);
+      auto *DestCast = Bld.CreatePointerCast(Dest.getPointer(), ArrayTy);
+      LoopGen(0, Words, ArrayElementCopyMaker, /*ElementSize=*/64, SrcCast,
+              DestCast);
+    }
+
+    // Shuffle one remainder of 32 bits.
+    unsigned Remainder = Bytes % 8;
+    if (Remainder >= 4) {
+      unsigned HalfWords = Bytes / 4;
+      auto *ArrayTy = CGF.CGM.Int32Ty->getPointerTo();
+      auto *SrcCast = Bld.CreatePointerCast(Src.getPointer(), ArrayTy);
+      auto *DestCast = Bld.CreatePointerCast(Dest.getPointer(), ArrayTy);
+      ArrayElementCopyMaker(/*ElementSize=*/32, SrcCast, DestCast,
+                            Bld.getInt64(HalfWords - 1));
+      Remainder -= 4;
+    }
+
+    // Shuffle one remainder of 16 bits.
+    if (Remainder >= 2) {
+      unsigned ShortWords = Bytes / 2;
+      auto *ArrayTy = CGF.CGM.Int16Ty->getPointerTo();
+      auto *SrcCast = Bld.CreatePointerCast(Src.getPointer(), ArrayTy);
+      auto *DestCast = Bld.CreatePointerCast(Dest.getPointer(), ArrayTy);
+      ArrayElementCopyMaker(/*ElementSize=*/16, SrcCast, DestCast,
+                            Bld.getInt64(ShortWords - 1));
+      Remainder -= 2;
+    }
+
+    // Shuffle one remainder of 8 bits.
+    if (Remainder) {
+      auto *ArrayTy = CGF.CGM.Int8Ty->getPointerTo();
+      auto *SrcCast = Bld.CreatePointerCast(Src.getPointer(), ArrayTy);
+      auto *DestCast = Bld.CreatePointerCast(Dest.getPointer(), ArrayTy);
+      ArrayElementCopyMaker(/*ElementSize=*/8, SrcCast, DestCast,
+                            Bld.getInt64(Bytes - 1));
+    }
+  }
 }
 
 static void EmitDirectionSpecializedReduceDataCopy(
@@ -5186,10 +5474,55 @@ static void EmitDirectionSpecializedReduceDataCopy(
     // element as this is required in all directions
     SrcElementAddr = Bld.CreateElementBitCast(
         SrcElementAddr, CGF.ConvertTypeForMem(Private->getType()));
-    llvm::Value *Elem =
-        CGF.EmitLoadOfScalar(SrcElementAddr, /*Volatile=*/false,
-                             Private->getType(), SourceLocation());
 
+    if (Direction == Shuffle_To_ReduceData) {
+      // Shuffle a variable from another lane.
+      auto &&ScalarCopyMaker = [&CGF, OffsetVal](QualType Ty, Address Src,
+                                                 Address Dest) {
+        llvm::Value *Elem =
+            CGF.EmitLoadOfScalar(Src, /*Volatile=*/false, Ty, SourceLocation());
+        llvm::Value *ShuffledVal =
+            CreateRuntimeShuffleFunction(CGF, Ty, Elem, OffsetVal);
+        CGF.EmitStoreOfScalar(ShuffledVal, Dest, /*Volatile=*/false, Ty);
+      };
+      auto &&ArrayElementCopyMaker = [&CGF, &C, &Bld, OffsetVal](
+          unsigned ElementSize, llvm::Value *Src, llvm::Value *Dest,
+          llvm::Value *Idx) {
+        auto ShuffleTy = C.getIntTypeForBitwidth(/*DestWidth*/ ElementSize,
+                                                 /*Signed*/ false);
+        Address SrcElementPtr(Bld.CreateGEP(Src, Idx),
+                              C.getTypeAlignInChars(ShuffleTy));
+        llvm::Value *SrcElement = CGF.EmitLoadOfScalar(
+            SrcElementPtr, /*Volatile=*/false, ShuffleTy, SourceLocation());
+        llvm::Value *ShuffledVal =
+            CreateRuntimeShuffleFunction(CGF, ShuffleTy, SrcElement, OffsetVal);
+        Address DestElementPtr(Bld.CreateGEP(Dest, Idx),
+                               C.getTypeAlignInChars(ShuffleTy));
+        CGF.EmitStoreOfScalar(ShuffledVal, DestElementPtr, /*Volatile=*/false,
+                              ShuffleTy);
+      };
+      CopyReductionVariable(CGF, Private->getType(), SrcElementAddr,
+                            DestElementAddr, ScalarCopyMaker,
+                            ArrayElementCopyMaker);
+    } else {
+      // Copy a variable from memory.  Use 'memcpy' for structures.
+      if (Private->getType()->isScalarType()) {
+        llvm::Value *Elem =
+            CGF.EmitLoadOfScalar(SrcElementAddr, /*Volatile=*/false,
+                                 Private->getType(), SourceLocation());
+        // Just store the element value we have already obtained to dest element
+        // address.
+        CGF.EmitStoreOfScalar(Elem, DestElementAddr, /*Volatile=*/false,
+                              Private->getType());
+      } else {
+        unsigned Bytes = CGF.getContext()
+                             .getTypeSizeInChars(Private->getType())
+                             .getQuantity();
+        Bld.CreateMemCpy(DestElementAddr, SrcElementAddr, Bytes);
+      }
+    }
+
+#if 0
 // Step 2.1 create individual load (potentially with shuffle) and stores
 // for each ReduceData Element and ReduceData subelement.
 
@@ -5245,6 +5578,7 @@ static void EmitDirectionSpecializedReduceDataCopy(
                           Private->getType());
 #if 0
     }
+#endif
 #endif
 
     // Step 3.1 modify reference in Dest ReduceData as needed.
@@ -5568,6 +5902,10 @@ static llvm::Value *EmitInterWarpCopyFunction(CodeGenModule &CGM,
   auto *LaneId = GetNVPTXThreadWarpID(CGF);
   // nvptx_warp_id = nvptx_id / 32
   auto *WarpId = GetNVPTXWarpID(CGF);
+  // get WarpNumNeeded as a function parameter
+  Address AddrWarpNumArg = CGF.GetAddrOfLocalVar(&WarpNumArg);
+  llvm::Value *WarpNumVal = CGF.EmitLoadOfScalar(
+      AddrWarpNumArg, /*Volatile=*/false, C.IntTy, SourceLocation());
   // SrcDataAddr = <reduce_data_type> (*reduce_data)
   Address AddrReduceDataArg = CGF.GetAddrOfLocalVar(&ReduceDataArg);
   Address SrcDataAddr(
@@ -5579,15 +5917,6 @@ static llvm::Value *EmitInterWarpCopyFunction(CodeGenModule &CGM,
 
   unsigned Idx = 0;
   for (auto &Private : Privates) {
-    llvm::BasicBlock *ThenBB = CGF.createBasicBlock("then");
-    llvm::BasicBlock *ElseBB = CGF.createBasicBlock("else");
-    llvm::BasicBlock *MergeBB = CGF.createBasicBlock("ifcont");
-
-    // if (lane_id == 0)
-    auto IsWarpMaster = Bld.CreateICmpEQ(LaneId, Bld.getInt32(0), "ifcond");
-    Bld.CreateCondBr(IsWarpMaster, ThenBB, ElseBB);
-    CGF.EmitBlock(ThenBB);
-
     // elemptrptr =SrcDataAddr[i]
     Address ElemPtrPtrAddr =
         Bld.CreateConstArrayGEP(SrcDataAddr, Idx, CGF.getPointerSize());
@@ -5598,60 +5927,6 @@ static llvm::Value *EmitInterWarpCopyFunction(CodeGenModule &CGM,
         Address(ElemPtrPtr, C.getTypeAlignInChars(Private->getType()));
     ElemPtr = Bld.CreateElementBitCast(
         ElemPtr, CGF.ConvertTypeForMem(Private->getType()));
-    // elem = *elemptr
-    llvm::Value *Elem = CGF.EmitLoadOfScalar(
-        ElemPtr, /*Volatile=*/false, Private->getType(), SourceLocation());
-
-    // MediumPtr = &shared[warp_id]
-    llvm::Value *MediumPtrVal = Bld.CreateInBoundsGEP(
-        Gbl, {llvm::Constant::getNullValue(CGM.Int64Ty), WarpId});
-    Address MediumPtr(MediumPtrVal, C.getTypeAlignInChars(Private->getType()));
-    // Casting to actual data type.
-    // MediumPtr = (type[i]*)MediumPtrAddr;
-    MediumPtr = Bld.CreateElementBitCast(
-        MediumPtr, CGF.ConvertTypeForMem(Private->getType()));
-
-    //*MediumPtr = elem
-    Bld.CreateStore(Elem, MediumPtr);
-
-    Bld.CreateBr(MergeBB);
-
-    CGF.EmitBlock(ElseBB);
-    Bld.CreateBr(MergeBB);
-    CGF.EmitBlock(MergeBB);
-
-    // get WarpNumNeeded as a function parameter
-    Address AddrWarpNumArg = CGF.GetAddrOfLocalVar(&WarpNumArg);
-    llvm::Value *WarpNumVal = CGF.EmitLoadOfScalar(
-        AddrWarpNumArg, /*Volatile=*/false, C.IntTy, SourceLocation());
-
-    // num_thread_to_synchronize = warpNumNeeded * 32
-    auto *NumThreadActive =
-        Bld.CreateNSWMul(WarpNumVal, Bld.getInt32(DS_Max_Worker_Warp_Size),
-                         "num_thread_to_synchronize");
-    // named_barrier_sync(num_thread_to_synchronize)
-    GetNVPTXBarrier(CGF, PARALLEL_BARRIER, NumThreadActive);
-
-    llvm::BasicBlock *ThenBB2 = CGF.createBasicBlock("then");
-    llvm::BasicBlock *ElseBB2 = CGF.createBasicBlock("else");
-    llvm::BasicBlock *MergeBB2 = CGF.createBasicBlock("ifcont");
-
-    // if threadId < WarpNeeded
-    auto IsActiveThread = Bld.CreateICmpULT(ThreadId, WarpNumVal, "ifcond");
-    Bld.CreateCondBr(IsActiveThread, ThenBB2, ElseBB2);
-
-    CGF.EmitBlock(ThenBB2);
-
-    // SrcMediumPtr = &shared[tid]
-    llvm::Value *SrcMediumPtrVal = Bld.CreateInBoundsGEP(
-        Gbl, {llvm::Constant::getNullValue(CGM.Int64Ty), ThreadId});
-    Address SrcMediumPtr(SrcMediumPtrVal,
-                         C.getTypeAlignInChars(Private->getType()));
-    // SrcMediumVal = *SrcMediumPtr;
-    SrcMediumPtr = Bld.CreateElementBitCast(
-        SrcMediumPtr, CGF.ConvertTypeForMem(Private->getType()));
-    llvm::Value *SrcMediumValue = CGF.EmitLoadOfScalar(
-        SrcMediumPtr, /*Volatile=*/false, Private->getType(), SourceLocation());
 
     // TargetElemPtr = (type[i]*)(SrcDataAddr[i])
     Address TargetElemPtrPtr =
@@ -5663,20 +5938,116 @@ static llvm::Value *EmitInterWarpCopyFunction(CodeGenModule &CGM,
     TargetElemPtr = Bld.CreateElementBitCast(
         TargetElemPtr, CGF.ConvertTypeForMem(Private->getType()));
 
-    //*TargetElemPtr = SrcMediumVal;
-    CGF.EmitStoreOfScalar(SrcMediumValue, TargetElemPtr, /*Volatile=*/false,
-                          Private->getType());
+    auto &&CopyThruSharedMemory = [&CGF, &CGM, &C, &Bld, Gbl, ThreadId, LaneId,
+                                   WarpId, WarpNumVal](
+        QualType Ty, const llvm::function_ref<llvm::Value *()> &LoadScalarSrc,
+        const llvm::function_ref<void(llvm::Value *)> &StoreScalarTarget) {
+      llvm::BasicBlock *ThenBB = CGF.createBasicBlock("then");
+      llvm::BasicBlock *ElseBB = CGF.createBasicBlock("else");
+      llvm::BasicBlock *MergeBB = CGF.createBasicBlock("ifcont");
 
-    Bld.CreateBr(MergeBB2);
+      // if (lane_id == 0)
+      auto IsWarpMaster = Bld.CreateICmpEQ(LaneId, Bld.getInt32(0), "ifcond");
+      Bld.CreateCondBr(IsWarpMaster, ThenBB, ElseBB);
+      CGF.EmitBlock(ThenBB);
 
-    CGF.EmitBlock(ElseBB2);
-    Bld.CreateBr(MergeBB2);
+      // elem = *elemptr
+      llvm::Value *Elem = LoadScalarSrc();
 
-    CGF.EmitBlock(MergeBB2);
+      // MediumPtr = &shared[warp_id]
+      llvm::Value *MediumPtrVal = Bld.CreateInBoundsGEP(
+          Gbl, {llvm::Constant::getNullValue(CGM.Int64Ty), WarpId});
+      Address MediumPtr(MediumPtrVal, C.getTypeAlignInChars(Ty));
+      // Casting to actual data type.
+      // MediumPtr = (type[i]*)MediumPtrAddr;
+      MediumPtr =
+          Bld.CreateElementBitCast(MediumPtr, CGF.ConvertTypeForMem(Ty));
 
-    // While master warp copies values from shared memory, all other warps must
-    // wait.
-    GetNVPTXBarrier(CGF, PARALLEL_BARRIER, NumThreadActive);
+      //*MediumPtr = elem
+      Bld.CreateStore(Elem, MediumPtr);
+
+      Bld.CreateBr(MergeBB);
+
+      CGF.EmitBlock(ElseBB);
+      Bld.CreateBr(MergeBB);
+      CGF.EmitBlock(MergeBB);
+
+      // num_thread_to_synchronize = warpNumNeeded * 32
+      auto *NumThreadActive =
+          Bld.CreateNSWMul(WarpNumVal, Bld.getInt32(DS_Max_Worker_Warp_Size),
+                           "num_thread_to_synchronize");
+      // named_barrier_sync(num_thread_to_synchronize)
+      GetNVPTXBarrier(CGF, PARALLEL_BARRIER, NumThreadActive);
+
+      llvm::BasicBlock *ThenBB2 = CGF.createBasicBlock("then");
+      llvm::BasicBlock *ElseBB2 = CGF.createBasicBlock("else");
+      llvm::BasicBlock *MergeBB2 = CGF.createBasicBlock("ifcont");
+
+      // if threadId < WarpNeeded
+      auto IsActiveThread = Bld.CreateICmpULT(ThreadId, WarpNumVal, "ifcond");
+      Bld.CreateCondBr(IsActiveThread, ThenBB2, ElseBB2);
+
+      CGF.EmitBlock(ThenBB2);
+
+      // SrcMediumPtr = &shared[tid]
+      llvm::Value *SrcMediumPtrVal = Bld.CreateInBoundsGEP(
+          Gbl, {llvm::Constant::getNullValue(CGM.Int64Ty), ThreadId});
+      Address SrcMediumPtr(SrcMediumPtrVal, C.getTypeAlignInChars(Ty));
+      // SrcMediumVal = *SrcMediumPtr;
+      SrcMediumPtr =
+          Bld.CreateElementBitCast(SrcMediumPtr, CGF.ConvertTypeForMem(Ty));
+      llvm::Value *SrcMediumValue = CGF.EmitLoadOfScalar(
+          SrcMediumPtr, /*Volatile=*/false, Ty, SourceLocation());
+
+      //*TargetElemPtr = SrcMediumVal;
+      StoreScalarTarget(SrcMediumValue);
+
+      Bld.CreateBr(MergeBB2);
+
+      CGF.EmitBlock(ElseBB2);
+      Bld.CreateBr(MergeBB2);
+
+      CGF.EmitBlock(MergeBB2);
+
+      // While master warp copies values from shared memory, all other warps
+      // must wait.
+      GetNVPTXBarrier(CGF, PARALLEL_BARRIER, NumThreadActive);
+    };
+    auto &&ScalarCopyMaker = [&CGF, &CopyThruSharedMemory](
+        QualType Ty, Address Src, Address Dest) {
+      auto &&LoadSrc = [&CGF, &Ty, &Src]() -> llvm::Value * {
+        // elem = *elemptr
+        llvm::Value *Elem =
+            CGF.EmitLoadOfScalar(Src, /*Volatile=*/false, Ty, SourceLocation());
+        return Elem;
+      };
+      auto &&StoreTarget = [&CGF, &Ty, &Dest](llvm::Value *Val) {
+        //*TargetElemPtr = SrcMediumVal;
+        CGF.EmitStoreOfScalar(Val, Dest, /*Volatile=*/false, Ty);
+      };
+      CopyThruSharedMemory(Ty, LoadSrc, StoreTarget);
+    };
+    auto &&ArrayElementCopyMaker = [&CGF, &C, &Bld, &CopyThruSharedMemory](
+        unsigned ElementSize, llvm::Value *Src, llvm::Value *Dest,
+        llvm::Value *Idx) {
+      auto ElemTy = C.getIntTypeForBitwidth(/*DestWidth*/ ElementSize,
+                                            /*Signed*/ false);
+      auto &&LoadSrc = [&CGF, &C, &Bld, &ElemTy, &Src, Idx]() -> llvm::Value * {
+        Address ElemPtr(Bld.CreateGEP(Src, Idx), C.getTypeAlignInChars(ElemTy));
+        llvm::Value *Elem = CGF.EmitLoadOfScalar(ElemPtr, /*Volatile=*/false,
+                                                 ElemTy, SourceLocation());
+        return Elem;
+      };
+      auto &&StoreTarget = [&CGF, &C, &Bld, &ElemTy, &Dest,
+                            Idx](llvm::Value *Val) {
+        Address ElemPtr(Bld.CreateGEP(Dest, Idx),
+                        C.getTypeAlignInChars(ElemTy));
+        CGF.EmitStoreOfScalar(Val, ElemPtr, /*Volatile=*/false, ElemTy);
+      };
+      CopyThruSharedMemory(ElemTy, LoadSrc, StoreTarget);
+    };
+    CopyReductionVariable(CGF, Private->getType(), ElemPtr, TargetElemPtr,
+                          ScalarCopyMaker, ArrayElementCopyMaker);
     Idx++;
   }
 
@@ -5887,7 +6258,7 @@ EmitShuffleAndReduceFunction(CodeGenModule &CGM,
   llvm::BasicBlock *CpyThenBB = CGF.createBasicBlock("then");
   llvm::BasicBlock *CpyElseBB = CGF.createBasicBlock("else");
   llvm::BasicBlock *CpyMergeBB = CGF.createBasicBlock("ifcont");
-  Bld.CreateCondBr(CondCopy, CpyThenBB, CpyMergeBB);
+  Bld.CreateCondBr(CondCopy, CpyThenBB, CpyElseBB);
 
   CGF.EmitBlock(CpyThenBB);
   EmitDirectionSpecializedReduceDataCopy(ReduceData_To_ReduceData, CGF,
@@ -5911,13 +6282,6 @@ void CGOpenMPRuntimeNVPTX::emitReduction(
     OpenMPDirectiveKind ReductionKind) {
   if (!CGF.HaveInsertPoint())
     return;
-
-  if (SimpleReduction) {
-    CGOpenMPRuntime::emitReduction(CGF, Loc, Privates, LHSExprs, RHSExprs,
-                                   ReductionOps, WithNowait, SimpleReduction,
-                                   ReductionKind);
-    return;
-  }
 
   bool TeamsReduction = isOpenMPTeamsDirective(ReductionKind);
   bool ParallelReduction = isOpenMPParallelDirective(ReductionKind);
@@ -6088,3 +6452,85 @@ void CGOpenMPRuntimeNVPTX::emitReduction(
   CGF.EmitBlock(DefaultBB, /*IsFinished=*/true);
 }
 
+const VarDecl *
+CGOpenMPRuntimeNVPTX::translateParameter(const FieldDecl *FD,
+                                         const VarDecl *NativeParam) const {
+  if (!NativeParam->getType()->isReferenceType())
+    return NativeParam;
+  QualType ArgType = NativeParam->getType();
+  QualifierCollector QC;
+  const Type *NonQualTy = QC.strip(ArgType);
+  QualType PointeeTy = cast<ReferenceType>(NonQualTy)->getPointeeType();
+  if (const auto *Attr = FD->getAttr<OMPCaptureKindAttr>()) {
+    if (Attr->getCaptureKind() == OMPC_map) {
+      PointeeTy = CGM.getContext().getAddrSpaceQualType(PointeeTy,
+                                                        LangAS::opencl_global);
+    }
+  }
+  ArgType = CGM.getContext().getPointerType(PointeeTy);
+  QC.addRestrict();
+  enum { NVPTX_local_addr = 5 };
+  QC.addAddressSpace(NVPTX_local_addr);
+  ArgType = QC.apply(CGM.getContext(), ArgType);
+  return ImplicitParamDecl::Create(
+      CGM.getContext(), /*DC=*/nullptr, NativeParam->getLocation(),
+      NativeParam->getIdentifier(), ArgType, ImplicitParamDecl::Other);
+}
+
+Address
+CGOpenMPRuntimeNVPTX::getParameterAddress(CodeGenFunction &CGF,
+                                          const VarDecl *NativeParam,
+                                          const VarDecl *TargetParam) const {
+  assert(NativeParam != TargetParam &&
+         NativeParam->getType()->isReferenceType() &&
+         "Native arg must not be the same as target arg.");
+  Address LocalAddr = CGF.GetAddrOfLocalVar(TargetParam);
+  QualType NativeParamType = NativeParam->getType();
+  QualifierCollector QC;
+  const Type *NonQualTy = QC.strip(NativeParamType);
+  QualType NativePointeeTy = cast<ReferenceType>(NonQualTy)->getPointeeType();
+  unsigned NativePointeeAddrSpace =
+      NativePointeeTy.getQualifiers().getAddressSpace();
+  QualType TargetTy = TargetParam->getType();
+  llvm::Value *TargetAddr = CGF.EmitLoadOfScalar(
+      LocalAddr, /*Volatile=*/false, TargetTy, SourceLocation());
+  // First cast to generic.
+  TargetAddr = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
+      TargetAddr, TargetAddr->getType()->getPointerElementType()->getPointerTo(
+                      /*AddrSpace=*/0));
+  // Cast from generic to native address space.
+  TargetAddr = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
+      TargetAddr, TargetAddr->getType()->getPointerElementType()->getPointerTo(
+                      NativePointeeAddrSpace));
+  Address NativeParamAddr = CGF.CreateMemTemp(NativeParamType);
+  CGF.EmitStoreOfScalar(TargetAddr, NativeParamAddr, /*Volatile=*/false,
+                        NativeParamType);
+  return NativeParamAddr;
+}
+
+void CGOpenMPRuntimeNVPTX::emitOutlinedFunctionCall(
+    CodeGenFunction &CGF, SourceLocation Loc, llvm::Value *OutlinedFn,
+    ArrayRef<llvm::Value *> Args) const {
+  SmallVector<llvm::Value *, 4> TargetArgs;
+  TargetArgs.reserve(Args.size());
+  auto *FnType =
+      cast<llvm::FunctionType>(OutlinedFn->getType()->getPointerElementType());
+  for (unsigned I = 0, E = Args.size(); I < E; ++I) {
+    if (FnType->isVarArg() && FnType->getNumParams() <= I) {
+      TargetArgs.append(std::next(Args.begin(), I), Args.end());
+      break;
+    }
+    llvm::Type *TargetType = FnType->getParamType(I);
+    llvm::Value *NativeArg = Args[I];
+    if (!TargetType->isPointerTy()) {
+      TargetArgs.emplace_back(NativeArg);
+      continue;
+    }
+    llvm::Value *TargetArg = CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
+        NativeArg, NativeArg->getType()->getPointerElementType()->getPointerTo(
+                       /*AddrSpace=*/0));
+    TargetArgs.emplace_back(
+        CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(TargetArg, TargetType));
+  }
+  CGOpenMPRuntime::emitOutlinedFunctionCall(CGF, Loc, OutlinedFn, TargetArgs);
+}

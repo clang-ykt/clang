@@ -233,9 +233,9 @@ public:
         if (I->capturesThis())
           CXXThisFieldDecl = *Field;
         else if (I->capturesVariable())
-          CaptureFields[I->getCapturedVar()] = *Field;
+          CaptureFields[I->getCapturedVar()->getCanonicalDecl()] = *Field;
         else if (I->capturesVariableByCopy())
-          CaptureFields[I->getCapturedVar()] = *Field;
+          CaptureFields[I->getCapturedVar()->getCanonicalDecl()] = *Field;
       }
     }
 
@@ -249,7 +249,7 @@ public:
 
     /// \brief Lookup the captured field decl for a variable.
     virtual const FieldDecl *lookup(const VarDecl *VD) const {
-      return CaptureFields.lookup(VD);
+      return CaptureFields.lookup(VD->getCanonicalDecl());
     }
 
     bool isCXXThisExprCaptured() const { return getThisFieldDecl() != nullptr; }
@@ -650,6 +650,7 @@ public:
                llvm::function_ref<Address()> PrivateGen) {
       assert(PerformCleanup && "adding private to dead scope");
 
+      LocalVD = LocalVD->getCanonicalDecl();
       // Only save it once.
       if (SavedLocals.count(LocalVD)) return false;
 
@@ -703,6 +704,7 @@ public:
 
     /// Checks if the global variable is captured in current function. 
     bool isGlobalVarCaptured(const VarDecl *VD) const {
+      VD = VD->getCanonicalDecl();
       return !VD->isLocalVarDeclOrParm() && CGF.LocalDeclMap.count(VD) > 0;
     }
 
@@ -1160,14 +1162,6 @@ private:
   llvm::DenseMap<const OpaqueValueExpr *, LValue> OpaqueLValues;
   llvm::DenseMap<const OpaqueValueExpr *, RValue> OpaqueRValues;
 
-  // VLASizeMap - This keeps track of the associated size for each VLA type.
-  // We track this by the size expression rather than the type itself because
-  // in certain situations, like a const qualifier applied to an VLA typedef,
-  // multiple VLA types can share the same size expression.
-  // FIXME: Maybe this could be a stack of maps that is pushed/popped as we
-  // enter/leave scopes.
-  llvm::DenseMap<const Expr*, llvm::Value*> VLASizeMap;
-
   /// A block containing a single 'unreachable' instruction.  Created
   /// lazily by getUnreachableBlock().
   llvm::BasicBlock *UnreachableBlock;
@@ -1182,6 +1176,14 @@ private:
   SourceLocation LastStopPoint;
 
 public:
+  // VLASizeMap - This keeps track of the associated size for each VLA type.
+  // We track this by the size expression rather than the type itself because
+  // in certain situations, like a const qualifier applied to an VLA typedef,
+  // multiple VLA types can share the same size expression.
+  // FIXME: Maybe this could be a stack of maps that is pushed/popped as we
+  // enter/leave scopes.
+  llvm::DenseMap<const Expr*, llvm::Value*> VLASizeMap;
+
   /// A scope within which we are constructing the fields of an object which
   /// might use a CXXDefaultInitExpr. This stashes away a 'this' value to use
   /// if we need to evaluate a CXXDefaultInitExpr within the evaluation.
@@ -2514,6 +2516,10 @@ public:
   LValue InitCapturedStruct(const CapturedStmt &S);
   llvm::Function *EmitCapturedStmt(const CapturedStmt &S, CapturedRegionKind K);
   llvm::Function *GenerateCapturedStmtFunction(const CapturedStmt &S);
+  void GenerateOpenMPCapturedStmtParameters(
+      const CapturedStmt &S, bool UseCapturedArgumentsOnly,
+      unsigned CaptureLevel, unsigned ImplicitParamStop, bool NonAliasedMaps,
+      bool UIntPtrCastRequired, FunctionArgList &Args);
   Address GenerateCapturedStmtArgument(const CapturedStmt &S);
   llvm::Function *GenerateOpenMPCapturedStmtFunction(
       const CapturedStmt &S, bool UseCapturedArgumentsOnly = false,
@@ -2609,7 +2615,8 @@ public:
   /// 'i1 false' otherwise. If this item is nullptr, no final check is required.
   void EmitOMPLastprivateClauseFinal(const OMPExecutableDirective &D,
                                      bool NoFinals,
-                                     llvm::Value *IsLastIterCond = nullptr);
+                                     llvm::Value *IsLastIterCond = nullptr,
+                                     bool UnconditionalKind = false);
   /// Emit initial code for linear clauses.
   void EmitOMPLinearClause(const OMPLoopDirective &D,
                            CodeGenFunction::OMPPrivateScope &PrivateScope);
@@ -2639,7 +2646,9 @@ public:
   /// and initializes them with the values according to OpenMP standard.
   ///
   /// \param D Directive (possibly) with the 'linear' clause.
-  void EmitOMPLinearClauseInit(const OMPLoopDirective &D);
+  /// \return true if at least one linear variable is found that should be
+  /// initialized with the value of the original variable, false otherwise.
+  bool EmitOMPLinearClauseInit(const OMPLoopDirective &D);
 
   typedef const llvm::function_ref<void(CodeGenFunction & /*CGF*/,
                                         llvm::Value * /*OutlinedFn*/,
@@ -2667,6 +2676,8 @@ public:
   void EmitOMPTaskwaitDirective(const OMPTaskwaitDirective &S);
   void EmitOMPTaskgroupDirective(const OMPTaskgroupDirective &S);
   void EmitOMPFlushDirective(const OMPFlushDirective &S);
+  void
+  EmitOMPLastprivateUpdateDirective(const OMPLastprivateUpdateDirective &S);
   void EmitOMPOrderedDirective(const OMPOrderedDirective &S);
   void EmitOMPAtomicDirective(const OMPAtomicDirective &S);
   void EmitOMPTargetDirective(const OMPTargetDirective &S);
@@ -2768,7 +2779,7 @@ public:
   /// loop directvies).
   void EmitOMPInnerLoop(
       const Stmt &S, bool RequiresCleanup, const Expr *LoopCond,
-      const Expr *IncExpr,
+      const Expr *IncExpr, const Expr *LastprivateIterInitExpr,
       const llvm::function_ref<void(CodeGenFunction &)> &BodyGen,
       const llvm::function_ref<void(CodeGenFunction &)> &PostIncGen);
 
@@ -2780,6 +2791,9 @@ public:
   /// \brief Emit a helper variable and return corresponding lvalue.
   LValue EmitOMPHelperVar(const DeclRefExpr *Helper);
   void EmitOMPHelperVar(const VarDecl *VDecl);
+
+  /// Emits the lvalue for the expression with possibly captured variable.
+  LValue EmitOMPSharedLValue(const Expr *E);
 
 private:
   /// Helpers for blocks

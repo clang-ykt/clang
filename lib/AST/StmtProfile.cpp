@@ -383,6 +383,14 @@ void
 OMPClauseProfiler::VisitOMPLastprivateClause(const OMPLastprivateClause *C) {
   VisitOMPClauseList(C);
   VistOMPClauseWithPostUpdate(C);
+  for (auto *E : C->conditional_lastprivate_iterations()) {
+    if (E)
+      Profiler->VisitStmt(E);
+  }
+  for (auto *E : C->conditional_lastprivate_variables()) {
+    if (E)
+      Profiler->VisitStmt(E);
+  }
   for (auto *E : C->source_exprs()) {
     if (E)
       Profiler->VisitStmt(E);
@@ -484,6 +492,10 @@ OMPClauseProfiler::VisitOMPCopyprivateClause(const OMPCopyprivateClause *C) {
   }
 }
 void OMPClauseProfiler::VisitOMPFlushClause(const OMPFlushClause *C) {
+  VisitOMPClauseList(C);
+}
+void OMPClauseProfiler::VisitOMPLastprivateUpdateClause(
+    const OMPLastprivateUpdateClause *C) {
   VisitOMPClauseList(C);
 }
 void OMPClauseProfiler::VisitOMPDependClause(const OMPDependClause *C) {
@@ -679,6 +691,11 @@ void StmtProfiler::VisitOMPTaskgroupDirective(const OMPTaskgroupDirective *S) {
 }
 
 void StmtProfiler::VisitOMPFlushDirective(const OMPFlushDirective *S) {
+  VisitOMPExecutableDirective(S);
+}
+
+void StmtProfiler::VisitOMPLastprivateUpdateDirective(
+    const OMPLastprivateUpdateDirective *S) {
   VisitOMPExecutableDirective(S);
 }
 
