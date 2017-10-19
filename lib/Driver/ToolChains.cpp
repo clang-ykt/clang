@@ -1803,6 +1803,8 @@ static CudaVersion ParseCudaVersionFile(llvm::StringRef V) {
     return CudaVersion::CUDA_80;
   if (Major == 9 && Minor == 0)
     return CudaVersion::CUDA_90;
+  if (Major == 9 && Minor == 1)
+    return CudaVersion::CUDA_91;
   return CudaVersion::UNKNOWN;
 }
 
@@ -1818,6 +1820,7 @@ CudaInstallationDetector::CudaInstallationDetector(
   else if (char *env = ::getenv("CUDAPATH"))
     CudaPathCandidates.push_back(D.SysRoot + env);
   else {
+    CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda-9.1");
     CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda-9.0");
     CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda-8.0");
     CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda");
@@ -1864,7 +1867,7 @@ CudaInstallationDetector::CudaInstallationDetector(
     }
 
     SmallVector<std::string, 20> CudaArchStrs;
-    if (Version == CudaVersion::CUDA_90) {
+    if (Version == CudaVersion::CUDA_90 || Version == CudaVersion::CUDA_91) {
       // CUDA-9 uses single libdevice file for all GPU variants.
       std::string FilePath = LibDevicePath + "/libdevice.10.bc";
       if (FS.exists(FilePath)) {
