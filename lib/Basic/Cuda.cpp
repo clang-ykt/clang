@@ -18,6 +18,8 @@ const char *CudaVersionToString(CudaVersion V) {
     return "8.0";
   case CudaVersion::CUDA_90:
     return "9.0";
+  case CudaVersion::CUDA_91:
+    return "9.1";
   }
   llvm_unreachable("invalid enum");
 }
