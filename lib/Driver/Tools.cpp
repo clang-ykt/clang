@@ -4649,6 +4649,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     if (A->getOption().matches(options::OPT_ffinite_math_only))
       CmdArgs.push_back("-ffinite-math-only");
 
+  Args.AddLastArg(CmdArgs, options::OPT_ftrap_EQ);
+  Args.AddLastArg(CmdArgs, options::OPT_ftrap_exact);
+
   // Decide whether to use verbose asm. Verbose assembly is the default on
   // toolchains which have the integrated assembler on by default.
   bool IsIntegratedAssemblerDefault =
@@ -12162,20 +12165,18 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
       static_cast<const toolchains::CudaToolChain &>(getToolChain());
   assert(TC.getTriple().isNVPTX() && "Wrong platform");
 
-  StringRef gpu_arch_name;
-  std::vector<std::string> gpu_arch_names;
-  // If this is an OpenMP action we need to extract the device architecture from
-  // the -march option.
+  StringRef GPUArchName;
+  // If this is an OpenMP action we need to extract the device architecture
+  // from the -march=arch option. This option may come from -Xopenmp-target
+  // flag or the default value.
   if (JA.isDeviceOffloading(Action::OFK_OpenMP)) {
-    gpu_arch_names = Args.getAllArgValues(options::OPT_march_EQ);
-    assert(gpu_arch_names.size() == 1 &&
-           "Exactly one GPU Arch required for ptxas.");
-    gpu_arch_name = gpu_arch_names[0];
+    GPUArchName = Args.getLastArgValue(options::OPT_march_EQ);
+    assert(!GPUArchName.empty() && "Must have an architecture passed in.");
   } else
-    gpu_arch_name = JA.getOffloadingArch();
+    GPUArchName = JA.getOffloadingArch();
 
   // Obtain architecture from the action.
-  CudaArch gpu_arch = StringToCudaArch(gpu_arch_name);
+  CudaArch gpu_arch = StringToCudaArch(GPUArchName);
   assert(gpu_arch != CudaArch::UNKNOWN &&
          "Device action expected to have an architecture.");
 
@@ -12306,13 +12307,11 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     if (Args.hasArg(options::OPT_v))
       CmdArgs.push_back("-v");
 
-    std::vector<std::string> gpu_archs =
-        Args.getAllArgValues(options::OPT_march_EQ);
-    assert(gpu_archs.size() == 1 && "Exactly one GPU Arch required for ptxas.");
-    const std::string &gpu_arch = gpu_archs[0];
+    StringRef GPUArch = Args.getLastArgValue(options::OPT_march_EQ);
+    assert(!GPUArch.empty() && "At least one GPU Arch required for nvlink.");
 
     CmdArgs.push_back("-arch");
-    CmdArgs.push_back(Args.MakeArgString(gpu_arch));
+    CmdArgs.push_back(Args.MakeArgString(GPUArch));
 
     // add paths specified in LIBRARY_PATH environment variable as -L options.
     addDirectoryList(Args, CmdArgs, "-L", "LIBRARY_PATH");

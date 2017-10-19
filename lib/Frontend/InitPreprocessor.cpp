@@ -1102,6 +1102,9 @@ void clang::InitializePreprocessor(
     AddImplicitInclude(Builder, Path);
   }
 
+  if (LangOpts.GenerateTrap)
+    AddImplicitInclude(Builder, LangOpts.GenerateTrapFile);
+
   // Instruct the preprocessor to skip the preamble.
   PP.setSkipMainFilePreamble(InitOpts.PrecompiledPreambleBytes.first,
                              InitOpts.PrecompiledPreambleBytes.second);
