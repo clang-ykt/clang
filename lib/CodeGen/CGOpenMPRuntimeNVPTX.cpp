@@ -53,14 +53,14 @@ enum OpenMPRTLFunctionNVPTX {
   OMPRTL_NVPTX__kmpc_kernel_parallel,
   /// \brief Call to void __kmpc_kernel_end_parallel();
   OMPRTL_NVPTX__kmpc_kernel_end_parallel,
-  /// \brief Call to bool __kmpc_kernel_convergent_parallel(void *buffer, bool
-  /// *IsFinal, kmpc_int32 *LaneSource);
+  /// \brief Call to bool __kmpc_kernel_convergent_parallel(void *buffer,
+  /// uint32_t Mask, bool *IsFinal, kmpc_int32 *LaneSource);
   OMPRTL_NVPTX__kmpc_kernel_convergent_parallel,
   /// \brief Call to void __kmpc_kernel_end_convergent_parallel(void *buffer);
   OMPRTL_NVPTX__kmpc_kernel_end_convergent_parallel,
   /// \brief Call to bool __kmpc_kernel_convergent_simd(
-  /// void *buffer, bool *IsFinal, kmpc_int32 *LaneSource, kmpc_int32 *LaneId,
-  /// kmpc_int32 *NumLanes);
+  /// void *buffer, uint32_t Mask, bool *IsFinal, kmpc_int32 *LaneSource,
+  /// kmpc_int32 *LaneId, kmpc_int32 *NumLanes);
   OMPRTL_NVPTX__kmpc_kernel_convergent_simd,
   /// \brief Call to void __kmpc_kernel_end_convergent_simd(void *buffer);
   OMPRTL_NVPTX__kmpc_kernel_end_convergent_simd,
@@ -1860,8 +1860,8 @@ CGOpenMPRuntimeNVPTX::createNVPTXRuntimeFunction(unsigned Function) {
   }
   case OMPRTL_NVPTX__kmpc_kernel_convergent_parallel: {
     /// \brief Call to bool __kmpc_kernel_convergent_parallel(
-    /// void *buffer, bool *IsFinal, kmpc_int32 *LaneSource);
-    llvm::Type *TypeParams[] = {CGM.Int8PtrTy, CGM.Int8PtrTy,
+    /// void *buffer, uint32_t Mask, bool *IsFinal, kmpc_int32 *LaneSource);
+    llvm::Type *TypeParams[] = {CGM.Int8PtrTy, CGM.Int32Ty, CGM.Int8PtrTy,
                                 CGM.Int32Ty->getPointerTo()};
     llvm::FunctionType *FnTy =
         llvm::FunctionType::get(llvm::Type::getInt1Ty(CGM.getLLVMContext()),
@@ -1881,11 +1881,14 @@ CGOpenMPRuntimeNVPTX::createNVPTXRuntimeFunction(unsigned Function) {
   }
   case OMPRTL_NVPTX__kmpc_kernel_convergent_simd: {
     /// \brief Call to bool __kmpc_kernel_convergent_simd(
-    /// void *buffer, bool *IsFinal, kmpc_int32 *LaneSource, kmpc_int32 *LaneId,
-    /// kmpc_int32 *NumLanes);
-    llvm::Type *TypeParams[] = {
-        CGM.Int8PtrTy, CGM.Int8PtrTy, CGM.Int32Ty->getPointerTo(),
-        CGM.Int32Ty->getPointerTo(), CGM.Int32Ty->getPointerTo()};
+    /// void *buffer, uint32_t Mask, bool *IsFinal, kmpc_int32 *LaneSource,
+    /// kmpc_int32 *LaneId, kmpc_int32 *NumLanes);
+    llvm::Type *TypeParams[] = {CGM.Int8PtrTy,
+                                CGM.Int32Ty,
+                                CGM.Int8PtrTy,
+                                CGM.Int32Ty->getPointerTo(),
+                                CGM.Int32Ty->getPointerTo(),
+                                CGM.Int32Ty->getPointerTo()};
     llvm::FunctionType *FnTy =
         llvm::FunctionType::get(llvm::Type::getInt1Ty(CGM.getLLVMContext()),
                                 TypeParams, /*isVarArg*/ false);
@@ -4094,6 +4097,9 @@ void CGOpenMPRuntimeNVPTX::emitGenericParallelCall(
     Address WorkSource =
         CGF.CreateTempAlloca(CGF.Int32Ty, CharUnits::fromQuantity(4),
                              /*Name*/ "work_source");
+    Address ConvergentMask =
+        CGF.CreateTempAlloca(CGF.Int32Ty, CharUnits::fromQuantity(4),
+                             /*Name*/ "convergent_mask");
     llvm::APInt TaskBufferSize(/*numBits=*/32, TASK_STATE_SIZE);
     auto TaskBufferTy = Ctx.getConstantArrayType(
         Ctx.CharTy, TaskBufferSize, ArrayType::Normal, /*IndexTypeQuals=*/0);
@@ -4110,13 +4116,18 @@ void CGOpenMPRuntimeNVPTX::emitGenericParallelCall(
 
     // Initialize WorkSource before each call to the parallel region.
     Bld.CreateStore(Bld.getInt32(/*C=*/-1), WorkSource);
+    Bld.CreateStore(getNVPTXWarpActiveThreadsMask(CGF), ConvergentMask);
 
     CGF.EmitBranch(DoBodyBB);
     CGF.EmitBlock(DoBodyBB);
     auto ArrayDecay = Bld.CreateConstInBoundsGEP2_32(
         llvm::ArrayType::get(CGM.Int8Ty, TASK_STATE_SIZE), TaskState,
         /*Idx0=*/0, /*Idx1=*/0);
-    llvm::Value *Args[] = {ArrayDecay, IsFinal.getPointer(),
+    auto *MaskVal = CGF.EmitLoadOfScalar(
+        ConvergentMask, /*Volatile=*/false,
+        Ctx.getIntTypeForBitwidth(/*DestWidth=*/32, /*Signed=*/false),
+        SourceLocation());
+    llvm::Value *Args[] = {ArrayDecay, MaskVal, IsFinal.getPointer(),
                            WorkSource.getPointer()};
     llvm::Value *IsActive =
         CGF.EmitRuntimeCall(createNVPTXRuntimeFunction(
@@ -4273,6 +4284,9 @@ void CGOpenMPRuntimeNVPTX::emitSimdCall(CodeGenFunction &CGF,
     auto TaskState = CGF.CreateMemTemp(TaskBufferTy, CharUnits::fromQuantity(8),
                                        /*Name=*/"task_state")
                          .getPointer();
+    auto ConvergentMask =
+        CGF.CreateTempAlloca(CGF.Int32Ty, CharUnits::fromQuantity(4),
+                             /*Name*/ "convergent_mask");
     CGF.InitTempAlloca(IsFinal, Bld.getInt8(/*C=*/0));
     CGF.InitTempAlloca(WorkSource, Bld.getInt32(/*C=*/-1));
 
@@ -4283,15 +4297,20 @@ void CGOpenMPRuntimeNVPTX::emitSimdCall(CodeGenFunction &CGF,
 
     // Initialize WorkSource before each call to the simd region.
     Bld.CreateStore(Bld.getInt32(/*C=*/-1), WorkSource);
+    Bld.CreateStore(getNVPTXWarpActiveThreadsMask(CGF), ConvergentMask);
 
     CGF.EmitBranch(DoBodyBB);
     CGF.EmitBlock(DoBodyBB);
     auto ArrayDecay = Bld.CreateConstInBoundsGEP2_32(
         llvm::ArrayType::get(CGM.Int8Ty, SIMD_STATE_SIZE), TaskState,
         /*Idx0=*/0, /*Idx1=*/0);
-    llvm::Value *Args[] = {ArrayDecay, IsFinal.getPointer(),
-                           WorkSource.getPointer(), LaneId.getPointer(),
-                           NumLanes.getPointer()};
+    auto *MaskVal = CGF.EmitLoadOfScalar(
+        ConvergentMask, /*Volatile=*/false,
+        Ctx.getIntTypeForBitwidth(/*DestWidth=*/32, /*Signed=*/false),
+        SourceLocation());
+    llvm::Value *Args[] = {ArrayDecay,           MaskVal,
+                           IsFinal.getPointer(), WorkSource.getPointer(),
+                           LaneId.getPointer(),  NumLanes.getPointer()};
     llvm::Value *IsActive = CGF.EmitRuntimeCall(
         createNVPTXRuntimeFunction(OMPRTL_NVPTX__kmpc_kernel_convergent_simd),
         Args);
