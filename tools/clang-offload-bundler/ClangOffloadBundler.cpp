@@ -126,6 +126,11 @@ static cl::opt<bool> DumpTemporaryFiles(
     cl::desc("Dumps any temporary files created - for testing purposes.\n"),
     cl::init(false), cl::cat(ClangOffloadBundlerCategory));
 
+static cl::opt<std::string>
+    GPUArch("arch",
+            cl::desc("GPU compute capability: sm_30, sm_35, etc.\n"),
+            cl::cat(ClangOffloadBundlerCategory));
+
 /// Magic string that marks the existence of offloading data.
 #define OFFLOAD_BUNDLER_MAGIC_STR "__CLANG_OFFLOAD_BUNDLE__"
 
@@ -768,22 +773,6 @@ static FileHandler *GetObjectFileHandler(MemoryBuffer &FirstInput) {
   return new ObjectFileHandler(std::move(Obj));
 }
 
-static Archive *GetArchive(StringRef File) {
-  // Check if the input file format is one that we know how to deal with.
-  Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(File);
-  if (!BinaryOrErr) {
-    auto EC = errorToErrorCode(BinaryOrErr.takeError());
-    reportError(File, EC);
-    return nullptr;
-  }
-  Binary &Binary = *BinaryOrErr.get().getBinary();
-  if (Archive *Arc = dyn_cast<Archive>(&Binary))
-    return Arc;
-  reportError(File, "Cannot retrieve archive from provided Binary file.");
-
-  return nullptr;
-}
-
 /// Return an appropriate handler given the input files and options.
 static FileHandler *CreateFileHandler(MemoryBuffer &FirstInput) {
   if (FilesType == "i")
@@ -1026,7 +1015,20 @@ static bool HandleArchiveFiles() {
            << EC.message() << "\n";
     return true;
   }
-  const Archive *Arc = GetArchive(InputFileName);
+
+  Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(InputFileName);
+  if (!BinaryOrErr) {
+    auto EC = errorToErrorCode(BinaryOrErr.takeError());
+    reportError(InputFileName, EC);
+    return false;
+  }
+  Binary &ArchiveBinary = *BinaryOrErr.get().getBinary();
+  const Archive *Arc = dyn_cast<Archive>(&ArchiveBinary);
+  if (!Arc) {
+    reportError(InputFileName, "Cannot retrieve archive from provided Binary file.");
+    return false;
+  }
+
   std::vector<std::string> *ArchiveObjectNames = new std::vector<std::string>();
   Error Err = Error::success();
   for (auto &ObjFile : Arc->children(Err)) {
@@ -1103,7 +1105,7 @@ static bool HandleArchiveFiles() {
             ".fatbin.c");
 
         const char *GenAndWrapFatbinArgs[] = {"fatbinary",
-            AssembleArgString("--image=profile=sm_35,file=",
+            AssembleArgString("--image=profile=" + GPUArch + ",file=",
                               OutputFileName).c_str(),
             AssembleArgString("--create=", FatbinFileName).c_str(),
             AssembleArgString("--embedded-fatbin=",

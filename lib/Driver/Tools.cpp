@@ -7262,6 +7262,15 @@ void OffloadBundler::ConstructJob(Compilation &C, const JobAction &JA,
   assert(JA.getInputs().size() == Inputs.size() &&
          "Not have inputs for all dependence actions??");
 
+  // Get the arch
+  StringRef Arch = TCArgs.getLastArgValue(options::OPT_march_EQ);
+  if (Arch.empty())
+    CmdArgs.push_back(TCArgs.MakeArgString(
+        Twine("-arch=") + CLANG_OPENMP_NVPTX_DEFAULT_ARCH));
+  else
+    CmdArgs.push_back(TCArgs.MakeArgString(
+        Twine("-arch=") + Arch));
+
   // Get the targets.
   SmallString<128> Triples;
   Triples += "-targets=";
@@ -7334,6 +7343,15 @@ void OffloadBundler::ConstructJobMultipleOutputs(
   else
     CmdArgs.push_back(TCArgs.MakeArgString(
         Twine("-type=") + types::getTypeTempSuffix(Input.getType())));
+
+  // Get the arch
+  StringRef Arch = TCArgs.getLastArgValue(options::OPT_march_EQ);
+  if (Arch.empty())
+    CmdArgs.push_back(TCArgs.MakeArgString(
+        Twine("-arch=") + CLANG_OPENMP_NVPTX_DEFAULT_ARCH));
+  else
+    CmdArgs.push_back(TCArgs.MakeArgString(
+        Twine("-arch=") + Arch));
 
   // Get the targets.
   SmallString<128> Triples;
