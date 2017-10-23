@@ -1043,8 +1043,9 @@ ReductionCodeGen::ReductionCodeGen(ArrayRef<const Expr *> Shareds,
 void ReductionCodeGen::emitSharedLValue(CodeGenFunction &CGF, unsigned N) {
   assert(SharedAddresses.size() == N &&
          "Number of generated lvalues must be exactly N.");
-  SharedAddresses.emplace_back(emitSharedLValue(CGF, ClausesData[N].Ref),
-                               emitSharedLValueUB(CGF, ClausesData[N].Ref));
+  LValue First = emitSharedLValue(CGF, ClausesData[N].Ref);
+  LValue Second = emitSharedLValueUB(CGF, ClausesData[N].Ref);
+  SharedAddresses.emplace_back(First, Second);
 }
 
 void ReductionCodeGen::emitAggregateType(CodeGenFunction &CGF, unsigned N) {
