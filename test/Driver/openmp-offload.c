@@ -766,3 +766,12 @@
 // CHK-CUDA-O3-NODEBUG: ptxas
 // CHK-CUDA-O3-NODEBUG-SAME: "-O3"
 // CHK-CUDA-O3-NODEBUG-SAME: "-c"
+
+/// =========
+/// Test driver commands when linking against static libraries
+// RUN:   touch /tmp/libtest.a
+// RUN:   %clang -### -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda /tmp/libtest.a %s -O3 --no-cuda-noopt-device-debug -save-temps 2>&1 \
+// RUN:   | FileCheck -check-prefix=STATIC-LIB-LINKING %s
+
+// STATIC-LIB-LINKING:  ptxas"{{.*}}"--output-file" "openmp-offload-openmp-nvptx64-nvidia-cuda.o" "openmp-offload-openmp-nvptx64-nvidia-cuda.s" "-c"
+// STATIC-LIB-LINKING:  nvlink"{{.*}}"libtest-openmp-nvptx64-nvidia-cuda.a" "/tmp/openmp-offload-openmp-nvptx64-nvidia-cuda-674b09.cubin"
