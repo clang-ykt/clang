@@ -14,3 +14,39 @@ void spmd() {
 
 // CHECK: alloca [1 x i8*]
 // CHECK: alloca [2 x double]
+
+
+void teams_distribute() {
+  double red[2];
+
+#pragma omp target map(tofrom: red[0:2])
+#pragma omp teams reduction(+: red[0:2])
+  {
+    int a = 2;
+#pragma omp distribute
+    for (int i = 0; i < 2; i++) {
+      red[i] += a;
+    }
+  }
+}
+
+// CHECK: alloca [1 x i8*]
+// CHECK: alloca [2 x double]
+
+
+void teams_distribute_parallel_for() {
+  double red[2];
+
+#pragma omp target map(tofrom: red[0:2])
+#pragma omp teams reduction(+: red[0:2])
+  {
+    int a = 2;
+#pragma omp distribute parallel for reduction(+: red[0:2])
+    for (int i = 0; i < 2; i++) {
+      red[i] += a;
+    }
+  }
+}
+
+// CHECK: alloca [1 x i8*]
+// CHECK: alloca [2 x double]

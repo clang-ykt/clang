@@ -4925,10 +4925,10 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
             llvm::Instruction *OuterInstr = &*II;
             ++II;
 
-            if (dyn_cast<llvm::AllocaInst>(OuterInstr))
+            if (isa<llvm::AllocaInst>(OuterInstr))
               continue;
 
-            if (dyn_cast<llvm::StoreInst>(OuterInstr))
+            if (isa<llvm::StoreInst>(OuterInstr))
               continue;
 
             // Instruction I is the current instruction
@@ -4942,8 +4942,15 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
                   llvm::Instruction *InnerInstr = &*JJ;
                   ++JJ;
 
-                  if (OuterInstr == InnerInstr)
+                  if (OuterInstr == InnerInstr) {
                     InitFound = true;
+                    break;
+                  }
+
+                  // PHINodes may reference a value before its initialization but
+                  // this might be fine, so don't move it.
+                  if (isa<llvm::PHINode>(InnerInstr))
+                    continue;
 
                   if (Usage == InnerInstr)
                     if (!InitFound){
