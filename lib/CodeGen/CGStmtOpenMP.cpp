@@ -2336,6 +2336,8 @@ void CodeGenFunction::EmitOMPTeamsDistributeDirective(
   auto &&CGDistributeInlined = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
     OMPPrivateScope PrivateScope(CGF);
     CGF.EmitOMPReductionClauseInit(S, PrivateScope);
+    // TODO: Do we need this here?
+    CGF.CGM.getOpenMPRuntime().emitInitDSBlock(CGF);
     (void)PrivateScope.Privatize();
     auto &&CGDistributeLoop = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
       CGF.EmitOMPDistributeLoop(S, [](CodeGenFunction &, PrePostActionTy &) {});
@@ -2356,6 +2358,8 @@ void CodeGenFunction::EmitOMPTeamsDistributeSimdDirective(
   auto &&CGDistributeInlined = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
     OMPPrivateScope PrivateScope(CGF);
     CGF.EmitOMPReductionClauseInit(S, PrivateScope);
+    // TODO: Do we need this here?
+    CGF.CGM.getOpenMPRuntime().emitInitDSBlock(CGF);
     (void)PrivateScope.Privatize();
     auto &&CGDistributeLoop = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
       auto &&CGSimd = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
@@ -3439,46 +3443,6 @@ void CodeGenFunction::EmitOMPLastprivateUpdateDirective(
 void CodeGenFunction::EmitOMPDistributeLoop(
     const OMPLoopDirective &S,
     const RegionCodeGenTy &CodeGenDistributeLoopContent) {
-  // Insert an omp.init.ds block at the end of the entry header before any branch.
-  // Check if function already has an omp.init.ds block
-  bool hasOMPInitDSBlock = false;
-  for (auto &BB : CurFn->getBasicBlockList())
-    if (BB.getName() == "omp.init.ds"){
-      hasOMPInitDSBlock = true;
-      break;
-    }
-
-  // Emit omp.init.ds block if we have not emitted one before
-  if (!hasOMPInitDSBlock) {
-    llvm::BasicBlock *InitDS;
-    llvm::BasicBlock *AfterHeaderBB;
-    llvm::BasicBlock *HeaderBB = &CurFn->front();
-    llvm::Instruction *OldBI = HeaderBB->getTerminator();
-    llvm::Instruction *InsertPt = nullptr;
-    if (OldBI){
-      InsertPt = OldBI->getPrevNode();
-      llvm::BasicBlock *InitDSCont = createBasicBlock("omp.init.continue");
-      EmitBranch(InitDSCont);
-      InitDS = createBasicBlock("omp.init.ds");
-      EmitBlock(InitDS);
-      EmitBranch(InitDS);
-      llvm::Instruction *NewTerminator = InitDS->getTerminator();
-      AfterHeaderBB = HeaderBB->getNextNode();
-      NewTerminator->moveBefore(OldBI);
-      Builder.SetInsertPoint(InitDS);
-      EmitBranch(HeaderBB);
-      NewTerminator = InitDS->getTerminator();
-      OldBI->moveBefore(NewTerminator);
-      NewTerminator->eraseFromParent();
-      EmitBlock(InitDSCont);
-      InitDS->moveAfter(HeaderBB);
-    } else {
-      InitDS = createBasicBlock("omp.init.ds");
-      EmitBranch(InitDS);
-      EmitBlock(InitDS);
-    }
-  }
-
   // Emit the loop iteration variable.
   auto IVExpr = cast<DeclRefExpr>(S.getIterationVariable());
   auto IVDecl = cast<VarDecl>(IVExpr->getDecl());
@@ -4721,6 +4685,7 @@ void CodeGenFunction::EmitOMPTeamsDirective(const OMPTeamsDirective &S) {
     (void)CGF.EmitOMPFirstprivateClause(S, PrivateScope);
     CGF.EmitOMPPrivateClause(S, PrivateScope);
     CGF.EmitOMPReductionClauseInit(S, PrivateScope);
+    CGF.CGM.getOpenMPRuntime().emitInitDSBlock(CGF);
     (void)PrivateScope.Privatize();
     CGF.EmitStmt(cast<CapturedStmt>(S.getAssociatedStmt())->getCapturedStmt());
     CGF.EmitOMPReductionClauseFinal(S, OMPD_teams);
@@ -4738,6 +4703,7 @@ static void TargetTeamsCodegen(CodeGenFunction &CGF, PrePostActionTy &Action,
     (void)CGF.EmitOMPFirstprivateClause(S, PrivateScope);
     CGF.EmitOMPPrivateClause(S, PrivateScope);
     CGF.EmitOMPReductionClauseInit(S, PrivateScope);
+    CGF.CGM.getOpenMPRuntime().emitInitDSBlock(CGF);
     (void)PrivateScope.Privatize();
     const auto *CS = cast<CapturedStmt>(S.getAssociatedStmt());
     if (S.hasClausesOfKind<OMPDependClause>())
@@ -4791,6 +4757,8 @@ TargetTeamsDistributeCodegen(CodeGenFunction &CGF, PrePostActionTy &Action,
   auto &&CGDistributeInlined = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
     CodeGenFunction::OMPPrivateScope PrivateScope(CGF);
     CGF.EmitOMPReductionClauseInit(S, PrivateScope);
+    // TODO: Do we need this here?
+    CGF.CGM.getOpenMPRuntime().emitInitDSBlock(CGF);
     (void)PrivateScope.Privatize();
     auto &&CGDistributeLoop = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
       CGF.EmitOMPDistributeLoop(S, [](CodeGenFunction &, PrePostActionTy &) {});
@@ -4847,6 +4815,8 @@ static void TargetTeamsDistributeSimdCodegen(
   auto &&CGDistributeInlined = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
     CodeGenFunction::OMPPrivateScope PrivateScope(CGF);
     CGF.EmitOMPReductionClauseInit(S, PrivateScope);
+    // TODO: Do we need this here?
+    CGF.CGM.getOpenMPRuntime().emitInitDSBlock(CGF);
     (void)PrivateScope.Privatize();
     auto &&CGDistributeLoop = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
       auto &&CGSimd = [&S](CodeGenFunction &CGF, PrePostActionTy &) {

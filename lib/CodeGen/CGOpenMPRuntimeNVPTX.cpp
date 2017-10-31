@@ -4599,6 +4599,12 @@ void CGOpenMPRuntimeNVPTX::emitNumTeamsClause(CodeGenFunction &CGF,
                                               const Expr *ThreadLimit,
                                               SourceLocation Loc) {}
 
+void CGOpenMPRuntimeNVPTX::emitInitDSBlock(CodeGenFunction &CGF) {
+  auto BB = CGF.createBasicBlock("omp.init.ds");
+  CGF.EmitBranch(BB);
+  CGF.EmitBlock(BB);
+}
+
 static void emitPostUpdateForReductionClause(
     CodeGenFunction &CGF, const OMPExecutableDirective &D,
     const llvm::function_ref<llvm::Value *(CodeGenFunction &)> &CondGen) {
@@ -4646,9 +4652,10 @@ void CGOpenMPRuntimeNVPTX::emitTeamsCall(CodeGenFunction &CGF,
     // This code generation is a duplication of the one in CGStmtOpenMP.cpp
     // and it has to be removed once the sharing from teams distribute to
     // any contained worksharing loop works smoothly.
-    auto &&CGDistributeInlined = [&D](CodeGenFunction &CGF, PrePostActionTy &) {
+    auto &&CGDistributeInlined = [this, &D](CodeGenFunction &CGF, PrePostActionTy &) {
       CodeGenFunction::OMPPrivateScope PrivateScope(CGF);
       CGF.EmitOMPReductionClauseInit(D, PrivateScope);
+      emitInitDSBlock(CGF);
       (void)PrivateScope.Privatize();
       auto &&CGDistributeLoop = [&D](CodeGenFunction &CGF, PrePostActionTy &) {
         CGF.EmitOMPDistributeLoop(*(dyn_cast<OMPLoopDirective>(&D)),
@@ -4667,11 +4674,12 @@ void CGOpenMPRuntimeNVPTX::emitTeamsCall(CodeGenFunction &CGF,
     // This code generation is a duplication of the one in CGStmtOpenMP.cpp
     // and it has to be removed once the sharing from teams distribute to
     // any contained worksharing loop works smoothly.
-    auto &&CGDistributeInlined = [&D](CodeGenFunction &CGF, PrePostActionTy &) {
+    auto &&CGDistributeInlined = [this, &D](CodeGenFunction &CGF, PrePostActionTy &) {
       CodeGenFunction::OMPPrivateScope PrivateScope(CGF);
       (void)CGF.EmitOMPFirstprivateClause(D, PrivateScope);
       CGF.EmitOMPPrivateClause(D, PrivateScope);
       CGF.EmitOMPReductionClauseInit(D, PrivateScope);
+      emitInitDSBlock(CGF);
       (void)PrivateScope.Privatize();
       auto &&CGDistributeLoop = [&D](CodeGenFunction &CGF, PrePostActionTy &) {
         auto &&CGSimd = [&D](CodeGenFunction &CGF, PrePostActionTy &) {
@@ -4690,11 +4698,12 @@ void CGOpenMPRuntimeNVPTX::emitTeamsCall(CodeGenFunction &CGF,
   } else {
     // Just emit the statements in the teams region inlined.
     // This has to be removed too when data sharing is fixed.
-    auto &&CodeGen = [&D](CodeGenFunction &CGF, PrePostActionTy &) {
+    auto &&CodeGen = [this, &D](CodeGenFunction &CGF, PrePostActionTy &) {
       CodeGenFunction::OMPPrivateScope PrivateScope(CGF);
       (void)CGF.EmitOMPFirstprivateClause(D, PrivateScope);
       CGF.EmitOMPPrivateClause(D, PrivateScope);
       CGF.EmitOMPReductionClauseInit(D, PrivateScope);
+      emitInitDSBlock(CGF);
       (void)PrivateScope.Privatize();
       const auto *CS = cast<CapturedStmt>(D.getAssociatedStmt());
       if (D.hasClausesOfKind<OMPDependClause>() &&

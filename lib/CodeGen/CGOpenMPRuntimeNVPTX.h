@@ -712,6 +712,9 @@ public:
   void emitNumTeamsClause(CodeGenFunction &CGF, const Expr *NumTeams,
                           const Expr *ThreadLimit, SourceLocation Loc) override;
 
+  /// \brief Emits a BasicBlock "omp.init.ds" for data sharing.
+  void emitInitDSBlock(CodeGenFunction &CGF) override;
+
   /// \brief Emits inlined function for the specified OpenMP teams
   //  directive.
   /// \a D. This outlined function has type void(*)(kmp_int32 *ThreadID,
