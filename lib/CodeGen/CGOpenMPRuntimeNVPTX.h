@@ -201,12 +201,13 @@ private:
     bool IsEntryPoint;
     llvm::Function *EntryWorkerFunction;
     llvm::BasicBlock *EntryExitBlock;
+    llvm::BasicBlock *InitDSBlock;
     llvm::Function *InitializationFunction;
     SmallVector<std::pair<llvm::Value *, bool>, 16> ValuesToBeReplaced;
     DataSharingFunctionInfo()
         : RequiresOMPRuntime(true), IsEntryPoint(false),
           EntryWorkerFunction(nullptr), EntryExitBlock(nullptr),
-          InitializationFunction(nullptr) {}
+          InitDSBlock(nullptr), InitializationFunction(nullptr) {}
   };
   typedef llvm::DenseMap<llvm::Function *, DataSharingFunctionInfo>
       DataSharingFunctionInfoMapTy;

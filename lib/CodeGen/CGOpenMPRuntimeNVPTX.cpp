@@ -4603,6 +4603,12 @@ void CGOpenMPRuntimeNVPTX::emitInitDSBlock(CodeGenFunction &CGF) {
   auto BB = CGF.createBasicBlock("omp.init.ds");
   CGF.EmitBranch(BB);
   CGF.EmitBlock(BB);
+
+  // Save basic block because names are immediately discarded in Release
+  // builds that pass in -discard-value-names.
+  auto &DSInfo = DataSharingFunctionInfoMap[CGF.CurFn];
+  assert(DSInfo.InitDSBlock == nullptr && "Didn't expect data sharing!");
+  DSInfo.InitDSBlock = BB;
 }
 
 static void emitPostUpdateForReductionClause(
@@ -4737,14 +4743,9 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
     llvm::BasicBlock &HeaderBB = Fn->front();
 
     llvm::Instruction *SharedDataInfrastructureInsertPoint = nullptr;
-    bool hasOMPInitDSBlock = false;
-    for (auto &BB : Fn->getBasicBlockList()) {
-      if (BB.getName() == "omp.init.ds") {
-        SharedDataInfrastructureInsertPoint = &(*BB.begin());
-        hasOMPInitDSBlock = true;
-        break;
-      }
-    }
+    bool hasOMPInitDSBlock = (DSI.InitDSBlock != nullptr);
+    if (hasOMPInitDSBlock)
+      SharedDataInfrastructureInsertPoint = &(*DSI.InitDSBlock->begin());
 
     // Find the last alloca and the last replacement that is not an alloca.
     llvm::Instruction *LastAlloca = nullptr;
@@ -4903,7 +4904,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
         }
         // Only visit the header and omp.init.ds (if it exists) blocks.
         if (hasOMPInitDSBlock) {
-          if (StartBlock.getName() == "omp.init.ds")
+          if (&StartBlock == DSI.InitDSBlock)
             break;
         } else
             break;
@@ -4953,7 +4954,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
                 }
                 // Only visit the header and omp.init.ds (if it exists) blocks.
                 if (hasOMPInitDSBlock) {
-                  if (StartBlock.getName() == "omp.init.ds")
+                  if (&StartBlock == DSI.InitDSBlock)
                     break;
                 } else
                     break;
@@ -4962,7 +4963,7 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
           }
           // Only visit the header and omp.init.ds (if it exists) blocks.
           if (hasOMPInitDSBlock) {
-            if (StartBlock.getName() == "omp.init.ds")
+            if (&StartBlock == DSI.InitDSBlock)
               break;
           } else
               break;
@@ -4977,13 +4978,8 @@ llvm::Function *CGOpenMPRuntimeNVPTX::emitRegistrationFunction() {
           break;
         }
     } else {
-      for (auto &BB : Fn->getBasicBlockList()) {
-        if (BB.getName() == "omp.init.ds") {
-          InitializationInsertPtr = &(*BB.begin());
-          InsertPtr = InitializationInsertPtr;
-          break;
-        }
-      }
+      InitializationInsertPtr = &(*DSI.InitDSBlock->begin());
+      InsertPtr = InitializationInsertPtr;
     }
 
     // If this is an entry point, we have to initialize the data sharing first.
