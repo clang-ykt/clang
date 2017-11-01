@@ -9894,7 +9894,7 @@ static void CheckOMPReductionTypeClause(
     }
 
     if ((OASE && !ConstantLengthOASE) ||
-        (!ASE &&
+        (!OASE && !ASE &&
          D->getType().getNonReferenceType()->isVariablyModifiedType())) {
       // For arrays/array sections only:
       // Create pseudo array type for private copy. The size for this array will
