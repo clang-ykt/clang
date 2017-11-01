@@ -1440,6 +1440,17 @@ unsigned Sema::getOpenMPNestingLevel() const {
   return DSAStack->getNestingLevel();
 }
 
+bool Sema::isInOpenMPTargetExecutionDirective() const {
+  return (isOpenMPTargetExecutionDirective(DSAStack->getCurrentDirective()) &&
+          !DSAStack->isClauseParsingMode()) ||
+         DSAStack->hasDirective(
+             [](OpenMPDirectiveKind K, const DeclarationNameInfo &,
+                SourceLocation) -> bool {
+               return isOpenMPTargetExecutionDirective(K);
+             },
+             false);
+}
+
 VarDecl *Sema::IsOpenMPCapturedDecl(ValueDecl *D) {
   assert(LangOpts.OpenMP && "OpenMP is not allowed");
   D = getCanonicalDecl(D);
@@ -1453,15 +1464,7 @@ VarDecl *Sema::IsOpenMPCapturedDecl(ValueDecl *D) {
   auto *VD = dyn_cast<VarDecl>(D);
   if (VD && !VD->hasLocalStorage() &&
       !VD->hasAttr<OMPDeclareTargetDeclAttr>()) {
-    if (isOpenMPTargetExecutionDirective(DSAStack->getCurrentDirective()) &&
-        !DSAStack->isClauseParsingMode())
-      return VD;
-    if (DSAStack->hasDirective(
-            [](OpenMPDirectiveKind K, const DeclarationNameInfo &,
-               SourceLocation) -> bool {
-              return isOpenMPTargetExecutionDirective(K);
-            },
-            false))
+    if (isInOpenMPTargetExecutionDirective())
       return VD;
   }
 
@@ -9896,6 +9899,14 @@ static void CheckOMPReductionTypeClause(
     if ((OASE && !ConstantLengthOASE) ||
         (!OASE && !ASE &&
          D->getType().getNonReferenceType()->isVariablyModifiedType())) {
+      if (Context.getLangOpts().OpenMPIsDevice &&
+          !Context.getTargetInfo().isVLASupported() &&
+          (OMPSema.isInOpenMPDeclareTargetContext() ||
+           OMPSema.isInOpenMPTargetExecutionDirective())) {
+        OMPSema.Diag(ELoc, diag::err_omp_target_reduction_vla) << !!OASE;
+        OMPSema.Diag(ELoc, diag::note_omp_target_vla_support);
+        continue;
+      }
       // For arrays/array sections only:
       // Create pseudo array type for private copy. The size for this array will
       // be generated during codegen.
