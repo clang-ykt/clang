@@ -1,4 +1,5 @@
 // RUN: %clang_cc1 -verify -fopenmp -x c++ -triple x86_64-pc-windows-msvc18.0.0 -std=c++11 -fms-compatibility-version=18 -fms-extensions -emit-llvm %s -fexceptions -fcxx-exceptions -o - | FileCheck %s
+// REQUIRES: x86-registered-target
 // expected-no-diagnostics
 
 void foo();
