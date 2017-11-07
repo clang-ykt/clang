@@ -8281,10 +8281,12 @@ public:
                                     NamedDeclSetType &SameDirectiveDecls);
   /// Check declaration inside target region.
   void checkDeclIsAllowedInOpenMPTarget(Expr *E, Decl *D);
-  /// Return true inside OpenMP target region.
+  /// Return true inside OpenMP declare target region.
   bool isInOpenMPDeclareTargetContext() const {
     return IsInOpenMPDeclareTargetContext;
   }
+  /// Return true inside OpenMP target region.
+  bool isInOpenMPTargetExecutionDirective() const;
   /// Check and mark recursively declarations are implicitly used inside OpenMP
   /// target region.
   void checkDeclImplicitlyUsedOpenMPTargetContext(Decl *D);

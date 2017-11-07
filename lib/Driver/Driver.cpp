@@ -3506,7 +3506,10 @@ const char *Driver::GetNamedOutputPath(Compilation &C, const JobAction &JA,
         JA.getType() == types::TY_LLVM_BC)
       Suffixed += ".tmp";
     Suffixed += '.';
-    Suffixed += Suffix;
+    if (((StringRef)BaseInput).endswith(".a"))
+      Suffixed += "a";
+    else
+      Suffixed += Suffix;
     NamedOutput = C.getArgs().MakeArgString(Suffixed.c_str());
   }
 

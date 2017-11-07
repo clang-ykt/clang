@@ -201,12 +201,13 @@ private:
     bool IsEntryPoint;
     llvm::Function *EntryWorkerFunction;
     llvm::BasicBlock *EntryExitBlock;
+    llvm::BasicBlock *InitDSBlock;
     llvm::Function *InitializationFunction;
     SmallVector<std::pair<llvm::Value *, bool>, 16> ValuesToBeReplaced;
     DataSharingFunctionInfo()
         : RequiresOMPRuntime(true), IsEntryPoint(false),
           EntryWorkerFunction(nullptr), EntryExitBlock(nullptr),
-          InitializationFunction(nullptr) {}
+          InitDSBlock(nullptr), InitializationFunction(nullptr) {}
   };
   typedef llvm::DenseMap<llvm::Function *, DataSharingFunctionInfo>
       DataSharingFunctionInfoMapTy;
@@ -711,6 +712,9 @@ public:
   /// \param ThreadLimit An integer expression of threads.
   void emitNumTeamsClause(CodeGenFunction &CGF, const Expr *NumTeams,
                           const Expr *ThreadLimit, SourceLocation Loc) override;
+
+  /// \brief Emits a BasicBlock "omp.init.ds" for data sharing.
+  void emitInitDSBlock(CodeGenFunction &CGF) override;
 
   /// \brief Emits inlined function for the specified OpenMP teams
   //  directive.

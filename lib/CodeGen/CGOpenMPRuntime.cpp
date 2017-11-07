@@ -1043,8 +1043,9 @@ ReductionCodeGen::ReductionCodeGen(ArrayRef<const Expr *> Shareds,
 void ReductionCodeGen::emitSharedLValue(CodeGenFunction &CGF, unsigned N) {
   assert(SharedAddresses.size() == N &&
          "Number of generated lvalues must be exactly N.");
-  SharedAddresses.emplace_back(emitSharedLValue(CGF, ClausesData[N].Ref),
-                               emitSharedLValueUB(CGF, ClausesData[N].Ref));
+  LValue First = emitSharedLValue(CGF, ClausesData[N].Ref);
+  LValue Second = emitSharedLValueUB(CGF, ClausesData[N].Ref);
+  SharedAddresses.emplace_back(First, Second);
 }
 
 void ReductionCodeGen::emitAggregateType(CodeGenFunction &CGF, unsigned N) {
@@ -1052,7 +1053,7 @@ void ReductionCodeGen::emitAggregateType(CodeGenFunction &CGF, unsigned N) {
       cast<VarDecl>(cast<DeclRefExpr>(ClausesData[N].Private)->getDecl());
   QualType PrivateType = PrivateVD->getType();
   bool AsArraySection = isa<OMPArraySectionExpr>(ClausesData[N].Ref);
-  if (!AsArraySection && !PrivateType->isVariablyModifiedType()) {
+  if (!PrivateType->isVariablyModifiedType()) {
     Sizes.emplace_back(
         CGF.getTypeSize(
             SharedAddresses[N].first.getType().getNonReferenceType()),
@@ -1090,10 +1091,9 @@ void ReductionCodeGen::emitAggregateType(CodeGenFunction &CGF, unsigned N,
   auto *PrivateVD =
       cast<VarDecl>(cast<DeclRefExpr>(ClausesData[N].Private)->getDecl());
   QualType PrivateType = PrivateVD->getType();
-  bool AsArraySection = isa<OMPArraySectionExpr>(ClausesData[N].Ref);
-  if (!AsArraySection && !PrivateType->isVariablyModifiedType()) {
+  if (!PrivateType->isVariablyModifiedType()) {
     assert(!Size && !Sizes[N].second &&
-           "Size should be nullptr for non-variably modified redution "
+           "Size should be nullptr for non-variably modified reduction "
            "items.");
     return;
   }
@@ -1120,8 +1120,7 @@ void ReductionCodeGen::emitInitialization(
       CGF.Builder.CreateElementBitCast(SharedLVal.getAddress(),
                                        CGF.ConvertTypeForMem(SharedType)),
       SharedType);
-  if (isa<OMPArraySectionExpr>(ClausesData[N].Ref) ||
-      CGF.getContext().getAsArrayType(PrivateVD->getType())) {
+  if (CGF.getContext().getAsArrayType(PrivateVD->getType())) {
     emitAggregateInitialization(CGF, N, PrivateAddr, SharedLVal, DRD);
   } else if (DRD && (DRD->getInitializer() || !PrivateVD->hasInit())) {
     emitInitWithReductionInitializer(CGF, DRD, ClausesData[N].ReductionOp,
@@ -1637,7 +1636,9 @@ llvm::Value *CGOpenMPRuntime::getThreadID(CodeGenFunction &CGF,
       return ThreadID;
   }
   // If exceptions are enabled, do not use parameter to avoid possible crash.
-  if (!CGF.getInvokeDest()) {
+  if (!CGF.EHStack.requiresLandingPad() || !CGF.getLangOpts().Exceptions ||
+      !CGF.getLangOpts().CXXExceptions ||
+      CGF.Builder.GetInsertBlock() == CGF.AllocaInsertPt->getParent()) {
     if (auto *OMPRegionInfo =
             dyn_cast_or_null<CGOpenMPRegionInfo>(CGF.CapturedStmtInfo)) {
       if (OMPRegionInfo->getThreadIDVariable()) {
@@ -1661,12 +1662,13 @@ llvm::Value *CGOpenMPRuntime::getThreadID(CodeGenFunction &CGF,
   // function.
   CGBuilderTy::InsertPointGuard IPG(CGF.Builder);
   CGF.Builder.SetInsertPoint(CGF.AllocaInsertPt);
-  ThreadID =
-      CGF.EmitRuntimeCall(createRuntimeFunction(OMPRTL__kmpc_global_thread_num),
-                          emitUpdateLocation(CGF, Loc));
+  auto *Call = CGF.Builder.CreateCall(
+      createRuntimeFunction(OMPRTL__kmpc_global_thread_num),
+      emitUpdateLocation(CGF, Loc));
+  Call->setCallingConv(CGF.getRuntimeCC());
   auto &Elem = OpenMPLocThreadIDMap.FindAndConstruct(CGF.CurFn);
-  Elem.second.ThreadID = ThreadID;
-  return ThreadID;
+  Elem.second.ThreadID = Call;
+  return Call;
 }
 
 void CGOpenMPRuntime::functionFinished(CodeGenFunction &CGF) {

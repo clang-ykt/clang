@@ -29,6 +29,9 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Object/Archive.h"
+#include "llvm/Object/Binary.h"
+#include "llvm/Object/ObjectFile.h"
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/Option.h"
@@ -4651,6 +4654,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   Args.AddLastArg(CmdArgs, options::OPT_ftrap_EQ);
   Args.AddLastArg(CmdArgs, options::OPT_ftrap_exact);
+  if (Args.hasArg(options::OPT_fnans_inject)) {
+    Args.AddLastArg(CmdArgs, options::OPT_fnans_inject);
+    CmdArgs.push_back("-mllvm");
+    CmdArgs.push_back("-nans-inject");
+  }
 
   // Decide whether to use verbose asm. Verbose assembly is the default on
   // toolchains which have the integrated assembler on by default.
@@ -7259,6 +7267,15 @@ void OffloadBundler::ConstructJob(Compilation &C, const JobAction &JA,
   assert(JA.getInputs().size() == Inputs.size() &&
          "Not have inputs for all dependence actions??");
 
+  // Get the arch
+  StringRef Arch = TCArgs.getLastArgValue(options::OPT_march_EQ);
+  if (Arch.empty())
+    CmdArgs.push_back(TCArgs.MakeArgString(
+        Twine("-arch=") + CLANG_OPENMP_NVPTX_DEFAULT_ARCH));
+  else
+    CmdArgs.push_back(TCArgs.MakeArgString(
+        Twine("-arch=") + Arch));
+
   // Get the targets.
   SmallString<128> Triples;
   Triples += "-targets=";
@@ -7323,8 +7340,23 @@ void OffloadBundler::ConstructJobMultipleOutputs(
   InputInfo Input = Inputs.front();
 
   // Get the type.
-  CmdArgs.push_back(TCArgs.MakeArgString(
-      Twine("-type=") + types::getTypeTempSuffix(Input.getType())));
+  StringRef InputFilname = Input.getFilename();
+  bool InputIsArchive = InputFilname.endswith(".a");
+  if (InputIsArchive)
+    CmdArgs.push_back(TCArgs.MakeArgString(
+        Twine("-type=a")));
+  else
+    CmdArgs.push_back(TCArgs.MakeArgString(
+        Twine("-type=") + types::getTypeTempSuffix(Input.getType())));
+
+  // Get the arch
+  StringRef Arch = TCArgs.getLastArgValue(options::OPT_march_EQ);
+  if (Arch.empty())
+    CmdArgs.push_back(TCArgs.MakeArgString(
+        Twine("-arch=") + CLANG_OPENMP_NVPTX_DEFAULT_ARCH));
+  else
+    CmdArgs.push_back(TCArgs.MakeArgString(
+        Twine("-arch=") + Arch));
 
   // Get the targets.
   SmallString<128> Triples;
@@ -12349,24 +12381,32 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
       if (!II.isFilename())
         continue;
 
-      StringRef Name = llvm::sys::path::filename(II.getFilename());
-      std::pair<StringRef, StringRef> Split = Name.rsplit('.');
-      std::string TmpName =
-          C.getDriver().GetTemporaryPath(Split.first, "cubin");
+      StringRef OrigInputFileName =
+          llvm::sys::path::filename(II.getBaseInput());
+      if (OrigInputFileName.endswith(".a")) {
+        const char *StaticLibName =
+            C.addTempFile(C.getArgs().MakeArgString(II.getFilename()));
+        CmdArgs.push_back(StaticLibName);
+      } else {
+        StringRef Name = llvm::sys::path::filename(II.getFilename());
+        std::pair<StringRef, StringRef> Split = Name.rsplit('.');
+        std::string TmpName =
+            C.getDriver().GetTemporaryPath(Split.first, "cubin");
 
-      const char *CubinF =
-          C.addTempFile(C.getArgs().MakeArgString(TmpName.c_str()));
+        const char *CubinF =
+            C.addTempFile(C.getArgs().MakeArgString(TmpName.c_str()));
 
-      const char *CopyExec = Args.MakeArgString(getToolChain().GetProgramPath(
-          C.getDriver().IsCLMode() ? "copy" : "cp"));
+        const char *CopyExec = Args.MakeArgString(getToolChain().GetProgramPath(
+            C.getDriver().IsCLMode() ? "copy" : "cp"));
 
-      ArgStringList CopyCmdArgs;
-      CopyCmdArgs.push_back(II.getFilename());
-      CopyCmdArgs.push_back(CubinF);
-      C.addCommand(
-          llvm::make_unique<Command>(JA, *this, CopyExec, CopyCmdArgs, Inputs));
+        ArgStringList CopyCmdArgs;
+        CopyCmdArgs.push_back(II.getFilename());
+        CopyCmdArgs.push_back(CubinF);
+        C.addCommand(
+            llvm::make_unique<Command>(JA, *this, CopyExec, CopyCmdArgs, Inputs));
 
-      CmdArgs.push_back(CubinF);
+        CmdArgs.push_back(CubinF);
+      }
     }
 
     AddOpenMPLinkerScript(getToolChain(), C, Output, Inputs, Args, CmdArgs, JA);

@@ -28,6 +28,7 @@
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Object/Archive.h"
 #include "llvm/Object/Binary.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Casting.h"
@@ -51,6 +52,30 @@
 
 using namespace llvm;
 using namespace llvm::object;
+
+namespace llvm {
+
+static void error(Error Err) {
+  if (Err) {
+    logAllUnhandledErrors(std::move(Err), outs(), "Error reading file: ");
+    outs().flush();
+    exit(1);
+  }
+}
+
+} // namespace llvm
+
+static void reportError(StringRef Input, StringRef Message) {
+  if (Input == "-")
+    Input = "<stdin>";
+  errs() << Input << ": " << Message << "\n";
+  errs().flush();
+  exit(1);
+}
+
+static void reportError(StringRef Input, std::error_code EC) {
+  reportError(Input, EC.message());
+}
 
 static cl::opt<bool> Help("h", cl::desc("Alias for -help"), cl::Hidden);
 
@@ -82,7 +107,8 @@ static cl::opt<std::string>
                        "  s   - assembler\n"
                        "  o   - object\n"
                        "  gch - precompiled-header\n"
-                       "  ast - clang AST file"),
+                       "  ast - clang AST file\n"
+                       "  a   - archive"),
               cl::cat(ClangOffloadBundlerCategory));
 static cl::opt<bool>
     Unbundle("unbundle",
@@ -99,6 +125,11 @@ static cl::opt<bool> DumpTemporaryFiles(
     "dump-temporary-files",
     cl::desc("Dumps any temporary files created - for testing purposes.\n"),
     cl::init(false), cl::cat(ClangOffloadBundlerCategory));
+
+static cl::opt<std::string>
+    GPUArch("arch",
+            cl::desc("GPU compute capability: sm_30, sm_35, etc.\n"),
+            cl::cat(ClangOffloadBundlerCategory));
 
 /// Magic string that marks the existence of offloading data.
 #define OFFLOAD_BUNDLER_MAGIC_STR "__CLANG_OFFLOAD_BUNDLE__"
@@ -732,6 +763,16 @@ static FileHandler *CreateObjectFileHandler(MemoryBuffer &FirstInput) {
   return new ObjectFileHandler(std::move(Obj));
 }
 
+static FileHandler *GetObjectFileHandler(MemoryBuffer &FirstInput) {
+  // Check if the input file format is one that we know how to deal with.
+  Expected<std::unique_ptr<Binary>> BinaryOrErr = createBinary(FirstInput);
+  assert(BinaryOrErr && "error: Failed to open the input as a known binary");
+  std::unique_ptr<ObjectFile> Obj(
+      dyn_cast<ObjectFile>(BinaryOrErr.get().release()));
+  assert(Obj && "error: Cannot create object file from binary.");
+  return new ObjectFileHandler(std::move(Obj));
+}
+
 /// Return an appropriate handler given the input files and options.
 static FileHandler *CreateFileHandler(MemoryBuffer &FirstInput) {
   if (FilesType == "i")
@@ -808,12 +849,18 @@ static bool BundleFiles() {
 }
 
 // Unbundle the files. Return true if an error was found.
-static bool UnbundleFiles() {
+static bool UnbundleFiles(StringRef ArchiveFileName="",
+      std::vector<std::string> *NewOutputFileNames=nullptr) {
+  // Get input file name
+  StringRef InputFile = InputFileNames.front();
+  if (ArchiveFileName != "")
+    InputFile = ArchiveFileName;
+
   // Open Input file.
   ErrorOr<std::unique_ptr<MemoryBuffer>> CodeOrErr =
-      MemoryBuffer::getFileOrSTDIN(InputFileNames.front());
+      MemoryBuffer::getFileOrSTDIN(InputFile);
   if (std::error_code EC = CodeOrErr.getError()) {
-    errs() << "error: Can't open file " << InputFileNames.front() << ": "
+    errs() << "error: Can't open file " << InputFile << ": "
            << EC.message() << "\n";
     return true;
   }
@@ -822,7 +869,10 @@ static bool UnbundleFiles() {
 
   // Select the right files handler.
   std::unique_ptr<FileHandler> FH;
-  FH.reset(CreateFileHandler(Input));
+  if (ArchiveFileName != "")
+    FH.reset(GetObjectFileHandler(Input));
+  else
+    FH.reset(CreateFileHandler(Input));
 
   // Quit if we don't have a handler.
   if (!FH.get())
@@ -833,10 +883,18 @@ static bool UnbundleFiles() {
 
   // Create a work list that consist of the map triple/output file.
   StringMap<StringRef> Worklist;
-  auto Output = OutputFileNames.begin();
-  for (auto &Triple : TargetNames) {
-    Worklist[Triple] = *Output;
-    ++Output;
+  if (NewOutputFileNames) {
+    auto Output = NewOutputFileNames->begin();
+    for (auto &Triple : TargetNames) {
+      Worklist[Triple] = *Output;
+      ++Output;
+    }
+  } else {
+    auto Output = OutputFileNames.begin();
+    for (auto &Triple : TargetNames) {
+      Worklist[Triple] = *Output;
+      ++Output;
+    }
   }
 
   // Read all the bundles that are in the work list. If we find no bundles we
@@ -910,6 +968,206 @@ static bool UnbundleFiles() {
   }
 
   return false;
+}
+
+// Function that assembles an argument.
+std::string AssembleArgString(
+      StringRef Prefix, StringRef ArgValue, StringRef Suffix=""){
+  SmallString<128> StringArgBuffer;
+  llvm::raw_svector_ostream StringArg(StringArgBuffer);
+  StringArg << Prefix << ArgValue << Suffix;
+  return StringArg.str().str();
+  // return (Prefix + ArgValue + Suffix).str().c_str();
+}
+
+// Unbundle the files. Return true if archive was handled.
+static bool HandleArchiveFiles() {
+  // Only handle archives, nothing else.
+  if (FilesType != "a") {
+    return false;
+  }
+
+  // Get input file name, in this case an archive.
+  StringRef InputFileName = InputFileNames.front();
+  bool Failed;
+
+  // Create a folder that is library specific, where the library
+  // is extracted. When linking with nvlink use all the cubin files
+  // in the folder of the static library the user is trying to link
+  // against.
+
+  // Extract object files from archive
+  const char *ExtractArchiveArgs[] = {"ar", "x",
+                                      InputFileName.str().c_str(),
+                                      nullptr};
+  auto ArBinary = sys::findProgramByName("ar");
+  Failed = sys::ExecuteAndWait(ArBinary.get(), ExtractArchiveArgs);
+  if (Failed) {
+    errs() << "error: 1 extracting the archived object files failed.\n";
+    return true;
+  }
+
+  // Open Input file.
+  ErrorOr<std::unique_ptr<MemoryBuffer>> CodeOrErr =
+      MemoryBuffer::getFileOrSTDIN(InputFileName);
+  if (std::error_code EC = CodeOrErr.getError()) {
+    errs() << "error: Can't open file " << InputFileName << ": "
+           << EC.message() << "\n";
+    return true;
+  }
+
+  Expected<OwningBinary<Binary>> BinaryOrErr = createBinary(InputFileName);
+  if (!BinaryOrErr) {
+    auto EC = errorToErrorCode(BinaryOrErr.takeError());
+    reportError(InputFileName, EC);
+    return false;
+  }
+  Binary &ArchiveBinary = *BinaryOrErr.get().getBinary();
+  const Archive *Arc = dyn_cast<Archive>(&ArchiveBinary);
+  if (!Arc) {
+    reportError(InputFileName, "Cannot retrieve archive from provided Binary file.");
+    return false;
+  }
+
+  std::vector<std::string> *ArchiveObjectNames = new std::vector<std::string>();
+  Error Err = Error::success();
+  for (auto &ObjFile : Arc->children(Err)) {
+    Expected<std::unique_ptr<Binary>> ChildOrErr = ObjFile.getAsBinary();
+    if (!ChildOrErr) {
+      // Ignore non-object files.
+      if (auto E = isNotObjectErrorInvalidFileType(ChildOrErr.takeError())) {
+        std::string Buf;
+        raw_string_ostream OS(Buf);
+        logAllUnhandledErrors(std::move(E), OS, "");
+        OS.flush();
+        reportError(Arc->getFileName(), Buf);
+      }
+      consumeError(ChildOrErr.takeError());
+      continue;
+    }
+
+    if (ObjectFile *Obj = dyn_cast<ObjectFile>(&*ChildOrErr.get()))
+      ArchiveObjectNames->push_back(Obj->getFileName().split(".").first.str());
+  }
+  error(std::move(Err));
+
+  for(unsigned i=0; i<ArchiveObjectNames->size(); i++) {
+    std::vector<std::string> *NewOutputFileNames =
+        new std::vector<std::string>();
+    for (StringRef Target : TargetNames) {
+      SmallString<256> Buffer;
+      llvm::raw_svector_ostream OutFileName(Buffer);
+      OutFileName << (*ArchiveObjectNames)[i] << "-" << Target;
+      if (Target == "openmp-nvptx64-nvidia-cuda" ||
+          Target == "openmp-nvptx32-nvidia-cuda") {
+        OutFileName << ".cubin";
+        NewOutputFileNames->push_back(OutFileName.str());
+        continue;
+      }
+      OutFileName << ".o";
+      NewOutputFileNames->push_back(OutFileName.str());
+    }
+
+    // auto Output = NewOutputFileNames->begin();
+    // for (StringRef Target : TargetNames) {
+    //   printf("    ------- Output file name: %s (%s)\n", Output->c_str(), Target.str().c_str());
+    //   ++Output;
+    // }
+
+    SmallString<256> Buffer;
+    llvm::raw_svector_ostream InputFileName(Buffer);
+    InputFileName << (*ArchiveObjectNames)[i] << ".o";
+    UnbundleFiles(InputFileName.str(),
+                  NewOutputFileNames);
+
+    // Find fatbinary binary
+    auto FatBinary = sys::findProgramByName("fatbinary");
+    auto ClangBinary = sys::findProgramByName("clang");
+
+    unsigned count = 0;
+    // Copy unbundled files to temp lib folder.
+    for(StringRef OutputFileName: *NewOutputFileNames) {
+      // cubin files need to handled differently: we need to
+      // invoke the fatbinary executable for each cubin and create
+      // a fatbin file which needs to be wrapped in a C wrapper.
+      // The new file needs to be compiled into a .o file. This
+      // latter file can now be included in the initial static lib.
+      if (OutputFileName.endswith(".cubin")) {
+        // Output file base name, no extension.
+        StringRef OutBaseName = OutputFileName.split(".").first;
+
+        // Create .fatbin file.
+        std::string FatbinFileName = AssembleArgString(OutBaseName,
+            ".fatbin");
+
+        // Create .fatbin.c file
+        std::string WrapFatbinName = AssembleArgString(OutBaseName,
+            ".fatbin.c");
+
+        const char *GenAndWrapFatbinArgs[] = {"fatbinary",
+            AssembleArgString("--image=profile=" + GPUArch + ",file=",
+                              OutputFileName).c_str(),
+            AssembleArgString("--create=", FatbinFileName).c_str(),
+            AssembleArgString("--embedded-fatbin=",
+                              WrapFatbinName).c_str(), "-64",
+            "--cmdline=--compile-only", "--cuda", "--device-c",
+            nullptr};
+        Failed = sys::ExecuteAndWait(FatBinary.get(), GenAndWrapFatbinArgs);
+        if (Failed) {
+          errs() << "error: generating and wrapping fatbin.\n";
+        }
+
+        // Create fatbin object file (.fatbin.o).
+        std::string ObjectFileName = AssembleArgString(OutBaseName,
+            ".fatbin.o");
+
+        // Arguments for call to clang.
+        const char *WrapFatbinObjArgs[] = {"clang", "-c",
+            "-I/usr/local/cuda/include/",
+            "-Wno-extern-initializer",
+            WrapFatbinName.c_str(), "-o",
+            ObjectFileName.c_str(), nullptr};
+        Failed = sys::ExecuteAndWait(ClangBinary.get(), WrapFatbinObjArgs);
+        if (Failed) {
+          errs() << "error: generating fatbin object.\n";
+        }
+
+        // Add newly formed fatbin object to target specific archive
+        const char *AddToArchiveArgs[] = {"ar", "rcs",
+            OutputFileNames[count].c_str(),
+            ObjectFileName.c_str(), nullptr};
+        Failed = sys::ExecuteAndWait(ArBinary.get(), AddToArchiveArgs);
+        if (Failed) {
+          errs() << "error: adding object to static library.\n";
+        }
+
+        llvm::sys::fs::remove(ObjectFileName);
+        llvm::sys::fs::remove(WrapFatbinName);
+        llvm::sys::fs::remove(FatbinFileName);
+      } else {
+        // Add unbundled object to static library
+        const char *AddToArchiveArgs[] = {"ar", "rcs",
+            OutputFileNames[count].c_str(),
+            OutputFileName.str().c_str(),
+            nullptr};
+        Failed = sys::ExecuteAndWait(ArBinary.get(), AddToArchiveArgs);
+        if (Failed) {
+          errs() << "error: adding object to static library.\n";
+        }
+      }
+
+      // Remove output file.
+      llvm::sys::fs::remove(OutputFileName);
+
+      count++;
+    }
+
+    // Remove original object file.
+    llvm::sys::fs::remove(InputFileName.str());
+  }
+
+  // Return true to say we are all done!
+  return true;
 }
 
 static void PrintVersion() {
@@ -1007,6 +1265,9 @@ int main(int argc, const char **argv) {
   // Save the current executable directory as it will be useful to find other
   // tools.
   BundlerExecutable = sys::fs::getMainExecutable(argv[0], &BundlerExecutable);
+
+  if (Unbundle && HandleArchiveFiles())
+    return false;
 
   return Unbundle ? UnbundleFiles() : BundleFiles();
 }

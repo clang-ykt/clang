@@ -79,6 +79,72 @@ static CGCXXABI *createCXXABI(CodeGenModule &CGM) {
   llvm_unreachable("invalid C++ ABI kind");
 }
 
+static void emitNVPTXsNaNsPoisonFunction(CodeGenModule &CGM) {
+  // void ___nvptx_cuda_snans_poison(void *in, size_t size) {
+  //   void *end = in[size];
+  //   do {
+  //     *(int64*)in = (int64)sNaN;
+  //     in += 8;
+  //   } while(in < end);
+  // }
+  auto &C = CGM.getContext();
+  FunctionArgList Args;
+  ImplicitParamDecl InParm(C, C.VoidPtrTy, ImplicitParamDecl::Other);
+  ImplicitParamDecl SizeParm(C, C.getSizeType(), ImplicitParamDecl::Other);
+  Args.push_back(&InParm);
+  Args.push_back(&SizeParm);
+  auto &FnInfo =
+      CGM.getTypes().arrangeBuiltinFunctionDeclaration(C.VoidTy, Args);
+  auto *FnTy = CGM.getTypes().GetFunctionType(FnInfo);
+  auto *Fn =
+      llvm::Function::Create(FnTy, llvm::GlobalValue::PrivateLinkage,
+                             "___nvptx_cuda_snans_poison", &CGM.getModule());
+  CGM.SetInternalFunctionAttributes(/*D=*/nullptr, Fn, FnInfo);
+  Fn->addFnAttr(llvm::Attribute::NoInline);
+  // Fn->removeFnAttr(llvm::Attribute::NoInline);
+  // Fn->addFnAttr(llvm::Attribute::AlwaysInline);
+  CodeGenFunction CGF(CGM);
+  CGF.disableDebugInfo();
+  CGF.StartFunction(GlobalDecl(), C.VoidTy, Fn, FnInfo, Args);
+  llvm::BasicBlock *NansBeginBlock = CGF.createBasicBlock("NansBegin");
+  CGF.EmitBranch(NansBeginBlock);
+  CGF.EmitBlock(NansBeginBlock);
+  llvm::Value *MinAddr =
+      CGF.EmitLoadOfScalar(CGF.GetAddrOfLocalVar(&InParm), /*Volatile=*/false,
+                           C.VoidPtrTy, SourceLocation());
+  llvm::Value *Size =
+      CGF.EmitLoadOfScalar(CGF.GetAddrOfLocalVar(&SizeParm), /*Volatile=*/false,
+                           C.getSizeType(), SourceLocation());
+  llvm::Value *MaxAddr = CGF.Builder.CreateGEP(MinAddr, Size);
+  llvm::APFloat SNan =
+      llvm::APFloat::getSNaN(C.getFloatTypeSemantics(C.DoubleTy));
+  llvm::APInt IntSNan = SNan.bitcastToAPInt();
+  llvm::Type *IntDblPtrTy =
+      CGF.Builder.getIntNTy(IntSNan.getBitWidth())->getPointerTo();
+  MinAddr =
+      CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(MinAddr, IntDblPtrTy);
+  llvm::BasicBlock *LoopBeginBlock = CGF.createBasicBlock("LoopBegin");
+  llvm::BasicBlock *LoopBlock = CGF.createBasicBlock("Loop");
+  CGF.EmitBranch(LoopBeginBlock);
+  CGF.EmitBlock(LoopBeginBlock);
+  auto *PHIMinAddr =
+      CGF.Builder.CreatePHI(MinAddr->getType(), /*NumReservedValues=*/2);
+  PHIMinAddr->addIncoming(MinAddr, NansBeginBlock);
+  auto *PtrCmp = CGF.Builder.CreateICmpULT(
+      CGF.Builder.CreatePtrToInt(PHIMinAddr, CGM.IntPtrTy),
+      CGF.Builder.CreatePtrToInt(MaxAddr, CGM.IntPtrTy));
+  CGF.Builder.CreateCondBr(PtrCmp, LoopBlock, CGF.ReturnBlock.getBlock());
+  CGF.EmitBlock(LoopBlock);
+  CGF.Builder.CreateAlignedStore(
+      llvm::ConstantInt::get(CGM.getLLVMContext(), IntSNan), PHIMinAddr,
+      C.getTypeAlignInChars(C.DoubleTy));
+  MinAddr = CGF.Builder.CreateConstGEP1_32(PHIMinAddr, 1);
+  PHIMinAddr->addIncoming(MinAddr, LoopBlock);
+  CGF.EmitBranch(LoopBeginBlock);
+  CGF.FinishFunction();
+  CGM.addUsedGlobal(Fn);
+}
+
 CodeGenModule::CodeGenModule(ASTContext &C, const HeaderSearchOptions &HSO,
                              const PreprocessorOptions &PPO,
                              const CodeGenOptions &CGO, llvm::Module &M,
@@ -159,6 +225,10 @@ CodeGenModule::CodeGenModule(ASTContext &C, const HeaderSearchOptions &HSO,
   // CoverageMappingModuleGen object.
   if (CodeGenOpts.CoverageMapping)
     CoverageMapping.reset(new CoverageMappingModuleGen(*this, *CoverageInfo));
+
+  if (getLangOpts().NansInject &&
+      getTarget().getTriple().getOS() == llvm::Triple::CUDA)
+    emitNVPTXsNaNsPoisonFunction(*this);
 }
 
 CodeGenModule::~CodeGenModule() {}

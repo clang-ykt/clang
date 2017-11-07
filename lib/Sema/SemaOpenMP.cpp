@@ -845,10 +845,10 @@ void DSAStackTy::addTaskgroupReductionData(ValueDecl *D, SourceRange SR,
   Expr *&TaskgroupReductionRef =
       Stack.back().first.back().TaskgroupReductionRef;
   if (!TaskgroupReductionRef) {
-    auto *VD = buildVarDecl(SemaRef, SourceLocation(),
+    auto *VD = buildVarDecl(SemaRef, SR.getBegin(),
                             SemaRef.Context.VoidPtrTy, ".task_red.");
-    TaskgroupReductionRef = buildDeclRefExpr(
-        SemaRef, VD, SemaRef.Context.VoidPtrTy, SourceLocation());
+    TaskgroupReductionRef =
+        buildDeclRefExpr(SemaRef, VD, SemaRef.Context.VoidPtrTy, SR.getBegin());
   }
 }
 
@@ -869,10 +869,10 @@ void DSAStackTy::addTaskgroupReductionData(ValueDecl *D, SourceRange SR,
   Expr *&TaskgroupReductionRef =
       Stack.back().first.back().TaskgroupReductionRef;
   if (!TaskgroupReductionRef) {
-    auto *VD = buildVarDecl(SemaRef, SourceLocation(),
-                            SemaRef.Context.VoidPtrTy, ".task_red.");
-    TaskgroupReductionRef = buildDeclRefExpr(
-        SemaRef, VD, SemaRef.Context.VoidPtrTy, SourceLocation());
+    auto *VD = buildVarDecl(SemaRef, SR.getBegin(), SemaRef.Context.VoidPtrTy,
+                            ".task_red.");
+    TaskgroupReductionRef =
+        buildDeclRefExpr(SemaRef, VD, SemaRef.Context.VoidPtrTy, SR.getBegin());
   }
 }
 
@@ -1440,6 +1440,17 @@ unsigned Sema::getOpenMPNestingLevel() const {
   return DSAStack->getNestingLevel();
 }
 
+bool Sema::isInOpenMPTargetExecutionDirective() const {
+  return (isOpenMPTargetExecutionDirective(DSAStack->getCurrentDirective()) &&
+          !DSAStack->isClauseParsingMode()) ||
+         DSAStack->hasDirective(
+             [](OpenMPDirectiveKind K, const DeclarationNameInfo &,
+                SourceLocation) -> bool {
+               return isOpenMPTargetExecutionDirective(K);
+             },
+             false);
+}
+
 VarDecl *Sema::IsOpenMPCapturedDecl(ValueDecl *D) {
   assert(LangOpts.OpenMP && "OpenMP is not allowed");
   D = getCanonicalDecl(D);
@@ -1453,15 +1464,7 @@ VarDecl *Sema::IsOpenMPCapturedDecl(ValueDecl *D) {
   auto *VD = dyn_cast<VarDecl>(D);
   if (VD && !VD->hasLocalStorage() &&
       !VD->hasAttr<OMPDeclareTargetDeclAttr>()) {
-    if (isOpenMPTargetExecutionDirective(DSAStack->getCurrentDirective()) &&
-        !DSAStack->isClauseParsingMode())
-      return VD;
-    if (DSAStack->hasDirective(
-            [](OpenMPDirectiveKind K, const DeclarationNameInfo &,
-               SourceLocation) -> bool {
-              return isOpenMPTargetExecutionDirective(K);
-            },
-            false))
+    if (isInOpenMPTargetExecutionDirective())
       return VD;
   }
 
@@ -4516,7 +4519,7 @@ static bool FitsInto(unsigned Bits, bool Signed, Expr *E, Sema &SemaRef) {
 
 /// Build preinits statement for the given declarations.
 static Stmt *buildPreInits(ASTContext &Context,
-                           SmallVectorImpl<Decl *> &PreInits) {
+                           MutableArrayRef<Decl *> PreInits) {
   if (!PreInits.empty()) {
     return new (Context) DeclStmt(
         DeclGroupRef::Create(Context, PreInits.begin(), PreInits.size()),
@@ -4526,8 +4529,9 @@ static Stmt *buildPreInits(ASTContext &Context,
 }
 
 /// Build preinits statement for the given declarations.
-static Stmt *buildPreInits(ASTContext &Context,
-                           llvm::MapVector<Expr *, DeclRefExpr *> &Captures) {
+static Stmt *
+buildPreInits(ASTContext &Context,
+              const llvm::MapVector<Expr *, DeclRefExpr *> &Captures) {
   if (!Captures.empty()) {
     SmallVector<Decl *, 16> PreInits;
     for (auto &Pair : Captures)
@@ -9493,6 +9497,68 @@ buildDeclareReductionRef(Sema &SemaRef, SourceLocation Loc, SourceRange Range,
   return ExprEmpty();
 }
 
+static bool CheckOMPArraySectionConstantForReduction(
+    ASTContext &Context, const OMPArraySectionExpr *OASE, bool &SingleElement,
+    SmallVectorImpl<llvm::APSInt> &ArraySizes) {
+  const Expr *Length = OASE->getLength();
+  if (Length == nullptr) {
+    // For array sections of the form [1:] or [:], we would need to analyze
+    // the lower bound...
+    if (OASE->getColonLoc().isValid())
+      return false;
+    
+    // This is an array subscript which has implicit length 1!
+    SingleElement = true;
+    ArraySizes.push_back(llvm::APSInt::get(1));
+  } else {
+    llvm::APSInt ConstantLengthValue;
+    if (!Length->EvaluateAsInt(ConstantLengthValue, Context))
+      return false;
+
+    SingleElement = (ConstantLengthValue.getSExtValue() == 1);
+    ArraySizes.push_back(ConstantLengthValue);
+  }
+
+  // Get the base of this array section and walk up from there.
+  const Expr *Base = OASE->getBase()->IgnoreParenImpCasts();
+
+  // We require length = 1 for all array sections except the right-most to
+  // guarantee that the memory region is contiguous and has no holes in it.
+  while (const auto *TempOASE = dyn_cast<OMPArraySectionExpr>(Base)) {
+    Length = TempOASE->getLength();
+    if (Length == nullptr) {
+      // For array sections of the form [1:] or [:], we would need to analyze
+      // the lower bound...
+      if (OASE->getColonLoc().isValid())
+        return false;
+    
+      // This is an array subscript which has implicit length 1!
+      ArraySizes.push_back(llvm::APSInt::get(1));
+    } else {
+      llvm::APSInt ConstantLengthValue;
+      if (!Length->EvaluateAsInt(ConstantLengthValue, Context) ||
+          ConstantLengthValue.getSExtValue() != 1)
+        return false;
+
+      ArraySizes.push_back(ConstantLengthValue);
+    }
+    Base = TempOASE->getBase()->IgnoreParenImpCasts();
+  }
+
+  // If we have a single element, we don't need to add the implicit lengths.
+  if (!SingleElement) {
+    while (const auto *TempASE = dyn_cast<ArraySubscriptExpr>(Base)) {
+      // Has implicit length 1!
+      ArraySizes.push_back(llvm::APSInt::get(1));
+      Base = TempASE->getBase()->IgnoreParenImpCasts();
+    }
+  }
+
+  // This array section can be privatized as a single value or as a constant
+  // sized array.
+  return true;
+}
+
 static void CheckOMPReductionTypeClause(
     Sema &OMPSema, OpenMPClauseKind ClauseKind, DeclContext *CurContext,
     const LangOptions &LangOpts, DSAStackTy *InDSAStack,
@@ -9811,17 +9877,44 @@ static void CheckOMPReductionTypeClause(
     auto *RHSVD = buildVarDecl(OMPSema, ELoc, Type, D->getName(),
                                D->hasAttrs() ? &D->getAttrs() : nullptr);
     auto PrivateTy = Type;
-    if (OASE ||
-        (!ASE &&
+
+    // Try if we can determine constant lengths for all array sections and avoid
+    // the VLA.
+    bool ConstantLengthOASE = false;
+    if (OASE) {
+      bool SingleElement;
+      llvm::SmallVector<llvm::APSInt, 4> ArraySizes;
+      ConstantLengthOASE = CheckOMPArraySectionConstantForReduction(
+          Context, OASE, SingleElement, ArraySizes);
+
+      // If we don't have a single element, we must emit a constant array type.
+      if (ConstantLengthOASE && !SingleElement) {
+        for (auto &Size : ArraySizes) {
+          PrivateTy = Context.getConstantArrayType(
+              PrivateTy, Size, ArrayType::Normal, /*IndexTypeQuals=*/0);
+        }
+      }
+    }
+
+    if ((OASE && !ConstantLengthOASE) ||
+        (!OASE && !ASE &&
          D->getType().getNonReferenceType()->isVariablyModifiedType())) {
+      if (Context.getLangOpts().OpenMPIsDevice &&
+          !Context.getTargetInfo().isVLASupported() &&
+          (OMPSema.isInOpenMPDeclareTargetContext() ||
+           OMPSema.isInOpenMPTargetExecutionDirective())) {
+        OMPSema.Diag(ELoc, diag::err_omp_target_reduction_vla) << !!OASE;
+        OMPSema.Diag(ELoc, diag::note_omp_target_vla_support);
+        continue;
+      }
       // For arrays/array sections only:
       // Create pseudo array type for private copy. The size for this array will
       // be generated during codegen.
       // For array subscripts or single variables Private Ty is the same as Type
       // (type of the variable or single array element).
       PrivateTy = Context.getVariableArrayType(
-          Type, new (Context) OpaqueValueExpr(SourceLocation(),
-                                              Context.getSizeType(), VK_RValue),
+          Type,
+          new (Context) OpaqueValueExpr(ELoc, Context.getSizeType(), VK_RValue),
           ArrayType::Normal, /*IndexTypeQuals=*/0, SourceRange());
     } else if (!ASE && !OASE &&
                Context.getAsArrayType(D->getType().getNonReferenceType()))
@@ -9904,8 +9997,7 @@ static void CheckOMPReductionTypeClause(
           if (Type->isPointerType()) {
             // Cast to pointer type.
             auto CastExpr = OMPSema.BuildCStyleCastExpr(
-                SourceLocation(), Context.getTrivialTypeSourceInfo(Type, ELoc),
-                SourceLocation(), Init);
+                ELoc, Context.getTrivialTypeSourceInfo(Type, ELoc), ELoc, Init);
             if (CastExpr.isInvalid())
               continue;
             Init = CastExpr.get();
@@ -10002,9 +10094,9 @@ static void CheckOMPReductionTypeClause(
                                            ReductionId.getLocStart(), BO_Assign,
                                            LHSDRE, ReductionOp.get());
         } else {
-          auto *ConditionalOp = new (Context) ConditionalOperator(
-              ReductionOp.get(), SourceLocation(), LHSDRE, SourceLocation(),
-              RHSDRE, Type, VK_LValue, OK_Ordinary);
+          auto *ConditionalOp = new (Context)
+              ConditionalOperator(ReductionOp.get(), ELoc, LHSDRE, ELoc, RHSDRE,
+                                  Type, VK_LValue, OK_Ordinary);
           ReductionOp = OMPSema.BuildBinOp(InDSAStack->getCurScope(),
                                            ReductionId.getLocStart(), BO_Assign,
                                            LHSDRE, ConditionalOp);
@@ -10872,7 +10964,7 @@ Sema::ActOnOpenMPDependClause(OpenMPDependClauseKind DepKind,
         }
         bool Suppress = getDiagnostics().getSuppressAllDiagnostics();
         getDiagnostics().setSuppressAllDiagnostics(/*Val=*/true);
-        ExprResult Res = CreateBuiltinUnaryOp(SourceLocation(), UO_AddrOf,
+        ExprResult Res = CreateBuiltinUnaryOp(ELoc, UO_AddrOf,
                                               RefExpr->IgnoreParenImpCasts());
         getDiagnostics().setSuppressAllDiagnostics(Suppress);
         if (!Res.isUsable() && !isa<OMPArraySectionExpr>(SimpleExpr)) {

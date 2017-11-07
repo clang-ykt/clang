@@ -214,6 +214,12 @@ static QualType getCanonicalParamType(ASTContext &C, QualType T) {
   }
   if (T->isPointerType())
     return C.getPointerType(getCanonicalParamType(C, T->getPointeeType()));
+  if (auto *A = T->getAsArrayTypeUnsafe()) {
+    if (auto *VLA = dyn_cast<VariableArrayType>(A))
+      return getCanonicalParamType(C, VLA->getElementType());
+    else if (!A->isVariablyModifiedType())
+      return C.getCanonicalType(T);
+  }
   return C.getCanonicalParamType(T);
 }
 
@@ -640,7 +646,7 @@ void CodeGenFunction::GenerateOpenMPCapturedStmtParameters(
       II = &Ctx.Idents.get("vla");
     }
     if (ArgType->isVariablyModifiedType())
-      ArgType = getCanonicalParamType(Ctx, ArgType.getNonReferenceType());
+      ArgType = getCanonicalParamType(Ctx, ArgType);
     if (NonAliasedMaps &&
         (ArgType->isAnyPointerType() || ArgType->isReferenceType()))
       ArgType = ArgType.withRestrict();
@@ -1242,7 +1248,9 @@ void CodeGenFunction::EmitOMPReductionClauseInit(
 
     auto *LHSVD = cast<VarDecl>(cast<DeclRefExpr>(*ILHS)->getDecl());
     auto *RHSVD = cast<VarDecl>(cast<DeclRefExpr>(*IRHS)->getDecl());
-    if (isa<OMPArraySectionExpr>(IRef)) {
+    QualType Type = PrivateVD->getType();
+    bool isaOMPArraySectionExpr = isa<OMPArraySectionExpr>(IRef);
+    if (isaOMPArraySectionExpr && Type->isVariablyModifiedType()) {
       // Store the address of the original variable associated with the LHS
       // implicit variable.
       PrivateScope.addPrivate(LHSVD, [&RedCG, Count]() -> Address {
@@ -1251,7 +1259,8 @@ void CodeGenFunction::EmitOMPReductionClauseInit(
       PrivateScope.addPrivate(RHSVD, [this, PrivateVD]() -> Address {
         return GetAddrOfLocalVar(PrivateVD);
       });
-    } else if (isa<ArraySubscriptExpr>(IRef)) {
+    } else if ((isaOMPArraySectionExpr && Type->isScalarType()) ||
+               isa<ArraySubscriptExpr>(IRef)) {
       // Store the address of the original variable associated with the LHS
       // implicit variable.
       PrivateScope.addPrivate(LHSVD, [&RedCG, Count]() -> Address {
@@ -2327,6 +2336,8 @@ void CodeGenFunction::EmitOMPTeamsDistributeDirective(
   auto &&CGDistributeInlined = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
     OMPPrivateScope PrivateScope(CGF);
     CGF.EmitOMPReductionClauseInit(S, PrivateScope);
+    // TODO: Do we need this here?
+    CGF.CGM.getOpenMPRuntime().emitInitDSBlock(CGF);
     (void)PrivateScope.Privatize();
     auto &&CGDistributeLoop = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
       CGF.EmitOMPDistributeLoop(S, [](CodeGenFunction &, PrePostActionTy &) {});
@@ -2347,6 +2358,8 @@ void CodeGenFunction::EmitOMPTeamsDistributeSimdDirective(
   auto &&CGDistributeInlined = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
     OMPPrivateScope PrivateScope(CGF);
     CGF.EmitOMPReductionClauseInit(S, PrivateScope);
+    // TODO: Do we need this here?
+    CGF.CGM.getOpenMPRuntime().emitInitDSBlock(CGF);
     (void)PrivateScope.Privatize();
     auto &&CGDistributeLoop = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
       auto &&CGSimd = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
@@ -3430,46 +3443,6 @@ void CodeGenFunction::EmitOMPLastprivateUpdateDirective(
 void CodeGenFunction::EmitOMPDistributeLoop(
     const OMPLoopDirective &S,
     const RegionCodeGenTy &CodeGenDistributeLoopContent) {
-  // Insert an omp.init.ds block at the end of the entry header before any branch.
-  // Check if function already has an omp.init.ds block
-  bool hasOMPInitDSBlock = false;
-  for (auto &BB : CurFn->getBasicBlockList())
-    if (BB.getName() == "omp.init.ds"){
-      hasOMPInitDSBlock = true;
-      break;
-    }
-
-  // Emit omp.init.ds block if we have not emitted one before
-  if (!hasOMPInitDSBlock) {
-    llvm::BasicBlock *InitDS;
-    llvm::BasicBlock *AfterHeaderBB;
-    llvm::BasicBlock *HeaderBB = &CurFn->front();
-    llvm::Instruction *OldBI = HeaderBB->getTerminator();
-    llvm::Instruction *InsertPt = nullptr;
-    if (OldBI){
-      InsertPt = OldBI->getPrevNode();
-      llvm::BasicBlock *InitDSCont = createBasicBlock("omp.init.continue");
-      EmitBranch(InitDSCont);
-      InitDS = createBasicBlock("omp.init.ds");
-      EmitBlock(InitDS);
-      EmitBranch(InitDS);
-      llvm::Instruction *NewTerminator = InitDS->getTerminator();
-      AfterHeaderBB = HeaderBB->getNextNode();
-      NewTerminator->moveBefore(OldBI);
-      Builder.SetInsertPoint(InitDS);
-      EmitBranch(HeaderBB);
-      NewTerminator = InitDS->getTerminator();
-      OldBI->moveBefore(NewTerminator);
-      NewTerminator->eraseFromParent();
-      EmitBlock(InitDSCont);
-      InitDS->moveAfter(HeaderBB);
-    } else {
-      InitDS = createBasicBlock("omp.init.ds");
-      EmitBranch(InitDS);
-      EmitBlock(InitDS);
-    }
-  }
-
   // Emit the loop iteration variable.
   auto IVExpr = cast<DeclRefExpr>(S.getIterationVariable());
   auto IVDecl = cast<VarDecl>(IVExpr->getDecl());
@@ -4712,6 +4685,7 @@ void CodeGenFunction::EmitOMPTeamsDirective(const OMPTeamsDirective &S) {
     (void)CGF.EmitOMPFirstprivateClause(S, PrivateScope);
     CGF.EmitOMPPrivateClause(S, PrivateScope);
     CGF.EmitOMPReductionClauseInit(S, PrivateScope);
+    CGF.CGM.getOpenMPRuntime().emitInitDSBlock(CGF);
     (void)PrivateScope.Privatize();
     CGF.EmitStmt(cast<CapturedStmt>(S.getAssociatedStmt())->getCapturedStmt());
     CGF.EmitOMPReductionClauseFinal(S, OMPD_teams);
@@ -4729,6 +4703,7 @@ static void TargetTeamsCodegen(CodeGenFunction &CGF, PrePostActionTy &Action,
     (void)CGF.EmitOMPFirstprivateClause(S, PrivateScope);
     CGF.EmitOMPPrivateClause(S, PrivateScope);
     CGF.EmitOMPReductionClauseInit(S, PrivateScope);
+    CGF.CGM.getOpenMPRuntime().emitInitDSBlock(CGF);
     (void)PrivateScope.Privatize();
     const auto *CS = cast<CapturedStmt>(S.getAssociatedStmt());
     if (S.hasClausesOfKind<OMPDependClause>())
@@ -4782,6 +4757,8 @@ TargetTeamsDistributeCodegen(CodeGenFunction &CGF, PrePostActionTy &Action,
   auto &&CGDistributeInlined = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
     CodeGenFunction::OMPPrivateScope PrivateScope(CGF);
     CGF.EmitOMPReductionClauseInit(S, PrivateScope);
+    // TODO: Do we need this here?
+    CGF.CGM.getOpenMPRuntime().emitInitDSBlock(CGF);
     (void)PrivateScope.Privatize();
     auto &&CGDistributeLoop = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
       CGF.EmitOMPDistributeLoop(S, [](CodeGenFunction &, PrePostActionTy &) {});
@@ -4838,6 +4815,8 @@ static void TargetTeamsDistributeSimdCodegen(
   auto &&CGDistributeInlined = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
     CodeGenFunction::OMPPrivateScope PrivateScope(CGF);
     CGF.EmitOMPReductionClauseInit(S, PrivateScope);
+    // TODO: Do we need this here?
+    CGF.CGM.getOpenMPRuntime().emitInitDSBlock(CGF);
     (void)PrivateScope.Privatize();
     auto &&CGDistributeLoop = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
       auto &&CGSimd = [&S](CodeGenFunction &CGF, PrePostActionTy &) {

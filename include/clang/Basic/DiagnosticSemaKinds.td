@@ -8612,6 +8612,12 @@ def err_omp_reduction_non_addressable_expression : Error<
   "expected addressable reduction item for the task-based directives">;
 def err_omp_reduction_with_nogroup : Error<
   "'reduction' clause cannot be used with 'nogroup' clause">;
+def err_omp_target_vla : Error<
+  "cannot use variable-length array in a %select{target|declare target}0 region">;
+def err_omp_target_reduction_vla : Error<
+  "cannot generate code for reduction on %select{|array section, which requires a }0variable-length array">;
+def note_omp_target_vla_support : Note<
+  "the target device does not support allocating variable-length arrays">;
 } // end of OpenMP category
 
 let CategoryName = "Related Result Type Issue" in {
