@@ -19,6 +19,7 @@
 #include "clang/AST/DeclOpenMP.h"
 #include "clang/AST/StmtOpenMP.h"
 #include "clang/AST/StmtVisitor.h"
+#include "clang/Basic/Cuda.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "llvm/ADT/SmallPtrSet.h"
 
@@ -3949,6 +3950,13 @@ llvm::Function *CGOpenMPRuntimeNVPTX::createDataSharingParallelWrapper(
   return Fn;
 }
 
+namespace {
+static bool IsVolta(CodeGenModule &CGM) {
+  StringRef TargetCPU = CGM.getTarget().getTargetOpts().CPU;
+  return StringToCudaArch(TargetCPU) == CudaArch::SM_70;
+}
+}
+
 // \brief Emit the code that each thread requires to execute when it encounters
 // one of the three possible parallelism level. This also emits the required
 // data sharing code for each level.
@@ -3982,6 +3990,7 @@ void CGOpenMPRuntimeNVPTX::emitParallelismLevelCode(
   //
   // .next.parallel
 
+  bool CGForVolta = IsVolta(CGF.CGM);
   llvm::BasicBlock *AfterBB = CGF.createBasicBlock(".after.parallel");
 
   // Do we need to emit L0 code?
@@ -4006,18 +4015,24 @@ void CGOpenMPRuntimeNVPTX::emitParallelismLevelCode(
       CGF.EmitBlock(NextBB);
   }
 
+  bool SkipSequentialDetect = false;
   // Do we need to emit L1 code?
   if (!OnlyInL0 && !OnlySequential) {
     llvm::BasicBlock *LBB = CGF.createBasicBlock(".level1.parallel");
     llvm::BasicBlock *NextBB = nullptr;
 
     // Do we need runtime checks
-    if (!OnlyInL1) {
+    // Volta always requires a runtime check for a full warp.
+    if (CGForVolta || !OnlyInL1) {
       NextBB = CGF.createBasicBlock(".next.parallel");
       llvm::Value *ParallelLevel = ParallelLevelGen();
       auto *Cond = Bld.CreateICmpEQ(ParallelLevel, Bld.getInt16(1));
       Bld.CreateCondBr(Cond, LBB, NextBB);
     }
+    // On Volta, if generating L1 code, we also need the serialized parallel
+    // code.  We must also prevent any further runtime calls to
+    // getParallelLevel.
+    SkipSequentialDetect = CGForVolta;
 
     CGF.EmitBlock(LBB);
 
@@ -4029,11 +4044,11 @@ void CGOpenMPRuntimeNVPTX::emitParallelismLevelCode(
   }
 
   // Do we need to emit sequential code?
-  if (!OnlyInL0 && !OnlyInL1) {
+  if (!OnlyInL0 && (CGForVolta || !OnlyInL1)) {
     llvm::BasicBlock *SeqBB = CGF.createBasicBlock(".sequential.parallel");
 
     // Do we need runtime checks
-    if (!OnlySequential) {
+    if (!OnlySequential && !SkipSequentialDetect) {
       llvm::Value *ParallelLevel = ParallelLevelGen();
       auto *Cond = Bld.CreateICmpSGT(ParallelLevel, Bld.getInt16(1));
       Bld.CreateCondBr(Cond, SeqBB, AfterBB);
