@@ -607,6 +607,16 @@ void CodeGenFunction::GenerateOpenMPCapturedStmtParameters(
     Args.append(CD->param_begin(),
                 std::next(CD->param_begin(), ImplicitParamStop));
   }
+  FunctionDecl *DebugFunctionDecl = nullptr;
+  if (!UIntPtrCastRequired) {
+    FunctionProtoType::ExtProtoInfo EPI;
+    DebugFunctionDecl = FunctionDecl::Create(
+        Ctx, Ctx.getTranslationUnitDecl(), S.getLocStart(), SourceLocation(),
+        DeclarationName(), Ctx.VoidTy,
+        Ctx.getTrivialTypeSourceInfo(
+            Ctx.getFunctionType(Ctx.VoidTy, llvm::None, EPI)),
+        SC_Static, /*isInlineSpecified=*/false, /*hasWrittenPrototype=*/false);
+  }
   auto I = S.captures().begin();
   for (auto *FD : RD->fields()) {
     QualType ArgType = FD->getType();
@@ -650,9 +660,17 @@ void CodeGenFunction::GenerateOpenMPCapturedStmtParameters(
     if (NonAliasedMaps &&
         (ArgType->isAnyPointerType() || ArgType->isReferenceType()))
       ArgType = ArgType.withRestrict();
-    auto *Arg =
-        ImplicitParamDecl::Create(Ctx, /*DC=*/nullptr, FD->getLocation(), II,
-                                  ArgType, ImplicitParamDecl::Other);
+    VarDecl *Arg;
+    if (DebugFunctionDecl && (CapVar || I->capturesThis())) {
+      Arg = ParmVarDecl::Create(
+          Ctx, DebugFunctionDecl,
+          CapVar ? CapVar->getLocStart() : FD->getLocStart(),
+          CapVar ? CapVar->getLocation() : FD->getLocation(), II, ArgType,
+          /*TInfo=*/nullptr, SC_None, /*DefArg=*/nullptr);
+    } else {
+      Arg = ImplicitParamDecl::Create(Ctx, /*DC=*/nullptr, FD->getLocation(),
+                                      II, ArgType, ImplicitParamDecl::Other);
+    }
     Args.emplace_back(Arg);
     ++I;
   }
