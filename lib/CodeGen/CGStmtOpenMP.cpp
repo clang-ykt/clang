@@ -2432,6 +2432,8 @@ void CodeGenFunction::EmitOMPTeamsDistributeParallelForDirective(
     auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
       auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
         auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
+          OMPCancelStackRAII CancelRegion(
+              CGF, OMPD_teams_distribute_parallel_for, S.hasCancel());
           CGF.EmitOMPWorksharingLoop(S);
         };
         emitCommonOMPParallelDirective(CGF, S, OMPD_for, CodeGen);
@@ -3700,6 +3702,7 @@ void CodeGenFunction::EmitOMPDistributeParallelForDirective(
   auto &&CGParallelFor = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
     auto &&CGInlinedWorksharingLoop = [&S](CodeGenFunction &CGF,
                                            PrePostActionTy &) {
+      OMPCancelStackRAII CancelRegion(CGF, S.getDirectiveKind(), S.hasCancel());
       CGF.EmitOMPWorksharingLoop(S);
     };
     emitCommonOMPParallelDirective(CGF, S, OMPD_for, CGInlinedWorksharingLoop);
@@ -3711,8 +3714,6 @@ void CodeGenFunction::EmitOMPDistributeParallelForDirective(
   };
 
   OMPLexicalScope Scope(*this, S, /*AsInlined=*/true);
-  OMPCancelStackRAII CancelRegion(*this, OMPD_distribute_parallel_for,
-                                  /*HasCancel=*/false);
   CGM.getOpenMPRuntime().emitInlinedDirective(*this, OMPD_distribute, CodeGen,
                                               false);
 }
@@ -4479,6 +4480,8 @@ static void TargetParallelForCodegen(CodeGenFunction &CGF,
   // Emit directive as a combined directive that consists of two implicit
   // directives: 'parallel' with 'for' directive.
   auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
+    CodeGenFunction::OMPCancelStackRAII CancelRegion(
+        CGF, OMPD_target_parallel_for, S.hasCancel());
     CGF.EmitOMPWorksharingLoop(S);
   };
   emitCommonOMPParallelDirective(CGF, S, OMPD_parallel_for, CodeGen,
@@ -4579,6 +4582,8 @@ static void TargetTeamsDistributeParallelForCodegen(
     auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
       auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
         auto &&CodeGen = [&S](CodeGenFunction &CGF, PrePostActionTy &) {
+          CodeGenFunction::OMPCancelStackRAII CancelRegion(
+              CGF, S.getDirectiveKind(), S.hasCancel());
           CGF.EmitOMPWorksharingLoop(S);
         };
         emitCommonOMPParallelDirective(CGF, S, OMPD_for, CodeGen);
@@ -4914,7 +4919,9 @@ CodeGenFunction::getOMPCancelDestination(OpenMPDirectiveKind Kind) {
   assert(Kind == OMPD_for || Kind == OMPD_section || Kind == OMPD_sections ||
          Kind == OMPD_parallel_sections || Kind == OMPD_parallel_for ||
          Kind == OMPD_distribute_parallel_for ||
-         Kind == OMPD_target_parallel_for);
+         Kind == OMPD_target_parallel_for ||
+         Kind == OMPD_teams_distribute_parallel_for ||
+         Kind == OMPD_target_teams_distribute_parallel_for);
   return OMPCancelStack.getExitBlock();
 }
 
