@@ -4985,6 +4985,9 @@ void CudaToolChain::addClangTargetOptions(
       // CUDA-9 uses new instructions that are only available in PTX6.0
       CC1Args.push_back("-target-feature");
       CC1Args.push_back("+ptx60");
+    } else if (CudaInstallation.version() >= CudaVersion::CUDA_80){
+      CC1Args.push_back("-target-feature");
+      CC1Args.push_back("+ptx50");
     } else {
       // Libdevice in CUDA-7.0 requires PTX version that's more recent
       // than LLVM defaults to. Use PTX4.2 which is the PTX version that
