@@ -8911,7 +8911,8 @@ OMPClause *Sema::ActOnOpenMPFirstprivateClause(ArrayRef<Expr *> VarList,
       // A list item may appear in a firstprivate or lastprivate clause but not
       // both.
       if (DVar.CKind != OMPC_unknown && DVar.CKind != OMPC_firstprivate &&
-          (CurrDir == OMPD_distribute || DVar.CKind != OMPC_lastprivate) &&
+          (isOpenMPDistributeDirective(CurrDir) ||
+           DVar.CKind != OMPC_lastprivate) &&
           DVar.RefExpr) {
         Diag(ELoc, diag::err_omp_wrong_dsa)
             << getOpenMPClauseName(DVar.CKind)
@@ -9181,7 +9182,8 @@ OMPClause *Sema::ActOnOpenMPLastprivateClause(ArrayRef<Expr *> VarList,
     // both.
     DSAStackTy::DSAVarData DVar = DSAStack->getTopDSA(D, false);
     if (DVar.CKind != OMPC_unknown && DVar.CKind != OMPC_lastprivate &&
-        (CurrDir == OMPD_distribute || DVar.CKind != OMPC_firstprivate) &&
+        (isOpenMPDistributeDirective(CurrDir) ||
+         DVar.CKind != OMPC_firstprivate) &&
         (DVar.CKind != OMPC_private || DVar.RefExpr != nullptr)) {
       Diag(ELoc, diag::err_omp_wrong_dsa)
           << getOpenMPClauseName(DVar.CKind)
