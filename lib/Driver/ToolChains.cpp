@@ -5006,7 +5006,7 @@ void CudaToolChain::addClangTargetOptions(
       }
     }
 
-    std::string LibOmpTargetName = "libomptarget-nvptx.bc";
+    std::string LibOmpTargetName = "libomptarget-nvptx-" + GpuArch.str().substr(3) + ".bc";
     bool FoundBCLibrary = false;
     for (std::string LibraryPath : LibraryPaths) {
       SmallString<128> LibOmpTargetFile(LibraryPath);
