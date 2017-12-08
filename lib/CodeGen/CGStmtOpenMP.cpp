@@ -95,7 +95,6 @@ class OMPLoopScope : public CodeGenFunction::RunCleanupsScope {
         return CGF.CreateMemTemp(VD->getType().getNonReferenceType());
       });
     }
-    CGF.EmitOMPPrivateLoopCounters(S, PreCondScope);
     (void)PreCondScope.Privatize();
     if (auto *LD = dyn_cast<OMPLoopDirective>(&S)) {
       if (auto *PreInits = cast_or_null<DeclStmt>(LD->getPreInits())) {
