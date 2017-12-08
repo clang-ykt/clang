@@ -89,6 +89,12 @@ public:
 class OMPLoopScope : public CodeGenFunction::RunCleanupsScope {
   void emitPreInitStmt(CodeGenFunction &CGF, const OMPLoopDirective &S) {
     CodeGenFunction::OMPPrivateScope PreCondScope(CGF);
+    for (auto *E : S.counters()) {
+      const auto *VD = cast<VarDecl>(cast<DeclRefExpr>(E)->getDecl());
+      (void)PreCondScope.addPrivate(VD, [&CGF, VD]() {
+        return CGF.CreateMemTemp(VD->getType().getNonReferenceType());
+      });
+    }
     CGF.EmitOMPPrivateLoopCounters(S, PreCondScope);
     (void)PreCondScope.Privatize();
     if (auto *LD = dyn_cast<OMPLoopDirective>(&S)) {
@@ -100,9 +106,11 @@ class OMPLoopScope : public CodeGenFunction::RunCleanupsScope {
   }
 
 public:
-  OMPLoopScope(CodeGenFunction &CGF, const OMPLoopDirective &S)
+  OMPLoopScope(CodeGenFunction &CGF, const OMPLoopDirective &S,
+               bool EmitPreInit)
       : CodeGenFunction::RunCleanupsScope(CGF) {
-    emitPreInitStmt(CGF, S);
+    if (EmitPreInit)
+      emitPreInitStmt(CGF, S);
   }
 };
 
@@ -1854,8 +1862,8 @@ void CodeGenFunction::EmitOMPSimdLoop(const OMPLoopDirective &S,
   auto &&CodeGen = [&S, OutlinedSimd](CodeGenFunction &CGF, PrePostActionTy &) {
     // Do not emit this code if it was already emitted before
     // in the same scope.
-    if (!requiresAdditionalIterationVar(S.getDirectiveKind()))
-      OMPLoopScope PreInitScope(CGF, S);
+    OMPLoopScope PreInitScope(
+        CGF, S, !requiresAdditionalIterationVar(S.getDirectiveKind()));
     // if (PreCond) {
     //   for (IV in 0..LastIteration) BODY;
     //   <Final counter/linear vars updates>;
@@ -2495,7 +2503,7 @@ bool CodeGenFunction::EmitOMPWorksharingLoop(const OMPLoopDirective &S) {
   bool HasLastprivateClause;
   // Check pre-condition.
   {
-    OMPLoopScope PreInitScope(*this, S);
+    OMPLoopScope PreInitScope(*this, S, /*EmitPreInit=*/true);
     // Skip the entire loop if we don't meet the precondition.
     // If the condition constant folds and can be elided, avoid emitting the
     // whole loop.
@@ -3485,7 +3493,7 @@ void CodeGenFunction::EmitOMPDistributeLoop(
   bool HasLastprivateClause = false;
   // Check pre-condition.
   {
-    OMPLoopScope PreInitScope(*this, S);
+    OMPLoopScope PreInitScope(*this, S, /*EmitPreInit=*/true);
     // Skip the entire loop if we don't meet the precondition.
     // If the condition constant folds and can be elided, avoid emitting the
     // whole loop.
@@ -4303,7 +4311,7 @@ static void emitCommonOMPTargetDirective(CodeGenFunction &CGF,
 
   auto &&SizeEmitter = [](CodeGenFunction &CGF,
                           const OMPLoopDirective &D) -> llvm::Value * {
-    OMPLoopScope(CGF, D);
+    OMPLoopScope(CGF, D, /*EmitPreInit=*/true);
     // Emit calculation of the iterations count.
     llvm::Value *NumIterations = CGF.EmitScalarExpr(D.getNumIterations());
     NumIterations = CGF.Builder.CreateIntCast(NumIterations, CGF.Int64Ty,
@@ -5172,7 +5180,7 @@ void CodeGenFunction::EmitOMPTaskLoopBasedDirective(const OMPLoopDirective &S) {
     // whole loop.
     bool CondConstant;
     llvm::BasicBlock *ContBlock = nullptr;
-    OMPLoopScope PreInitScope(CGF, S);
+    OMPLoopScope PreInitScope(CGF, S, /*EmitPreInit=*/true);
     if (CGF.ConstantFoldsToSimpleInteger(S.getPreCond(), CondConstant)) {
       if (!CondConstant)
         return;
@@ -5247,7 +5255,7 @@ void CodeGenFunction::EmitOMPTaskLoopBasedDirective(const OMPLoopDirective &S) {
                     IfCond](CodeGenFunction &CGF, llvm::Value *OutlinedFn,
                             const OMPTaskDataTy &Data) {
     auto &&CodeGen = [&](CodeGenFunction &CGF, PrePostActionTy &) {
-      OMPLoopScope PreInitScope(CGF, S);
+      OMPLoopScope PreInitScope(CGF, S, /*EmitPreInit=*/true);
       CGF.CGM.getOpenMPRuntime().emitTaskLoopCall(CGF, S.getLocStart(), S,
                                                   OutlinedFn, SharedsTy,
                                                   CapturedStruct, IfCond, Data);
