@@ -372,9 +372,11 @@ private:
     const TargetKernelProperties &TP;
     llvm::Function *WorkerFn;
     const CGFunctionInfo *CGFI;
+    SourceLocation Loc;
 
-    WorkerFunctionState(CodeGenModule &CGM, const TargetKernelProperties &TP)
-        : TP(TP), WorkerFn(nullptr), CGFI(nullptr) {
+    WorkerFunctionState(CodeGenModule &CGM, const TargetKernelProperties &TP,
+                        SourceLocation Loc)
+        : TP(TP), WorkerFn(nullptr), CGFI(nullptr), Loc(Loc) {
       createWorkerFunction(CGM);
     };
 
