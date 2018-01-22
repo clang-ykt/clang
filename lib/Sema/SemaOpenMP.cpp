@@ -4873,7 +4873,7 @@ static unsigned CheckOpenMPLoop(
   }
 
   // Loop condition (IV < NumIterations) or (IV <= UB) for worksharing loops.
-  SourceLocation CondLoc;
+  SourceLocation CondLoc = AStmt->getLocStart();
   ExprResult Cond =
       (!CoalescedSchedule &&
        (isOpenMPWorksharingDirective(DKind) ||
@@ -4886,7 +4886,7 @@ static unsigned CheckOpenMPLoop(
                                      NumIterations.get());
 
   // Loop increment (IV = IV + 1)
-  SourceLocation IncLoc;
+  SourceLocation IncLoc = AStmt->getLocStart();
   ExprResult Inc =
       OutlinedSimd
           ? SemaRef.BuildBinOp(CurScope, IncLoc, BO_Add, IV.get(),
@@ -4901,7 +4901,7 @@ static unsigned CheckOpenMPLoop(
     return 0;
 
   // Loop IV for conditional lastprivate processing: (CLIV = IV)
-  SourceLocation CLIVLoc;
+  SourceLocation CLIVLoc = AStmt->getLocStart();
   ExprResult CLIV = DSA.getLoopIterationVar();
   ExprResult CLIVInit;
   if (isOpenMPConditionalLastprivateDirective(DKind)) {
@@ -4941,7 +4941,7 @@ static unsigned CheckOpenMPLoop(
 
   // Create increment expression for distribute loop when combined in a same
   // directive with for as IV = IV + ST
-  SourceLocation DistIncLoc;
+  SourceLocation DistIncLoc = AStmt->getLocStart();
   ExprResult DistCond, DistInc, PrevEUB;
   if (isOpenMPLoopBoundSharingDirective(DKind)) {
     DistCond =
@@ -4960,7 +4960,7 @@ static unsigned CheckOpenMPLoop(
     assert(DistInc.isUsable() && "distribute inc expr was not built");
 
     // Build expression: UB = min(UB, prevUB) for #for in composite
-    SourceLocation DistEUBLoc;
+    SourceLocation DistEUBLoc = AStmt->getLocStart();
     ExprResult IsUBGreater =
         SemaRef.BuildBinOp(CurScope, DistEUBLoc, BO_GT, UB.get(), PrevUB.get());
     ExprResult CondOp = SemaRef.ActOnConditionalOp(

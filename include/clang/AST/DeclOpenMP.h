@@ -206,9 +206,10 @@ class OMPCapturedExprDecl final : public VarDecl {
   void anchor() override;
 
   OMPCapturedExprDecl(ASTContext &C, DeclContext *DC, IdentifierInfo *Id,
-                      QualType Type, SourceLocation StartLoc, unsigned CaptureLevel)
-      : VarDecl(OMPCapturedExpr, C, DC, StartLoc, SourceLocation(), Id, Type,
-                nullptr, SC_None),
+                      QualType Type, SourceLocation StartLoc,
+                      unsigned CaptureLevel)
+      : VarDecl(OMPCapturedExpr, C, DC, StartLoc, StartLoc, Id, Type, nullptr,
+                SC_None),
         CaptureLevel(CaptureLevel) {
     setImplicit();
   }
