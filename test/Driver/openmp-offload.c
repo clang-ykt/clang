@@ -769,8 +769,8 @@
 
 /// =========
 /// Test driver commands when linking against static libraries
-// RUN:   touch /tmp/libtest.a
-// RUN:   %clang -### -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda /tmp/libtest.a %s -O3 --no-cuda-noopt-device-debug 2>&1 \
+// RUN:   touch %T/libtest.a
+// RUN:   %clang -### -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda %T/libtest.a %s -O3 --no-cuda-noopt-device-debug 2>&1 \
 // RUN:   | FileCheck -check-prefix=STATIC-LIB-LINKING %s
 
 // STATIC-LIB-LINKING:  ptxas"{{.*}}"--output-file" "{{.*}}openmp-offload-{{.*}}.o" "{{.*}}openmp-offload-{{.*}}.s" "-c"
