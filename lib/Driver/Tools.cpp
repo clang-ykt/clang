@@ -4971,12 +4971,21 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (DebugInfoKind == codegenoptions::LimitedDebugInfo && NeedFullDebug)
     DebugInfoKind = codegenoptions::FullDebugInfo;
 
-  bool IsOpenMPCudaDeviceDebug =
-      IsOpenMPDevice && DebuggerTuning == llvm::DebuggerKind::CudaGDB &&
-      (!areOptimizationsEnabled(Args) ||
-        Args.hasFlag(options::OPT_cuda_noopt_device_debug,
-                     options::OPT_no_cuda_noopt_device_debug,
-                     /*Default=*/false));
+  bool IsOpenMPCudaDeviceDebug = false;
+  bool IsOpenMPCudaDeviceOpt = true;
+  if (IsOpenMPDevice && DebuggerTuning == llvm::DebuggerKind::CudaGDB &&
+      DebugInfoKind != codegenoptions::NoDebugInfo) {
+    if (areOptimizationsEnabled(Args) &&
+        !Args.hasFlag(options::OPT_cuda_noopt_device_debug,
+                      options::OPT_no_cuda_noopt_device_debug,
+                      /*Default=*/false)) {
+      DebugInfoKind = codegenoptions::DebugLineTablesOnly;
+      CmdArgs.push_back("-backend-option");
+      CmdArgs.push_back("-no-cuda-debug");
+    } else
+      IsOpenMPCudaDeviceOpt = false;
+    IsOpenMPCudaDeviceDebug = true;
+  }
   if (IsOpenMPCudaDeviceDebug || !IsOpenMPDevice ||
       DebuggerTuning != llvm::DebuggerKind::CudaGDB) {
     RenderDebugEnablingArgs(Args, CmdArgs, DebugInfoKind, DwarfVersion,
@@ -5154,7 +5163,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   Args.ClaimAllArgs(options::OPT_D);
 
   // Manually translate -O4 to -O3; let clang reject others.
-  if (IsOpenMPCudaDeviceDebug) {
+  if (!IsOpenMPCudaDeviceOpt) {
     CmdArgs.emplace_back("-O0");
   } else if (Arg *A = Args.getLastArg(options::OPT_O_Group)) {
     if (A->getOption().matches(options::OPT_O4)) {
@@ -12265,6 +12274,8 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
                  .Default("2");
     }
     CmdArgs.push_back(Args.MakeArgString(llvm::Twine("-O") + OOpt));
+    if (Args.hasArg(options::OPT_g_Group))
+      CmdArgs.push_back("--generate-line-info");
   } else {
     // If no -O was passed, pass -O0 to ptxas -- no opt flag should correspond
     // to no optimizations, but ptxas's default is -O3.
