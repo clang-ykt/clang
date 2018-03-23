@@ -1267,7 +1267,7 @@ int main(int argc, const char **argv) {
   BundlerExecutable = sys::fs::getMainExecutable(argv[0], &BundlerExecutable);
 
   if (Unbundle && HandleArchiveFiles())
-    return false;
+    return 0; // return false
 
   return Unbundle ? UnbundleFiles() : BundleFiles();
 }
