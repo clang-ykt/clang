@@ -4973,8 +4973,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   bool IsOpenMPCudaDeviceDebug = false;
   bool IsOpenMPCudaDeviceOpt = true;
-  if (IsOpenMPDevice && DebuggerTuning == llvm::DebuggerKind::CudaGDB &&
-      DebugInfoKind != codegenoptions::NoDebugInfo) {
+  if (IsOpenMPDevice && DebuggerTuning == llvm::DebuggerKind::CudaGDB) {
     if (areOptimizationsEnabled(Args) &&
         !Args.hasFlag(options::OPT_cuda_noopt_device_debug,
                       options::OPT_no_cuda_noopt_device_debug,
