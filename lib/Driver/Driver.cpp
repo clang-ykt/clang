@@ -2115,7 +2115,7 @@ class OffloadingActionBuilder final {
 
     bool canUseBundlerUnbundler() const override {
       // OpenMP should use bundled files whenever possible.
-      return true;
+      return false;
     }
   };
 
@@ -2161,8 +2161,8 @@ public:
           ++ValidBuildersSupportingBundling;
       }
     }
-    CanUseBundler =
-        ValidBuilders && ValidBuilders == ValidBuildersSupportingBundling;
+    CanUseBundler = false;
+        // ValidBuilders && ValidBuilders == ValidBuildersSupportingBundling;
   }
 
   ~OffloadingActionBuilder() {
