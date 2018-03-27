@@ -4978,9 +4978,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
         !Args.hasFlag(options::OPT_cuda_noopt_device_debug,
                       options::OPT_no_cuda_noopt_device_debug,
                       /*Default=*/false)) {
-      DebugInfoKind = codegenoptions::DebugLineTablesOnly;
-      CmdArgs.push_back("-backend-option");
-      CmdArgs.push_back("-no-cuda-debug");
+      if (DebugInfoKind != codegenoptions::NoDebugInfo) {
+        DebugInfoKind = codegenoptions::DebugLineTablesOnly;
+        CmdArgs.push_back("-backend-option");
+        CmdArgs.push_back("-no-cuda-debug");
+      }
     } else
       IsOpenMPCudaDeviceOpt = false;
     IsOpenMPCudaDeviceDebug = true;
