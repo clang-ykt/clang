@@ -1829,6 +1829,8 @@ CudaInstallationDetector::CudaInstallationDetector(
     CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda-7.0");
   }
 
+  bool NoCudaLib = Args.hasArg(options::OPT_nocudalib);
+
   for (const auto &CudaPath : CudaPathCandidates) {
     if (CudaPath.empty() || !D.getVFS().exists(CudaPath))
       continue;
@@ -1868,14 +1870,17 @@ CudaInstallationDetector::CudaInstallationDetector(
 
     SmallVector<std::string, 20> CudaArchStrs;
     if (Version >= CudaVersion::CUDA_90) {
-      // CUDA-9,9.1 uses single libdevice file for all GPU variants.
+      // CUDA-9+ uses single libdevice file for all GPU variants.
       std::string FilePath = LibDevicePath + "/libdevice.10.bc";
       if (FS.exists(FilePath)) {
-        for (const char *GpuArch :
+        for (const char *GpuArchName :
             {"sm_20", "sm_30", "sm_32", "sm_35", "sm_37", "sm_50", "sm_52", "sm_53",
-             "sm_60", "sm_61", "sm_62", "sm_70"}) {
-          LibDeviceMap[GpuArch] = FilePath;
-          CudaArchStrs.push_back(GpuArch);
+             "sm_60", "sm_61", "sm_62", "sm_70", "sm_72"}) {
+          const CudaArch GpuArch = StringToCudaArch(GpuArchName);
+          if (Version >= MinVersionForCudaArch(GpuArch) &&
+              Version <= MaxVersionForCudaArch(GpuArch))
+            LibDeviceMap[GpuArchName] = FilePath;
+          CudaArchStrs.push_back(GpuArchName);
         }
       }
     } else {
@@ -1936,17 +1941,9 @@ CudaInstallationDetector::CudaInstallationDetector(
       }
     }
 
-    // This code prevents IsValid from being set when
-    // no libdevice has been found.
-    bool allEmpty = true;
-    std::string LibDeviceFile;
-    for (auto key : CudaArchStrs) {
-      LibDeviceFile = LibDeviceMap.lookup(key);
-      if (!LibDeviceFile.empty())
-        allEmpty = false;
-    }
-
-    if (allEmpty)
+    // Check that we have found at least one libdevice that we can link in if
+    // -nocudalib hasn't been specified.
+    if (LibDeviceMap.empty() && !NoCudaLib)
       continue;
 
     IsValid = true;
@@ -1982,16 +1979,28 @@ void CudaInstallationDetector::AddCudaIncludeArgs(
 
 void CudaInstallationDetector::CheckCudaVersionSupportsArch(
     CudaArch Arch) const {
+  // if (Arch == CudaArch::UNKNOWN || Version == CudaVersion::UNKNOWN ||
+  //     ArchsWithVersionTooLowErrors.count(Arch) > 0)
+  //   return;
   if (Arch == CudaArch::UNKNOWN || Version == CudaVersion::UNKNOWN ||
-      ArchsWithVersionTooLowErrors.count(Arch) > 0)
+      ArchsWithBadVersion.count(Arch) > 0)
     return;
 
-  auto RequiredVersion = MinVersionForCudaArch(Arch);
-  if (Version < RequiredVersion) {
-    ArchsWithVersionTooLowErrors.insert(Arch);
-    D.Diag(diag::err_drv_cuda_version_too_low)
-        << InstallPath << CudaArchToString(Arch) << CudaVersionToString(Version)
-        << CudaVersionToString(RequiredVersion);
+  // auto RequiredVersion = MinVersionForCudaArch(Arch);
+  // if (Version < RequiredVersion) {
+  //   ArchsWithVersionTooLowErrors.insert(Arch);
+  //   D.Diag(diag::err_drv_cuda_version_too_low)
+  //       << InstallPath << CudaArchToString(Arch) << CudaVersionToString(Version)
+  //       << CudaVersionToString(RequiredVersion);
+  // }
+  auto MinVersion = MinVersionForCudaArch(Arch);
+  auto MaxVersion = MaxVersionForCudaArch(Arch);
+  if (Version < MinVersion || Version > MaxVersion) {
+    ArchsWithBadVersion.insert(Arch);
+    D.Diag(diag::err_drv_cuda_version_unsupported)
+        << CudaArchToString(Arch) << CudaVersionToString(MinVersion)
+        << CudaVersionToString(MaxVersion) << InstallPath
+        << CudaVersionToString(Version);
   }
 }
 
