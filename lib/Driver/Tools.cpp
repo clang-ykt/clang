@@ -7323,6 +7323,12 @@ void OffloadBundler::ConstructJob(Compilation &C, const JobAction &JA,
   }
   CmdArgs.push_back(TCArgs.MakeArgString(UB));
 
+  printf("\nCLANG-OFFLOAD-BUNDLER ");
+  for(auto arg: CmdArgs) {
+    printf("%s ", arg);
+  }
+  printf("\n\n");
+
   // All the inputs are encoded as commands.
   C.addCommand(llvm::make_unique<Command>(
       JA, *this,
@@ -7398,6 +7404,12 @@ void OffloadBundler::ConstructJobMultipleOutputs(
   }
   CmdArgs.push_back(TCArgs.MakeArgString(UB));
   CmdArgs.push_back("-unbundle");
+
+    printf("\nCLANG-OFFLOAD-BUNDLER ");
+  for(auto arg: CmdArgs) {
+    printf("%s ", arg);
+  }
+  printf("\n\n");
 
   // All the inputs are encoded as commands.
   C.addCommand(llvm::make_unique<Command>(
