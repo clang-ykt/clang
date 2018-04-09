@@ -12341,10 +12341,16 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back(Args.MakeArgString(CudaArchToString(gpu_arch)));
   CmdArgs.push_back("--output-file");
   SmallString<256> CubinName;
+  const char *CubinF;
+  //   // Convert output file from PTXAS from .o to .cubin
+  // llvm::sys::path::replace_extension(OrigInputFileName, "cubin");
+  // const char *CubinF =
+  //     C.addTempFile(C.getArgs().MakeArgString(OrigInputFileName.c_str()));
   if (JA.isOffloading(Action::OFK_OpenMP)) {
     CubinName = llvm::sys::path::filename(Output.getFilename());
     llvm::sys::path::replace_extension(CubinName, ".cubin");
     CmdArgs.push_back(Args.MakeArgString(CubinName.c_str()));
+    CubinF = C.addTempFile(C.getArgs().MakeArgString(CubinName.c_str()));
   } else {
     CmdArgs.push_back(Args.MakeArgString(Output.getFilename()));
   }
@@ -12413,7 +12419,6 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
     assert(!GPUArch.empty() && "At least one GPU Arch required for nvlink.");
 
     for (const auto& II : Inputs) {
-      printf(" -----------> INPUT TO FATBINARY TOOL: %s\n", II.getFilename());
       SmallString<128> OrigInputFileName =
           llvm::sys::path::filename(II.getFilename());
 
@@ -12432,23 +12437,6 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
       if (!II.isFilename() || OrigInputFileName.endswith(".a"))
         continue;
 
-      // Convert output file from PTXAS from .o to .cubin
-      llvm::sys::path::replace_extension(OrigInputFileName, "cubin");
-      const char *CubinF =
-          C.addTempFile(C.getArgs().MakeArgString(OrigInputFileName.c_str()));
-      const char *CopyExec = Args.MakeArgString(getToolChain().GetProgramPath(
-            C.getDriver().IsCLMode() ? "copy" : "cp"));
-      ArgStringList CopyCmdArgs;
-      CopyCmdArgs.push_back(II.getFilename());
-      CopyCmdArgs.push_back(CubinF);
-      printf("\nCP ");
-      for(auto arg: CopyCmdArgs) {
-        printf("%s ", arg);
-      }
-      printf("\n\n");
-      C.addCommand(
-          llvm::make_unique<Command>(JA, *this, CopyExec, CopyCmdArgs, Inputs));
-
       auto *A = II.getAction();
       assert(A->getInputs().size() == 1 &&
              "Device offload action is expected to have a single input");
@@ -12466,7 +12454,7 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
       FatbinaryCmdArgs.push_back(Args.MakeArgString(llvm::Twine("--image=profile=") +
                                            Arch + ",file=" + PtxF));
       FatbinaryCmdArgs.push_back(Args.MakeArgString(llvm::Twine("--image=profile=") +
-                                           Arch + ",file=" + CubinF));
+          GPUArch.str().c_str() + "@" + Arch + ",file=" + CubinF));
     }
 
     FatbinaryCmdArgs.push_back(Args.MakeArgString("--cuda"));
