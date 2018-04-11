@@ -12390,6 +12390,8 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
   printf("\n\n");
   C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
 
+  std::pair<StringRef, StringRef> Split;
+
   if (JA.isDeviceOffloading(Action::OFK_OpenMP) &&
       Args.hasArg(options::OPT_c) &&
       Args.hasArg(options::OPT_o)) {
@@ -12407,6 +12409,8 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
     // Create fatbin file using fatbinary executable.
     SmallString<128> OrigOutputFileName =
         llvm::sys::path::filename(Output.getFilename());
+
+    // Create fatbin file.
     const char *FatbinF;
     if (C.getDriver().isSaveTempsEnabled()) {
       llvm::sys::path::replace_extension(OrigOutputFileName, "fatbin");
@@ -12428,8 +12432,76 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
           C.addTempFile(C.getArgs().MakeArgString(OrigOutputFileName.c_str()));
     FatbinaryCmdArgs.push_back(Args.MakeArgString(llvm::Twine("--embedded-fatbin=") +
                                                   WrappedFatbinF));
+    // Create filename without extension.
+    StringRef OrigOutputFileNameRoot = OrigOutputFileName;
+    Split = OrigOutputFileNameRoot.rsplit('.');
+    Split = Split.first.rsplit('.');
 
+    // Create fatbinwrap.c
+    const char *ReWrappedFatbinF;
+    llvm::sys::path::replace_extension(OrigOutputFileName, "rewrap.c");
+    if (C.getDriver().isSaveTempsEnabled())
+      ReWrappedFatbinF = C.getArgs().MakeArgString(OrigOutputFileName.c_str());
+    else
+      ReWrappedFatbinF =
+          C.addTempFile(C.getArgs().MakeArgString(OrigOutputFileName.c_str()));
+
+    // Write the custom re-wrapper for the fatbin.
+    // Create the buffer.
+    std::string ReWrapBuffer;
+    llvm::raw_string_ostream ReWrapStream(ReWrapBuffer);
+
+/*
+
+#define __NV_MODULE_ID mysourcefile1
+
+#include "mysourcefile1.fatbin.c"
+
+#include "host_defines.h"
+#define __CUDA_INTERNAL_COMPILATION__
+#define __MATH_FUNCTIONS_H__
+#include "vector_types.h"
+#include "crt/host_runtime.h"
+#undef __MATH_FUNCTIONS_H__
+#undef __CUDA_INTERNAL_COMPILATION__
+
+extern "C" {
+#include "mysourcefile1.fatbinreg.h"
+} // extern "C"
+
+*/
+
+    ReWrapStream << "// This is a custom generated file.\n";
+    ReWrapStream << "#define __NV_MODULE_ID " << Split.first << "\n";
+    ReWrapStream << "\n";
+    ReWrapStream << "#include \"" << WrappedFatbinF << "\"\n";
+    ReWrapStream << "#include \"host_defines.h\"\n";
+    ReWrapStream << "#define __CUDA_INTERNAL_COMPILATION__\n";
+    ReWrapStream << "#define __MATH_FUNCTIONS_H__\n";
+    ReWrapStream << "#include \"vector_types.h\"\n";
+    ReWrapStream << "#include \"crt/host_runtime.h\"\n";
+    ReWrapStream << "#undef __MATH_FUNCTIONS_H__\n";
+    ReWrapStream << "#undef __CUDA_INTERNAL_COMPILATION__\n";
+    ReWrapStream << "\n";
+    ReWrapStream << "extern \"C\" {\n";
+    ReWrapStream << "#include \"" << Split.first << ".fatbinreg.h\"\n";
+    ReWrapStream << "} \n";
+    ReWrapStream.flush();
+    llvm::errs() << ReWrapBuffer;
+
+    // Write out re-wrapper file contents.
+    std::error_code EC;
+    llvm::raw_fd_ostream ReWrapsf(ReWrappedFatbinF, EC, llvm::sys::fs::F_None);
+
+    if (EC) {
+      C.getDriver().Diag(clang::diag::err_unable_to_make_temp) << EC.message();
+      return;
+    }
+    ReWrapsf << ReWrapBuffer;
+
+    // Continue assembling the host compiler arguments.
     CompilerCmdArgs.push_back(Args.MakeArgString(WrappedFatbinF));
+    // CompilerCmdArgs.push_back(Args.MakeArgString(ReWrappedFatbinF));
 
     StringRef GPUArch = Args.getLastArgValue(options::OPT_march_EQ);
     assert(!GPUArch.empty() && "At least one GPU Arch required for nvlink.");
@@ -12493,8 +12565,12 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
 
     // clang++ -g -c ompprint.fatbinwrap.c -I/usr/local/cuda-9.0/include
     //     -o ompprint.fatbin.o
-    const char *CompilerExec = Args.MakeArgString(TC.GetProgramPath("clang++"));
-    printf("\nCLANG++ ");
+    if (!Split.first.rsplit('/').second.empty())
+      CompilerCmdArgs.push_back(Args.MakeArgString(llvm::Twine("-D__NV_MODULE_ID=") + Split.first.rsplit('/').second.split('-').first));
+    else
+      CompilerCmdArgs.push_back(Args.MakeArgString(llvm::Twine("-D__NV_MODULE_ID=") + Split.first.split('-').first));
+    const char *CompilerExec = Args.MakeArgString(TC.GetProgramPath("g++"));
+    printf("\nG++ ");
     for(auto arg: CompilerCmdArgs) {
       printf("%s ", arg);
     }
@@ -12503,6 +12579,102 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
         JA, *this, CompilerExec, CompilerCmdArgs, Inputs));
   }
 }
+
+/*
+// Create a buffer to write the contents of the linker script.
+  std::string LksBuffer;
+  llvm::raw_string_ostream LksStream(LksBuffer);
+
+  // Get the OpenMP offload tool chains so that we can extract the triple
+  // associated with each device input.
+  auto OpenMPToolChains = C.getOffloadToolChains<Action::OFK_OpenMP>();
+  assert(OpenMPToolChains.first != OpenMPToolChains.second &&
+         "No OpenMP toolchains??");
+
+  // Track the input file name and device triple in order to build the script,
+  // inserting binaries in the designated sections.
+  SmallVector<std::pair<std::string, const char *>, 8> InputBinaryInfo;
+
+  // Add commands to embed target binaries. We ensure that each section and
+  // image is 16-byte aligned. This is not mandatory, but increases the
+  // likelihood of data to be aligned with a cache block in several main host
+  // machines.
+  LksStream << "\n";
+  LksStream << "       OpenMP Offload Linker Script\n";
+  LksStream << " *** Automatically generated by Clang ***\n";
+  LksStream << "\n";
+  LksStream << "TARGET(binary)\n";
+  auto DTC = OpenMPToolChains.first;
+  for (auto &II : Inputs) {
+    const Action *A = II.getAction();
+    // Is this a device linking action?
+    if (A && isa<LinkJobAction>(A) &&
+        A->isDeviceOffloading(Action::OFK_OpenMP)) {
+      assert(DTC != OpenMPToolChains.second &&
+             "More device inputs than device toolchains??");
+      InputBinaryInfo.push_back(std::make_pair(
+          DTC->second->getTriple().normalize(), II.getFilename()));
+      ++DTC;
+      LksStream << "INPUT(" << II.getFilename() << ")\n";
+    }
+  }
+
+  assert(DTC == OpenMPToolChains.second &&
+         "Less device inputs than device toolchains??");
+
+  LksStream << "SECTIONS\n";
+  LksStream << "{\n";
+
+  // Put each target binary into a separate section.
+  for (const auto &BI : InputBinaryInfo) {
+    LksStream << "  .omp_offloading." << BI.first << " :\n";
+    LksStream << "  ALIGN(0x10)\n";
+    LksStream << "  {\n";
+    LksStream << "    PROVIDE_HIDDEN(.omp_offloading.img_start." << BI.first
+              << " = .);\n";
+    LksStream << "    " << BI.second << "\n";
+    LksStream << "    PROVIDE_HIDDEN(.omp_offloading.img_end." << BI.first
+              << " = .);\n";
+    LksStream << "  }\n";
+  }
+
+  // Add commands to define host entries begin and end. We use 1-byte subalign
+  // so that the linker does not add any padding and the elements in this
+  // section form an array.
+  LksStream << "  .omp_offloading.entries :\n";
+  LksStream << "  ALIGN(0x10)\n";
+  LksStream << "  SUBALIGN(0x01)\n";
+  LksStream << "  {\n";
+  LksStream << "    PROVIDE_HIDDEN(.omp_offloading.entries_begin = .);\n";
+  LksStream << "    *(.omp_offloading.entries)\n";
+  LksStream << "    PROVIDE_HIDDEN(.omp_offloading.entries_end = .);\n";
+  LksStream << "  }\n";
+  LksStream << "}\n";
+  LksStream << "INSERT BEFORE .data\n";
+  LksStream.flush();
+
+  // Dump the contents of the linker script if the user requested that. We
+  // support this option to enable testing of behavior with -###.
+  if (C.getArgs().hasArg(options::OPT_fopenmp_dump_offload_linker_script))
+    llvm::errs() << LksBuffer;
+
+  // If this is a dry run, do not create the linker script file.
+  if (C.getArgs().hasArg(options::OPT__HASH_HASH_HASH))
+    return;
+
+  // Open script file and write the contents.
+  std::error_code EC;
+  llvm::raw_fd_ostream Lksf(LKS, EC, llvm::sys::fs::F_None);
+
+  if (EC) {
+    C.getDriver().Diag(clang::diag::err_unable_to_make_temp) << EC.message();
+    return;
+  }
+
+  Lksf << LksBuffer;
+
+
+*/
 
 // All inputs to this linker must be from CudaDeviceActions, as we need to look
 // at the Inputs' Actions in order to figure out which GPU architecture they
@@ -12523,33 +12695,9 @@ void NVPTX::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   assert(!JA.isHostOffloading(Action::OFK_OpenMP) &&
          "CUDA toolchain not expected for an OpenMP host device.");
   if (JA.isDeviceOffloading(Action::OFK_OpenMP)) {
-    /*
-nvcc -dlink -arch=sm_35
--o /tmp/xlcMwLgsLbF.dlink.cubin -v /tmp/35455_0.o /usr/lib/gcc/ppc64le-redhat-linux/4.8.5/../../../../lib64/crt1.o 
-/usr/lib/gcc/ppc64le-redhat-linux/4.8.5/../../../../lib64/crti.o /usr/lib/gcc/ppc64le-redhat-linux/4.8.5/crtbegin.o 
-libfoo.a -lxlsmp -lxlopt -lxl -ldl -lgcc_s -lpthread -lgcc -lm -lc -lgcc_s -lgcc 
-/usr/lib/gcc/ppc64le-redhat-linux/4.8.5/crtend.o /usr/lib/gcc/ppc64le-redhat-linux/4.8.5/../../../../lib64/crtn.o 
--lxldevice -lomptarget-nvptx -lcudadevrt -L/gsa/tlbgsa/projects/x/xlcmpbld/run/clangtana/dev/rhel7_leppc/daily/180208/opt/ibm/xlsmp/4.1.7/lib 
--L/gsa/tlbgsa/projects/x/xlcmpbld/run/clangtana/dev/rhel7_leppc/daily/180208/opt/ibm/xlmass/8.1.7/lib 
--L/gsa/tlbgsa/projects/x/xlcmpbld/run/clangtana/dev/rhel7_leppc/daily/180208/opt/ibm/xlC/13.1.7/lib 
--L/xl_le/gsa/tlbgsa/projects/x/xlcmpbld/bld_env/rhel7_leppc/CUDA-9.0.151-1/usr/local/cuda-9.0/targets/ppc64le-linux/lib/ 
--L/usr/lib/gcc/ppc64le-redhat-linux/4.8.5 -L/usr/lib/gcc/ppc64le-redhat-linux/4.8.5/../../../../lib64 
--L/lib/../lib64 -L/usr/lib/../lib64 -L/usr/lib/gcc/ppc64le-redhat-linux/4.8.5/../../.. 
--L/gsa/tlbgsa/projects/x/xlcmpbld/run/clangtana/dev/rhel7_leppc/daily/180208/opt/ibm/xlsmp/4.1.7/lib 
--L/gsa/tlbgsa/projects/x/xlcmpbld/run/clangtana/dev/rhel7_leppc/daily/180208/opt/ibm/xlsmp/4.1.7/lib 
--cubin 
-    */
-    // CmdArgs.push_back("-dlink");
-    // CmdArgs.push_back("-cubin");
-
-    // for (const auto& A : Args.getAllArgValues(options::OPT_L)) {
-    //   printf("   ======>>>>>>>>>>>>>>>>>>> %s \n", Args.MakeArgString(A));
-    //   CmdArgs.push_back(Args.MakeArgString(A));
-    // }
-
-    // if (Args.hasArg(options::OPT_L)) {
-    //   printf(" \n\n\n\n\n =====> %s \n", Args.getLastArgValue(options::OPT_L).str().c_str());
-    // }
+    CmdArgs.push_back("-dlink");
+    CmdArgs.push_back("-cubin");
+    // CmdArgs.push_back("-ccbin clang++");
 
     if (Output.isFilename()) {
       CmdArgs.push_back("-o");
@@ -12574,15 +12722,6 @@ libfoo.a -lxlsmp -lxlopt -lxl -ldl -lgcc_s -lpthread -lgcc -lm -lc -lgcc_s -lgcc
     addDirectoryList(Args, CmdArgs, "-L", "LIBRARY_PATH");
 
     Args.AddAllArgs(CmdArgs, options::OPT_L);
-
-    // // Args.getAllArgValues(options::OPT_L));
-    // for (const auto& A : Args.getAllArgValues(options::OPT_L))
-    //   CmdArgs.push_back(Args.MakeArgString(A));
-
-    // add paths manually:
-    // CmdArgs.push_back("-L/localhd/gbercea/tests/BUGS/STATICLIBS/LIB1");
-    // CmdArgs.push_back("-L/localhd/gbercea/tests/BUGS/STATICLIBS/LIB2");
-    // CmdArgs.push_back("-L/localhd/gbercea/tests/BUGS/STATICLIBS/LIB3");
 
     // add paths for the default clang library path.
     SmallString<256> DefaultLibPath =
@@ -12653,8 +12792,8 @@ libfoo.a -lxlsmp -lxlopt -lxl -ldl -lgcc_s -lpthread -lgcc -lm -lc -lgcc_s -lgcc
     AddOpenMPLinkerScript(getToolChain(), C, Output, Inputs, Args, CmdArgs, JA);
 
     const char *Exec =
-        Args.MakeArgString(getToolChain().GetProgramPath("nvlink"));
-        // Args.MakeArgString(getToolChain().GetProgramPath("nvcc"));
+        // Args.MakeArgString(getToolChain().GetProgramPath("nvlink"));
+        Args.MakeArgString(getToolChain().GetProgramPath("nvcc"));
     C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
     return;
   }
