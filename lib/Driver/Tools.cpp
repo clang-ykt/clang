@@ -7275,12 +7275,10 @@ void OffloadBundler::ConstructJob(Compilation &C, const JobAction &JA,
   // bundler as normal.
   StringRef LinkerName = getToolChain().GetLinkerPath();
   bool IsLDLinker = LinkerName.endswith("ld");
-  printf(" LD path = %s\n\n", TCArgs.MakeArgString(LinkerName));
-  printf(" -c = %d\n", TCArgs.hasArg(options::OPT_c));
-  printf(" -o = %d\n", TCArgs.hasArg(options::OPT_o));
+  // printf(" LD path = %s\n\n", TCArgs.MakeArgString(LinkerName));
+  // printf(" -c = %d\n", TCArgs.hasArg(options::OPT_c));
+  // printf(" -o = %d\n", TCArgs.hasArg(options::OPT_o));
   if (TCArgs.hasArg(options::OPT_c) && TCArgs.hasArg(options::OPT_o) && IsLDLinker) {
-    printf("Replace COB with LD!!!!\n\n");
-
     // Make linking partial.
     CmdArgs.push_back(TCArgs.MakeArgString("-r"));
 
@@ -7293,17 +7291,16 @@ void OffloadBundler::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(TCArgs.MakeArgString("-o"));
     CmdArgs.push_back(TCArgs.MakeArgString(Output.getFilename()));
 
-    const char *LinkerPath = TCArgs.MakeArgString(LinkerName);
-
     // Add command.
     C.addCommand(llvm::make_unique<Command>(
-        JA, *this, LinkerPath, CmdArgs, None));
+        JA, *this, TCArgs.MakeArgString(getToolChain().GetLinkerPath()),
+        CmdArgs, None));
 
-    printf("\nLD ");
-    for(auto arg: CmdArgs) {
-      printf("%s ", arg);
-    }
-    printf("\n\n");
+    // printf("\nLD ");
+    // for(auto arg: CmdArgs) {
+    //   printf("%s ", arg);
+    // }
+    // printf("\n\n");
 
     return;
   }
@@ -7361,11 +7358,11 @@ void OffloadBundler::ConstructJob(Compilation &C, const JobAction &JA,
   }
   CmdArgs.push_back(TCArgs.MakeArgString(UB));
 
-  printf("\nCLANG-OFFLOAD-BUNDLER 1 ");
-  for(auto arg: CmdArgs) {
-    printf("%s ", arg);
-  }
-  printf("\n\n");
+  // printf("\nCLANG-OFFLOAD-BUNDLER 1 ");
+  // for(auto arg: CmdArgs) {
+  //   printf("%s ", arg);
+  // }
+  // printf("\n\n");
 
   // All the inputs are encoded as commands.
   C.addCommand(llvm::make_unique<Command>(
@@ -7443,11 +7440,11 @@ void OffloadBundler::ConstructJobMultipleOutputs(
   CmdArgs.push_back(TCArgs.MakeArgString(UB));
   CmdArgs.push_back("-unbundle");
 
-    printf("\nCLANG-OFFLOAD-BUNDLER 2 ");
-  for(auto arg: CmdArgs) {
-    printf("%s ", arg);
-  }
-  printf("\n\n");
+  // printf("\nCLANG-OFFLOAD-BUNDLER 2 ");
+  // for(auto arg: CmdArgs) {
+  //   printf("%s ", arg);
+  // }
+  // printf("\n\n");
 
   // All the inputs are encoded as commands.
   C.addCommand(llvm::make_unique<Command>(
@@ -12383,11 +12380,11 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
     Exec = A->getValue();
   else
     Exec = Args.MakeArgString(TC.GetProgramPath("ptxas"));
-  printf("\nPTXAS ");
-    for(auto arg: CmdArgs) {
-      printf("%s ", arg);
-    }
-  printf("\n\n");
+  // printf("\nPTXAS ");
+  //   for(auto arg: CmdArgs) {
+  //     printf("%s ", arg);
+  //   }
+  // printf("\n\n");
   C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
 
   std::pair<StringRef, StringRef> Split;
@@ -12402,9 +12399,8 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
     CompilerCmdArgs.push_back(Args.MakeArgString("-c"));
     CompilerCmdArgs.push_back(Args.MakeArgString("-o"));
     CompilerCmdArgs.push_back(Args.MakeArgString(Output.getFilename()));
-    // TODO: pick up CUDA path from env.
-    // Doru
-    CompilerCmdArgs.push_back(Args.MakeArgString("-I/usr/local/cuda/include"));
+    CompilerCmdArgs.push_back(Args.MakeArgString(llvm::Twine("-I") +
+        TC.CudaInstallation.getBinPath() + llvm::Twine("/../include")));
 
     // Create fatbin file using fatbinary executable.
     SmallString<128> OrigOutputFileName =
@@ -12487,7 +12483,9 @@ extern "C" {
     ReWrapStream << "#include \"" << Split.first << ".fatbinreg.h\"\n";
     ReWrapStream << "} \n";
     ReWrapStream.flush();
-    llvm::errs() << ReWrapBuffer;
+
+    // TODO: Enable this if print-out is required by the user.
+    // llvm::errs() << ReWrapBuffer;
 
     // Write out re-wrapper file contents.
     std::error_code EC;
@@ -12501,6 +12499,8 @@ extern "C" {
 
     // Continue assembling the host compiler arguments.
     CompilerCmdArgs.push_back(Args.MakeArgString(WrappedFatbinF));
+
+    // TODO: Enable this is required for XL compatibility.
     // CompilerCmdArgs.push_back(Args.MakeArgString(ReWrappedFatbinF));
 
     StringRef GPUArch = Args.getLastArgValue(options::OPT_march_EQ);
@@ -12556,11 +12556,11 @@ extern "C" {
     //     --image=profile=sm_35@compute_35,file=ompprint.compute_35.sm_35.cubin
     //     --embedded-fatbin=ompprint.fatbin.c --cuda --device-c
     const char *Exec = Args.MakeArgString(TC.GetProgramPath("fatbinary"));
-    printf("\nFATBINARY ");
-    for(auto arg: FatbinaryCmdArgs) {
-      printf("%s ", arg);
-    }
-    printf("\n\n");
+    // printf("\nFATBINARY ");
+    // for(auto arg: FatbinaryCmdArgs) {
+    //   printf("%s ", arg);
+    // }
+    // printf("\n\n");
     C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, FatbinaryCmdArgs, Inputs));
 
     // clang++ -g -c ompprint.fatbinwrap.c -I/usr/local/cuda-9.0/include
@@ -12570,11 +12570,11 @@ extern "C" {
     else
       CompilerCmdArgs.push_back(Args.MakeArgString(llvm::Twine("-D__NV_MODULE_ID=") + Split.first.split('-').first));
     const char *CompilerExec = Args.MakeArgString(TC.GetProgramPath("g++"));
-    printf("\nG++ ");
-    for(auto arg: CompilerCmdArgs) {
-      printf("%s ", arg);
-    }
-    printf("\n\n");
+    // printf("\nG++ ");
+    // for(auto arg: CompilerCmdArgs) {
+    //   printf("%s ", arg);
+    // }
+    // printf("\n\n");
     C.addCommand(llvm::make_unique<Command>(
         JA, *this, CompilerExec, CompilerCmdArgs, Inputs));
   }
