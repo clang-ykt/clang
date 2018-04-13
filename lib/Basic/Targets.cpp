@@ -1847,6 +1847,8 @@ public:
       // Set __CUDA_ARCH__ for the GPU specified.
       std::string CUDAArchCode = [this] {
         switch (GPU) {
+        case CudaArch::LAST:
+          break;
         case CudaArch::UNKNOWN:
           assert(false && "No GPU arch when compiling CUDA device code.");
           return "";
