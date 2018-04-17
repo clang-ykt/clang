@@ -424,14 +424,12 @@
 // Create host object and bundle.
 // CHK-BUJOBS: clang{{.*}}" "-cc1" "-triple" "powerpc64le--linux" "-emit-obj" {{.*}}"-fopenmp" {{.*}}"-o" "
 // CHK-BUJOBS-SAME: [[HOSTOBJ:[^\\/]+\.o]]" "-x" "ir" "{{.*}}[[HOSTBC]]"
-// CHK-BUJOBS: clang-offload-bundler{{.*}}" "-type=o"{{.*}}"-targets=openmp-powerpc64le-ibm-linux-gnu,openmp-x86_64-pc-linux-gnu,host-powerpc64le--linux" "-outputs=
-// CHK-BUJOBS-SAME: [[RES:[^\\/]+\.o]]" "-inputs={{.*}}[[T1OBJ]],{{.*}}[[T2OBJ]],{{.*}}[[HOSTOBJ]]"
+// CHK-BUJOBS: "/usr/bin/ld" "-r" {{.*}} "-o" {{.*}}.c.tmp.o
 // CHK-BUJOBS-ST: clang{{.*}}" "-cc1" "-triple" "powerpc64le--linux" "-S" {{.*}}"-fopenmp" {{.*}}"-o" "
 // CHK-BUJOBS-ST-SAME: [[HOSTASM:[^\\/]+\.s]]" "-x" "ir" "{{.*}}[[HOSTBC]]"
 // CHK-BUJOBS-ST: clang{{.*}}" "-cc1as" "-triple" "powerpc64le--linux" "-filetype" "obj" {{.*}}"-o" "
 // CHK-BUJOBS-ST-SAME: [[HOSTOBJ:[^\\/]+\.o]]" "{{.*}}[[HOSTASM]]"
-// CHK-BUJOBS-ST: clang-offload-bundler{{.*}}" "-type=o"{{.*}}"-targets=openmp-powerpc64le-ibm-linux-gnu,openmp-x86_64-pc-linux-gnu,host-powerpc64le--linux" "-outputs=
-// CHK-BUJOBS-ST-SAME: [[RES:[^\\/]+\.o]]" "-inputs={{.*}}[[T1OBJ]],{{.*}}[[T2OBJ]],{{.*}}[[HOSTOBJ]]"
+// CHK-BUJOBS-ST: "/usr/bin/ld" "-r" {{.*}} "-o" {{.*}}.c.tmp.o
 
 /// ###########################################################################
 
@@ -657,7 +655,7 @@
 // RUN:   | FileCheck -check-prefix=CHK-FOPENMP-TARGET-ARCHS %s
 
 // CHK-FOPENMP-TARGET-ARCHS: ptxas{{.*}}" "--gpu-name" "sm_60"
-// CHK-FOPENMP-TARGET-ARCHS: nvlink{{.*}}" "-arch" "sm_60"
+// CHK-FOPENMP-TARGET-ARCHS: nvcc{{.*}}" "-arch" "sm_60"
 
 /// ###########################################################################
 
@@ -666,7 +664,7 @@
 // RUN:   | FileCheck -check-prefix=CHK-FOPENMP-TARGET-COMPILATION %s
 
 // CHK-FOPENMP-TARGET-COMPILATION: ptxas{{.*}}" "--gpu-name" "sm_35"
-// CHK-FOPENMP-TARGET-COMPILATION: nvlink{{.*}}" "-arch" "sm_35"
+// CHK-FOPENMP-TARGET-COMPILATION: nvcc{{.*}}" "-arch" "sm_35"
 
 /// ###########################################################################
 
@@ -702,7 +700,7 @@
 // CHK-CUDA-DEBUG-SAME: "--dont-merge-basicblocks"
 // CHK-CUDA-DEBUG-SAME: "--return-at-end"
 // CHK-CUDA-DEBUG-SAME: "-c"
-// CHK-CUDA-DEBUG: nvlink
+// CHK-CUDA-DEBUG: nvcc
 // CHK-CUDA-DEBUG-SAME: "-g"
 
 /// Check debug command lines for NVPTX target
@@ -721,7 +719,7 @@
 // CHK-CUDA-DEBUGO0-NODEBUG-SAME: "--dont-merge-basicblocks"
 // CHK-CUDA-DEBUGO0-NODEBUG-SAME: "--return-at-end"
 // CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-c"
-// CHK-CUDA-DEBUGO0-NODEBUG: nvlink
+// CHK-CUDA-DEBUGO0-NODEBUG: nvcc
 // CHK-CUDA-DEBUGO0-NODEBUG-SAME: "-g"
 
 /// Check debug command lines for NVPTX target
@@ -740,7 +738,7 @@
 // CHK-CUDA-DEBUG-O3-DEBUG-SAME: "--dont-merge-basicblocks"
 // CHK-CUDA-DEBUG-O3-DEBUG-SAME: "--return-at-end"
 // CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-c"
-// CHK-CUDA-DEBUG-O3-DEBUG: nvlink
+// CHK-CUDA-DEBUG-O3-DEBUG: nvcc
 // CHK-CUDA-DEBUG-O3-DEBUG-SAME: "-g"
 
 /// Check debug command lines for NVPTX target
@@ -782,4 +780,4 @@
 // RUN:   | FileCheck -check-prefix=STATIC-LIB-LINKING %s
 
 // STATIC-LIB-LINKING:  ptxas"{{.*}}"--output-file" "{{.*}}openmp-offload-{{.*}}.o" "{{.*}}openmp-offload-{{.*}}.s" "-c"
-// STATIC-LIB-LINKING:  nvlink"{{.*}}"{{.*}}libtest-{{.*}}.o" "{{.*}}openmp-offload-{{.*}}.cubin"
+// STATIC-LIB-LINKING:  nvcc"{{.*}}"{{.*}}libtest-{{.*}}.o" "{{.*}}openmp-offload-{{.*}}.cubin"
