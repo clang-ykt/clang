@@ -2174,6 +2174,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
               .Case("ovf", "|FE_OVERFLOW")
               .Case("unf", "|FE_UNDERFLOW")
               .Default(StringRef());
+      if (FENVValue.empty() && Value != "none")
+        Diags.Report(diag::err_wrong_trapping_kind) << Value;
       Out << FENVValue;
     }
     StringRef ResValue = Out.str();
@@ -2196,16 +2198,16 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
         OS << "#pragma GCC diagnostic ignored \"-Wall\"\n";
         OS << "#include <fenv.h>\n";
         OS << "__attribute((used)) __attribute((no_instrument_function)) "
-              "__attribute((nodebug)) "
+              "__attribute((nodebug)) __attribute((always_inline)) "
               "static void "
               "__FTRAP___INSTR__fun_12345689start_____(void){feclearexcept("
            << ResValue << ");";
-        OS << "}\n";
+        OS << "}\nextern int raise(int);\n";
         OS << "__attribute((used)) __attribute((no_instrument_function)) "
-              "__attribute((nodebug)) "
+              "__attribute((nodebug)) __attribute((always_inline)) "
               "static void "
               "__FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept("
-           << ResValue << ")) __builtin_debugtrap();}\n";
+           << ResValue << ")) raise(8);}\n";
         OS << "#pragma GCC diagnostic pop\n";
         OS << "#pragma clang diagnostic pop\n";
         OS << "#endif\n";

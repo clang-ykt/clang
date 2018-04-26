@@ -1,26 +1,26 @@
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=divz %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=DIVZ %s
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=divz -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=DIVZ-EXACT %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=divz %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns | FileCheck -check-prefix=CHECK -check-prefix=DIVZ %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=divz -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o -  -disable-llvm-optzns | FileCheck -check-prefix=CHECK -check-prefix=DIVZ-EXACT %s
 
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=fp %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=FP %s
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=fp -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=FP-EXACT %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=fp %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=CHECK -check-prefix=FP %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=fp -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=CHECK -check-prefix=FP-EXACT %s
 
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=inexact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=INEXACT %s
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=inexact -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=INEXACT-EXACT %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=inexact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=CHECK -check-prefix=INEXACT %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=inexact -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=CHECK -check-prefix=INEXACT-EXACT %s
 
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=inv %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=INV %s
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=inv -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=INV-EXACT %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=inv %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=CHECK -check-prefix=INV %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=inv -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=CHECK -check-prefix=INV-EXACT %s
 
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=ovf %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=OVF %s
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=ovf -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=OVF-EXACT %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=ovf %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=CHECK -check-prefix=OVF %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=ovf -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=CHECK -check-prefix=OVF-EXACT %s
 
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=unf %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=UNF %s
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=unf -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=UNF-EXACT %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=unf %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=CHECK -check-prefix=UNF %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=unf -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=CHECK -check-prefix=UNF-EXACT %s
 
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=none %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=NONE %s
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=none -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=NONE %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=none %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=NONE %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=none -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=NONE %s
 
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=divz,inv,unf %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=MANY %s
-// RUN:   %clang_cc1 -I%S/Inputs -ftrap=divz,inv,unf -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - | FileCheck -check-prefix=CHECK -check-prefix=MANY-EXACT %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=divz,inv,unf %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=CHECK -check-prefix=MANY %s
+// RUN:   %clang_cc1 -I%S/Inputs -ftrap=divz,inv,unf -ftrap-exact %s -triple powerpc64le-unknown-linux-gnu -emit-llvm -o - -disable-llvm-optzns  | FileCheck -check-prefix=CHECK -check-prefix=MANY-EXACT %s
 
 // CHECK: @n = common global float 0.0
 // CHECK: @m = common global float 0.0
@@ -63,7 +63,7 @@
 // MANY-EXACT: call {{.*}}i32 @fetestexcept(i32{{.*}} 21)
 // CHECK: icmp ne i32 %{{.+}}, 0
 // CHECK: br i1
-// CHECK: call void @llvm.debugtrap()
+// CHECK: call signext i32 @raise(i32 signext 8)
 // CHECK: ret void
 
 // CHECK-LABEL: @main

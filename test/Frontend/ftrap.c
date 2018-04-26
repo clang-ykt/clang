@@ -34,20 +34,20 @@
 
 // CHECK: int feclearexcept(int);
 // CHECK: int fetestexcept(int);
-// DIVZ: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|1);}
-// DIVZ-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|1)) __builtin_debugtrap();}
-// FP: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|1|4|8);}
-// FP-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|1|4|8)) __builtin_debugtrap();}
-// INEXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|2);}
-// INEXACT-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|2)) __builtin_debugtrap();}
-// INV: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|4);}
-// INV-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|4)) __builtin_debugtrap();}
-// OVF: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|8);}
-// OVF-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|8)) __builtin_debugtrap();}
-// UNF: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|16);}
-// UNF-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|16)) __builtin_debugtrap();}
-// MANY: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|1|4|16);}
-// MANY-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|1|4|16)) __builtin_debugtrap();}
+// DIVZ: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|1);}
+// DIVZ-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|1)) raise(8);}
+// FP: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|1|4|8);}
+// FP-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|1|4|8)) raise(8);}
+// INEXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|2);}
+// INEXACT-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|2)) raise(8);}
+// INV: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|4);}
+// INV-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|4)) raise(8);}
+// OVF: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|8);}
+// OVF-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|8)) raise(8);}
+// UNF: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|16);}
+// UNF-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|16)) raise(8);}
+// MANY: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689start_____(void){feclearexcept(0|1|4|16);}
+// MANY-EXACT: __attribute((used)) __attribute((no_instrument_function)) __attribute((nodebug)) __attribute((always_inline)) static void __FTRAP___INSTR__fun_12345689end_____(void){if(fetestexcept(0|1|4|16)) raise(8);}
 
 // CHECK: #pragma GCC diagnostic pop
 // CHECK: #pragma clang diagnostic pop
