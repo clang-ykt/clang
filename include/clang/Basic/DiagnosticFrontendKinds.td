@@ -233,4 +233,7 @@ def err_invalid_vfs_overlay : Error<
 
 def warn_option_invalid_ocl_version : Warning<
   "OpenCL version %0 does not support the option '%1'">, InGroup<Deprecated>;
+def err_wrong_trapping_kind : Error<
+  "Unrecognized value '%0' specified with option '-ftrap'">,
+  DefaultFatal;
 }
