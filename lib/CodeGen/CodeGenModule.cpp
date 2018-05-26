@@ -4400,6 +4400,11 @@ llvm::Constant *CodeGenModule::GetAddrOfRTTIDescriptor(QualType Ty,
 }
 
 void CodeGenModule::EmitOMPThreadPrivateDecl(const OMPThreadPrivateDecl *D) {
+  // Since the behavior of threadprivate is unspecific in target region, the
+  // emission of it is simply ignored.
+  if (getLangOpts().OpenMPIsDevice)
+    return;
+
   for (auto RefExpr : D->varlists()) {
     auto *VD = cast<VarDecl>(cast<DeclRefExpr>(RefExpr)->getDecl());
     bool PerformInit =
