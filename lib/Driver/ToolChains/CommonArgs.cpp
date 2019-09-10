@@ -187,6 +187,14 @@ void tools::AddLinkerInputs(const ToolChain &TC, const InputInfoList &Inputs,
       A.renderAsInput(Args, CmdArgs);
     }
   }
+
+  // For OpenMP, explicitely add elf library linking to ensure it always
+  // happens before any of the CUDA-specific inclusions. This ensures that
+  // the libelf version of the elf functions is used when CUDA runtime calls
+  // are in the same compilation unit as the OpenMP code.
+  if (JA.isHostOffloading(Action::OFK_OpenMP)) {
+    CmdArgs.push_back("-lelf");
+  }
 }
 
 void tools::AddTargetFeature(const ArgList &Args,

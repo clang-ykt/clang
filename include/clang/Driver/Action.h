@@ -71,9 +71,10 @@ public:
     VerifyPCHJobClass,
     OffloadBundlingJobClass,
     OffloadUnbundlingJobClass,
+    PartialLinkerJobClass,
 
     JobClassFirst = PreprocessJobClass,
-    JobClassLast = OffloadUnbundlingJobClass
+    JobClassLast = PartialLinkerJobClass
   };
 
   // The offloading kind determines if this action is binded to a particular
@@ -610,6 +611,18 @@ public:
 
   static bool classof(const Action *A) {
     return A->getKind() == OffloadUnbundlingJobClass;
+  }
+};
+
+class PartialLinkerJobAction : public JobAction {
+  void anchor() override;
+
+public:
+  // Partial linking does not change the type of output.
+  PartialLinkerJobAction(ActionList &Inputs);
+
+  static bool classof(const Action *A) {
+    return A->getKind() == PartialLinkerJobClass;
   }
 };
 

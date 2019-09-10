@@ -397,7 +397,8 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back("--gpu-name");
   CmdArgs.push_back(Args.MakeArgString(CudaArchToString(gpu_arch)));
   CmdArgs.push_back("--output-file");
-  CmdArgs.push_back(Args.MakeArgString(TC.getInputFilename(Output)));
+  const char *CubinF = Args.MakeArgString(TC.getInputFilename(Output));
+  CmdArgs.push_back(CubinF);
   for (const auto& II : Inputs)
     CmdArgs.push_back(Args.MakeArgString(II.getFilename()));
 
@@ -423,6 +424,130 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
   else
     Exec = Args.MakeArgString(TC.GetProgramPath("ptxas"));
   C.addCommand(std::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
+
+  // For OpenMP targets offloaded to an NVIDIA device offloading, call the
+  // NVIDIA tools that make the object file discoverable by NVLINK.
+  // Wrap the resulting fatbinary file into a host-friendly object file to
+  // be linked with the host object file.
+  if (JA.isDeviceOffloading(Action::OFK_OpenMP) &&
+      Args.hasArg(options::OPT_c) &&
+      C.canSkipOffloadBundler()) {
+    ArgStringList FatbinaryCmdArgs;
+    FatbinaryCmdArgs.push_back(TC.getTriple().isArch64Bit() ? "-64" : "-32");
+
+    ArgStringList CompilerCmdArgs;
+    CompilerCmdArgs.push_back(Args.MakeArgString("-c"));
+    CompilerCmdArgs.push_back(Args.MakeArgString("-o"));
+    CompilerCmdArgs.push_back(Args.MakeArgString(Output.getFilename()));
+    CompilerCmdArgs.push_back(Args.MakeArgString(llvm::Twine("-I") +
+        TC.CudaInstallation.getBinPath() + llvm::Twine("/../include")));
+
+    // Create fatbin file using fatbinary executable.
+    SmallString<128> OrigOutputFileName =
+        llvm::sys::path::filename(Output.getFilename());
+
+    // Create fatbin file.
+    const char *FatbinF;
+    if (C.getDriver().isSaveTempsEnabled()) {
+      llvm::sys::path::replace_extension(OrigOutputFileName, "fatbin");
+      FatbinF = C.getArgs().MakeArgString(OrigOutputFileName.c_str());
+    } else {
+      llvm::sys::path::replace_extension(OrigOutputFileName, "");
+      OrigOutputFileName =
+          C.getDriver().GetTemporaryPath(OrigOutputFileName, "fatbin");
+      FatbinF =
+          C.addTempFile(C.getArgs().MakeArgString(OrigOutputFileName.c_str()));
+    }
+    FatbinaryCmdArgs.push_back(
+        Args.MakeArgString(llvm::Twine("--create=") + FatbinF));
+
+    // Create fatbin file wrapper using fatbinary executable.
+    const char *WrappedFatbinF;
+    llvm::sys::path::replace_extension(OrigOutputFileName, "fatbin.c");
+    if (C.getDriver().isSaveTempsEnabled())
+      WrappedFatbinF = C.getArgs().MakeArgString(OrigOutputFileName);
+    else
+      WrappedFatbinF =
+          C.addTempFile(C.getArgs().MakeArgString(OrigOutputFileName));
+    FatbinaryCmdArgs.push_back(
+        Args.MakeArgString(llvm::Twine("--embedded-fatbin=") +
+                           WrappedFatbinF));
+
+    // Continue assembling the host compiler arguments.
+    CompilerCmdArgs.push_back(Args.MakeArgString(WrappedFatbinF));
+
+    StringRef GPUArch = Args.getLastArgValue(options::OPT_march_EQ);
+    assert(!GPUArch.empty() && "At least one GPU Arch required for nvlink.");
+
+    for (const auto& II : Inputs) {
+      SmallString<128> OrigInputFileName =
+          llvm::sys::path::filename(II.getFilename());
+
+      if (II.getType() == types::TY_LLVM_IR ||
+          II.getType() == types::TY_LTO_IR ||
+          II.getType() == types::TY_LTO_BC ||
+          II.getType() == types::TY_LLVM_BC) {
+        C.getDriver().Diag(diag::err_drv_no_linker_llvm_support)
+            << getToolChain().getTripleString();
+        continue;
+      }
+
+      // Currently, we only pass the input files to the linker, we do not pass
+      // any libraries that may be valid only for the host. Any static
+      // libraries will be handled at the link stage.
+      if (!II.isFilename() || OrigInputFileName.endswith(".a"))
+        continue;
+
+      auto *A = II.getAction();
+      assert(A->getInputs().size() == 1 &&
+             "Device offload action is expected to have a single input");
+      CudaArch gpu_arch = StringToCudaArch(GPUArch);
+
+      // We need to pass an Arch of the form "sm_XX" for cubin files and
+      // "compute_XX" for ptx.
+      const char *Arch =
+          (II.getType() == types::TY_PP_Asm)
+              ? CudaVirtualArchToString(VirtualArchForCudaArch(gpu_arch))
+              : GPUArch.str().c_str();
+      const char *PtxF =
+          C.addTempFile(C.getArgs().MakeArgString(II.getFilename()));
+      FatbinaryCmdArgs.push_back("--cmdline=--compile-only");
+      FatbinaryCmdArgs.push_back(
+          Args.MakeArgString(llvm::Twine("--image=profile=") +
+                             Arch + ",file=" + PtxF));
+      FatbinaryCmdArgs.push_back(
+          Args.MakeArgString(llvm::Twine("--image=profile=") +
+              GPUArch.str().c_str() + "@" + Arch + ",file=" + CubinF));
+    }
+
+    FatbinaryCmdArgs.push_back(Args.MakeArgString("--cuda"));
+    FatbinaryCmdArgs.push_back(Args.MakeArgString("--device-c"));
+
+    for (const auto& A : Args.getAllArgValues(options::OPT_Xcuda_fatbinary))
+      FatbinaryCmdArgs.push_back(Args.MakeArgString(A));
+
+    // fatbinary --create=ompprint.fatbin -64
+    //   --image=profile=compute_35,file=ompprint.compute_35.ptx
+    //   --image=profile=sm_35@compute_35,file=ompprint.compute_35.sm_35.cubin
+    //   --embedded-fatbin=ompprint.fatbin.c --cuda --device-c
+    const char *Exec = Args.MakeArgString(TC.GetProgramPath("fatbinary"));
+    C.addCommand(std::make_unique<Command>(
+        JA, *this, Exec, FatbinaryCmdArgs, Inputs));
+
+    // Come up with a unique name for the fatbin segment. The name uses
+    // the hash of the full path of the file.
+    std::hash<std::string> HashFn;
+    size_t hash = HashFn(llvm::sys::path::filename(Output.getFilename()));
+    CompilerCmdArgs.push_back(
+        Args.MakeArgString(llvm::Twine("-D__NV_MODULE_ID=") +
+            llvm::Twine(hash)));
+
+    // clang++ -c ompprint.fatbin.c -I/path/to/cuda/include/dir
+    const char *CompilerExec =
+        Args.MakeArgString(TC.GetProgramPath("clang++"));
+    C.addCommand(std::make_unique<Command>(
+        JA, *this, CompilerExec, CompilerCmdArgs, Inputs));
+  }
 }
 
 static bool shouldIncludePTX(const ArgList &Args, const char *gpu_arch) {
@@ -533,6 +658,9 @@ void NVPTX::OpenMPLinker::ConstructJob(Compilation &C, const JobAction &JA,
   // Add paths specified in LIBRARY_PATH environment variable as -L options.
   addDirectoryList(Args, CmdArgs, "-L", "LIBRARY_PATH");
 
+  if (C.canSkipOffloadBundler())
+    Args.AddAllArgs(CmdArgs, options::OPT_L);
+
   // Add paths for the default clang library path.
   SmallString<256> DefaultLibPath =
       llvm::sys::path::parent_path(TC.getDriver().Dir);
@@ -552,15 +680,41 @@ void NVPTX::OpenMPLinker::ConstructJob(Compilation &C, const JobAction &JA,
       continue;
     }
 
-    // Currently, we only pass the input files to the linker, we do not pass
-    // any libraries that may be valid only for the host.
-    if (!II.isFilename())
+    if (!II.isFilename()) {
+      // Anything that's not a file name is potentially a static library
+      // so treat it as such.
+      if (C.canSkipOffloadBundler())
+        CmdArgs.push_back(C.getArgs().MakeArgString(llvm::Twine("-l") +
+              II.getInputArg().getValue()));
       continue;
+    }
 
-    const char *CubinF = C.addTempFile(
-        C.getArgs().MakeArgString(getToolChain().getInputFilename(II)));
-
-    CmdArgs.push_back(CubinF);
+    StringRef OrigInputFileName =
+        llvm::sys::path::filename(II.getBaseInput());
+    if (OrigInputFileName.endswith(".a")) {
+      const char *StaticLibName =
+          C.getArgs().MakeArgString(II.getFilename());
+      CmdArgs.push_back(StaticLibName);
+    } else if (OrigInputFileName.endswith(".so")) {
+      // Only static libraries are supported.
+      // Dynamic libraries are ignored.
+      continue;
+    } else {
+      // If the original input is not an object file then it means the
+      // assembly step has actually produced a cubin so we need to
+      // rename it accordingly.
+      if ((!C.canSkipOffloadBundler() && OrigInputFileName.endswith(".o")) ||
+          (C.canSkipOffloadBundler() && !OrigInputFileName.endswith(".o"))) {
+        // Create cubin file name and add it as a temporary file.
+        SmallString<256> Filename(II.getFilename());
+        llvm::sys::path::replace_extension(Filename, "cubin");
+        const char *CubinF = C.addTempFile(
+            C.getArgs().MakeArgString(Filename.str()));
+        CmdArgs.push_back(CubinF);
+      } else {
+        CmdArgs.push_back(II.getFilename());
+      }
+    }
   }
 
   AddOpenMPLinkerScript(getToolChain(), C, Output, Inputs, Args, CmdArgs, JA);

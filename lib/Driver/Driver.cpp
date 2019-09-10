@@ -3027,7 +3027,8 @@ public:
   /// results will be kept in this action builder. Return true if an error was
   /// found.
   bool addHostDependenceToDeviceActions(Action *&HostAction,
-                                        const Arg *InputArg) {
+                                        const Arg *InputArg,
+                                        bool SkipBundler) {
     if (!IsValid)
       return true;
 
@@ -3039,7 +3040,8 @@ public:
     // the input is not a bundle.
     if (CanUseBundler && isa<InputAction>(HostAction) &&
         InputArg->getOption().getKind() == llvm::opt::Option::InputClass &&
-        !types::isSrcFile(HostAction->getType())) {
+        !types::isSrcFile(HostAction->getType()) &&
+        !SkipBundler) {
       auto UnbundlingHostAction =
           C.MakeAction<OffloadUnbundlingJobAction>(HostAction);
       UnbundlingHostAction->registerDependentActionInfo(
@@ -3081,7 +3083,7 @@ public:
   /// function can replace the host action by a bundling action if the
   /// programming models allow it.
   bool appendTopLevelActions(ActionList &AL, Action *HostAction,
-                             const Arg *InputArg) {
+                             const Arg *InputArg, bool usePartialLinkStep) {
     // Get the device actions to be appended.
     ActionList OffloadAL;
     for (auto *SB : SpecializedBuilders) {
@@ -3101,7 +3103,10 @@ public:
       // We expect that the host action was just appended to the action list
       // before this method was called.
       assert(HostAction == AL.back() && "Host action not in the list??");
-      HostAction = C.MakeAction<OffloadBundlingJobAction>(OffloadAL);
+      if (usePartialLinkStep)
+        HostAction = C.MakeAction<PartialLinkerJobAction>(OffloadAL);
+      else
+        HostAction = C.MakeAction<OffloadBundlingJobAction>(OffloadAL);
       AL.back() = HostAction;
     } else
       AL.append(OffloadAL.begin(), OffloadAL.end());
@@ -3320,6 +3325,53 @@ void Driver::BuildActions(Compilation &C, DerivedArgList &Args,
 
   handleArguments(C, Args, Inputs, Actions);
 
+  // Determine whether the bundler tool can be skipped based on the set
+  // of triples provided to the -fopenmp-targets flag, if it is present.
+  bool CanSkipClangOffloadBundler = false;
+  if (!Args.hasArg(options::OPT_fopenmp_use_target_bundling)) {
+    if (Arg *OpenMPTargets = C.getInputArgs().getLastArg(
+            options::OPT_fopenmp_targets_EQ)) {
+      if (OpenMPTargets->getValues().size() > 0) {
+        unsigned triplesRequiringBundler = 0;
+        for (const char *Val : OpenMPTargets->getValues()) {
+          llvm::Triple TT(Val);
+
+          // If the list of tripled contains an invalid triple or
+          // contains a valid non-NVPTX triple then the bundler
+          // can be used.
+          if (TT.getArch() == llvm::Triple::UnknownArch ||
+              (TT.getArch() != llvm::Triple::UnknownArch &&
+               !TT.isNVPTX())) {
+            triplesRequiringBundler++;
+          }
+        }
+        CanSkipClangOffloadBundler = (triplesRequiringBundler == 0);
+        C.setSkipOffloadBundler(CanSkipClangOffloadBundler);
+      }
+    }
+  }
+
+  // Determine whether a linker which supports partial linking
+  // exists. On linux systems ld provides this functionality, there
+  // may be other linkers that work also.
+  // TODO: test if linker supports partial linking i.e. -r
+  // We know ld does so we will actually check if the linker
+  // is ld instead but this needs to be replaced.
+  bool CanDoPartialLinking = false;
+  if (CanSkipClangOffloadBundler &&
+      C.getInputArgs().hasArg(options::OPT_c) &&
+      !C.getInputArgs().hasArg(options::OPT_emit_llvm)) {
+    // The bundler can be replaced with a partilal linking step
+    // only when outputing an object. For all other cases the
+    // fallback solution is the clang-offload-bundler.
+    StringRef LinkerName = C.getDefaultToolChain().GetLinkerPath();
+
+    // TODO: test if linker supports partial linking i.e. -r
+    // We know ld does so we will actually check if the linker
+    // is ld instead but this needs to be replaced.
+    CanDoPartialLinking = LinkerName.endswith("/ld");
+  }
+
   // Builder to be used to build offloading actions.
   OffloadingActionBuilder OffloadBuilder(C, Args, Inputs);
 
@@ -3344,7 +3396,13 @@ void Driver::BuildActions(Compilation &C, DerivedArgList &Args,
 
     // Use the current host action in any of the offloading actions, if
     // required.
-    if (OffloadBuilder.addHostDependenceToDeviceActions(Current, InputArg))
+    // The action may contain a bundling step which should not be executed
+    // if the toolchain we are targeting can produce object files that
+    // are understood by the host linker.
+    bool SkipBundler = (InputType == types::TY_Object) &&
+        CanSkipClangOffloadBundler;
+    if (OffloadBuilder.addHostDependenceToDeviceActions(
+            Current, InputArg, SkipBundler))
       break;
 
     for (phases::ID Phase : PL) {
@@ -3390,7 +3448,8 @@ void Driver::BuildActions(Compilation &C, DerivedArgList &Args,
 
       // Use the current host action in any of the offloading actions, if
       // required.
-      if (OffloadBuilder.addHostDependenceToDeviceActions(Current, InputArg))
+      if (OffloadBuilder.addHostDependenceToDeviceActions(
+              Current, InputArg, SkipBundler))
         break;
 
       if (Current->getType() == types::TY_Nothing)
@@ -3402,7 +3461,8 @@ void Driver::BuildActions(Compilation &C, DerivedArgList &Args,
       Actions.push_back(Current);
 
     // Add any top level actions generated for offloading.
-    OffloadBuilder.appendTopLevelActions(Actions, Current, InputArg);
+    OffloadBuilder.appendTopLevelActions(Actions, Current, InputArg,
+        CanDoPartialLinking);
   }
 
   // Add a link action if necessary.
@@ -3980,6 +4040,7 @@ InputInfo Driver::BuildJobsForActionNoCache(
 
   InputInfoList OffloadDependencesInputInfo;
   bool BuildingForOffloadDevice = TargetDeviceOffloadKind != Action::OFK_None;
+
   if (const OffloadAction *OA = dyn_cast<OffloadAction>(A)) {
     // The 'Darwin' toolchain is initialized only when its arguments are
     // computed. Get the default arguments for OFK_None to ensure that

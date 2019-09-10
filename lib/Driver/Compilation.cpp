@@ -280,3 +280,11 @@ StringRef Compilation::getSysRoot() const {
 void Compilation::Redirect(ArrayRef<Optional<StringRef>> Redirects) {
   this->Redirects = Redirects;
 }
+
+void Compilation::setSkipOffloadBundler(bool skipBundler) {
+  SkipOffloadBundler = skipBundler;
+}
+
+bool Compilation::canSkipOffloadBundler() const {
+  return SkipOffloadBundler;
+}

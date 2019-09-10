@@ -6316,6 +6316,49 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
   C.addCommand(std::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
 }
 
+// Begin partial linking
+
+void PartialLinker::ConstructJob(Compilation &C, const JobAction &JA,
+                                 const InputInfo &Output,
+                                 const InputInfoList &Inputs,
+                                 const llvm::opt::ArgList &TCArgs,
+                                 const char *LinkingOutput) const {
+  // The version with only one output is expected to refer to a bundling job.
+  assert(isa<PartialLinkerJobAction>(JA) && "Expecting partial linking job!");
+
+  // The partial linking command line (using ld as example):
+  // ld -r input1.o input2.o -o single-file.o
+  ArgStringList CmdArgs;
+
+  // Ensure conditions are met for doing partial linking instead of bundling.
+  assert(TCArgs.hasArg(options::OPT_c) &&
+      "Can only use partial linking for object file generation.");
+  assert(C.canSkipOffloadBundler() &&
+      "Offload bundler cannot be skipped.");
+
+  // TODO: the assert may be removed once a more elaborate checking is in
+  // place in the Driver.
+  StringRef LinkerName = getToolChain().GetLinkerPath();
+  assert(LinkerName.endswith("/ld") && "Partial linking not supported.");
+
+  // Enable partial linking.
+  CmdArgs.push_back(TCArgs.MakeArgString("-r"));
+
+  // Add input files.
+  for (unsigned I = 0; I < Inputs.size(); ++I) {
+    CmdArgs.push_back(TCArgs.MakeArgString(Inputs[I].getFilename()));
+  }
+
+  // Add output file.
+  CmdArgs.push_back(TCArgs.MakeArgString("-o"));
+  CmdArgs.push_back(TCArgs.MakeArgString(Output.getFilename()));
+
+  // Add partial linker command.
+  C.addCommand(std::make_unique<Command>(
+      JA, *this, TCArgs.MakeArgString(getToolChain().GetLinkerPath()),
+      CmdArgs, None));
+}
+
 // Begin OffloadBundler
 
 void OffloadBundler::ConstructJob(Compilation &C, const JobAction &JA,

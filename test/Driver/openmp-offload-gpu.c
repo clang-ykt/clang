@@ -77,7 +77,7 @@
 
 /// Check cubin file generation and bundling
 // RUN:   %clang -### -target powerpc64le-unknown-linux-gnu -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda \
-// RUN:          -no-canonical-prefixes -save-temps %s -c 2>&1 \
+// RUN:          -no-canonical-prefixes -save-temps %s -c -fopenmp-use-target-bundling 2>&1 \
 // RUN:   | FileCheck -check-prefix=CHK-PTXAS-CUBIN-BUNDLING %s
 
 // CHK-PTXAS-CUBIN-BUNDLING: clang{{.*}}" "-o" "[[PTX:.*\.s]]"
@@ -89,7 +89,7 @@
 /// Check cubin file unbundling and usage by nvlink
 // RUN:   touch %t.o
 // RUN:   %clang -### -target powerpc64le-unknown-linux-gnu -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda \
-// RUN:          -no-canonical-prefixes -save-temps %t.o %S/Inputs/in.so 2>&1 \
+// RUN:          -no-canonical-prefixes -save-temps %t.o %S/Inputs/in.so -fopenmp-use-target-bundling 2>&1 \
 // RUN:   | FileCheck -check-prefix=CHK-CUBIN-UNBUNDLING-NVLINK %s
 
 /// Use DAG to ensure that cubin file has been unbundled.
@@ -105,11 +105,11 @@
 // RUN:   touch %t1.o
 // RUN:   touch %t2.o
 // RUN:   %clang -### -no-canonical-prefixes -target powerpc64le-unknown-linux-gnu -fopenmp=libomp \
-// RUN:          -fopenmp-targets=nvptx64-nvidia-cuda %t1.o %t2.o 2>&1 \
+// RUN:          -fopenmp-targets=nvptx64-nvidia-cuda %t1.o %t2.o -fopenmp-use-target-bundling 2>&1 \
 // RUN:   | FileCheck -check-prefix=CHK-TWOCUBIN %s
 /// Check cubin file generation and usage by nvlink when toolchain has BindArchAction
 // RUN:   %clang -### -no-canonical-prefixes -target x86_64-apple-darwin17.0.0 -fopenmp=libomp \
-// RUN:          -fopenmp-targets=nvptx64-nvidia-cuda %t1.o %t2.o 2>&1 \
+// RUN:          -fopenmp-targets=nvptx64-nvidia-cuda %t1.o %t2.o -fopenmp-use-target-bundling 2>&1 \
 // RUN:   | FileCheck -check-prefix=CHK-TWOCUBIN %s
 
 // CHK-TWOCUBIN: nvlink{{.*}}openmp-offload-{{.*}}.cubin" "{{.*}}openmp-offload-{{.*}}.cubin"
@@ -278,6 +278,15 @@
 // RUN:   | FileCheck -check-prefix=CUDA_RED_RECS %s
 // CUDA_RED_RECS: clang{{.*}}"-cc1"{{.*}}"-triple" "nvptx64-nvidia-cuda"
 // CUDA_RED_RECS-SAME: "-fopenmp-cuda-teams-reduction-recs-num=2048"
+
+/// ###########################################################################
+
+/// Check NVLINK ignores dynamic libraries.
+// RUN:   touch %t-dynlib.so
+// RUN:   %clang -### -no-canonical-prefixes -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda %t-dynlib.so %s 2>&1 \
+// RUN:   | FileCheck -check-prefix=CHK-NVLINK-IGNORE-DYNLIB %s
+
+// CHK-NVLINK-IGNORE-DYNLIB-NOT: nvlink{{.*}}dynlib
 
 // RUN:   %clang -### -no-canonical-prefixes -fopenmp=libomp -fopenmp-targets=nvptx64-nvidia-cuda %s 2>&1 \
 // RUN:   | FileCheck -check-prefix=OPENMP_NVPTX_WRAPPERS %s

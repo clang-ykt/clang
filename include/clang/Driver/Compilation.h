@@ -124,6 +124,9 @@ class Compilation {
   /// Whether to keep temporary files regardless of -save-temps.
   bool ForceKeepTempFiles = false;
 
+  /// Whether the clang-offload-bundler can be skipped.
+  bool SkipOffloadBundler = false;
+
 public:
   Compilation(const Driver &D, const ToolChain &DefaultToolChain,
               llvm::opt::InputArgList *Args,
@@ -303,6 +306,16 @@ public:
   /// of three. The inferior process's stdin(0), stdout(1), and stderr(2) will
   /// be redirected to the corresponding paths, if provided (not llvm::None).
   void Redirect(ArrayRef<Optional<StringRef>> Redirects);
+
+  /// Set whether the compilation can avoid calling the clang-offload-bundler
+  /// for object file types.
+  ///
+  /// \param skipBundler - bool value set once by the driver.
+  void setSkipOffloadBundler(bool skipBundler);
+
+  /// Returns true when calls to the clang-offload-bundler are not required
+  /// for object types.
+  bool canSkipOffloadBundler() const;
 };
 
 } // namespace driver
